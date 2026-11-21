@@ -1,1 +1,157 @@
-<h1>Schooled is alive</h1>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Schooled</title>
+<meta name="theme-color" content="#0B6B6A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Schooled">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main id="app">
+
+  <!-- Setup -->
+  <section id="view-setup" class="view" hidden>
+    <h1>Let's set up your tank</h1>
+    <p class="muted">This helps size treatments and look up your tap water. It stays on your phone.</p>
+    <form id="setup-form" novalidate>
+      <label class="field">
+        <span class="label">Tank name</span>
+        <input id="tank-name" type="text" maxlength="40" placeholder="Living room tank" autocomplete="off">
+      </label>
+
+      <div class="field">
+        <span class="label" id="size-label">Tank size</span>
+        <div class="row">
+          <input id="tank-size" type="number" inputmode="decimal" min="1" max="5000" placeholder="29" aria-labelledby="size-label">
+          <div class="seg" role="radiogroup" aria-label="Units">
+            <label class="choice"><input type="radio" name="unit" value="gallons" checked><span>gallons</span></label>
+            <label class="choice"><input type="radio" name="unit" value="liters"><span>liters</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="label" id="water-label">Where does your water come from?</span>
+        <div class="grid2" role="radiogroup" aria-labelledby="water-label">
+          <label class="choice card-choice"><input type="radio" name="water" value="city" checked><span><strong>City water</strong><small>Look up by ZIP</small></span></label>
+          <label class="choice card-choice"><input type="radio" name="water" value="well"><span><strong>Well water</strong><small>Test with a strip</small></span></label>
+        </div>
+      </div>
+
+      <label class="field" id="zip-field">
+        <span class="label">ZIP code (US)</span>
+        <input id="tank-zip" type="text" inputmode="numeric" maxlength="5" placeholder="32065" autocomplete="postal-code">
+        <span class="hint">Used to look up your tap water. It stays on your phone.</span>
+      </label>
+
+      <p id="setup-error" class="error" role="alert" hidden></p>
+
+      <div class="actions col">
+        <button type="submit" class="btn primary big">Continue</button>
+        <button type="button" id="setup-skip" class="btn link">Skip for now</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Home -->
+  <section id="view-home" class="view" hidden>
+    <p class="muted" id="home-sub"></p>
+    <h1 id="home-title">My tank</h1>
+
+    <button type="button" id="home-scan" class="hero">
+      <span>
+        <strong>Scan my tank</strong>
+        <small>Name your fish from a photo</small>
+      </span>
+      <svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+    </button>
+
+    <div class="card" id="home-fish"></div>
+
+    <div class="card note">
+      <strong>Coming soon</strong>
+      <p class="muted small">Test strip reading, tap water info for your ZIP, and tank mate warnings.</p>
+    </div>
+  </section>
+
+  <!-- Scan -->
+  <section id="view-scan" class="view" hidden>
+    <h1>Scan your tank</h1>
+    <p class="muted">Take a clear photo of the whole tank, or choose one from your phone.</p>
+    <ul class="tips">
+      <li>Get close to the glass</li>
+      <li>Turn off the tank light if it causes glare</li>
+      <li>Wait until your fish are out of hiding</li>
+    </ul>
+    <button type="button" id="photo-btn" class="btn primary big">Take or choose a photo</button>
+    <input id="photo-input" type="file" accept="image/*" hidden>
+    <p class="muted small">Test strip reading arrives in the next update.</p>
+  </section>
+
+  <!-- Results -->
+  <section id="view-results" class="view" hidden>
+    <button type="button" id="results-back" class="btn link back">&larr; Back</button>
+    <h1 id="results-title">Looking at your tank&hellip;</h1>
+    <img id="results-photo" alt="Your tank photo" hidden>
+    <div id="results-status" role="status" aria-live="polite"></div>
+    <div id="results-list" class="list"></div>
+    <p id="results-note" class="muted small" hidden>These are best guesses from a photo. Tap Edit on anything that looks wrong. Saving updates the counts for fish already in My Tank.</p>
+    <div id="results-actions" class="actions" hidden>
+      <button type="button" id="rescan" class="btn">Rescan</button>
+      <button type="button" id="save-scan" class="btn primary">Save to My Tank</button>
+    </div>
+  </section>
+
+  <!-- Water -->
+  <section id="view-water" class="view" hidden>
+    <h1>Water</h1>
+    <div class="card">
+      <h2>Test strip reader</h2>
+      <p class="muted">Coming in the next update. You'll photograph a dipped strip next to its color chart and get plain-English results.</p>
+    </div>
+    <div class="card" id="water-tap">
+      <h2>Your tap water</h2>
+      <p class="muted" id="water-tap-text"></p>
+    </div>
+  </section>
+
+  <!-- My Tank -->
+  <section id="view-tank" class="view" hidden>
+    <div class="head">
+      <h1 id="tank-title">My Tank</h1>
+      <button type="button" id="edit-tank" class="btn small">Edit</button>
+    </div>
+    <div id="tank-chips" class="chips"></div>
+    <h2 class="section">Fish and plants</h2>
+    <div id="tank-list" class="list"></div>
+    <form id="add-form" class="addrow">
+      <input id="add-name" type="text" maxlength="60" placeholder="Add a fish or plant by name" aria-label="Add a fish or plant by name" autocomplete="off">
+      <button type="submit" class="btn">Add</button>
+    </form>
+  </section>
+
+</main>
+
+<nav id="nav" aria-label="Main" hidden>
+  <button type="button" data-view="home">
+    <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9H3z"/></svg>Home</button>
+  <button type="button" data-view="scan">
+    <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Scan</button>
+  <button type="button" data-view="water">
+    <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg>Water</button>
+  <button type="button" data-view="tank">
+    <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 12c2-2 4-2 6 0-2 2-4 2-6 0z"/><path d="M14 12l2-1.5v3z"/></svg>Tank</button>
+</nav>
+
+<script src="app.js"></script>
+</body>
+</html>
