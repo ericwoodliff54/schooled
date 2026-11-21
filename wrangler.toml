@@ -1,0 +1,8 @@
+name = "schooled-worker"
+main = "schooled-worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# Keeps variables you set in the Cloudflare dashboard (like GEMINI_MODEL).
+# Secrets such as GEMINI_API_KEY are never touched by a deploy.
+keep_vars = true
