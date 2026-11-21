@@ -146,7 +146,9 @@ async function scan(request, env, origin) {
   if (!upstream.ok) {
     // Status only. The key and the photo are never echoed back.
     const busy = upstream.status === 429 || upstream.status === 503;
-    return json({ ok: false, error: busy ? 'ai_busy' : 'ai_error', ai_status: upstream.status }, 502, origin);
+    let detail = '';
+    try { detail = String(((await upstream.json()).error || {}).message || '').slice(0, 160); } catch (e) {}
+    return json({ ok: false, error: busy ? 'ai_busy' : 'ai_error', ai_status: upstream.status, ai_detail: detail }, 502, origin);
   }
 
   try {

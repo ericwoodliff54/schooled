@@ -311,7 +311,7 @@ async function startScan(file) {
       body: JSON.stringify({ image: prepared.base64, mime: 'image/jpeg' })
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) throw new Error(friendlyError(data.error, res.status));
+    if (!res.ok || !data.ok) throw new Error(data.error === 'ai_error' && data.ai_status ? 'Photo reader error ' + data.ai_status + ': ' + (data.ai_detail || 'no details') : friendlyError(data.error, res.status));
 
     if (data.is_aquarium === false) {
       pending.error = "That doesn't look like an aquarium. Try a photo of your tank.";
