@@ -151,13 +151,15 @@ async function scan(request, env, origin) {
     return json({ ok: false, error: busy ? 'ai_busy' : 'ai_error', ai_status: upstream.status, ai_detail: detail }, 502, origin);
   }
 
+  let data = null;
   try {
-    const data = await upstream.json();
+    data = await upstream.json();
     const text = data.candidates[0].content.parts.map((p) => p.text || '').join('');
     const result = sanitize(JSON.parse(text));
     return json(Object.assign({ ok: true }, result), 200, origin);
   } catch (err) {
-    return json({ ok: false, error: 'ai_error' }, 502, origin);
+    const why = data && ((data.promptFeedback && data.promptFeedback.blockReason) || (data.candidates && data.candidates[0] && data.candidates[0].finishReason)) || String(err && err.message || err);
+    return json({ ok: false, error: 'ai_error', ai_status: 200, ai_detail: 'bad reply: ' + String(why).slice(0, 120) }, 502, origin);
   }
 }
 

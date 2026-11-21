@@ -311,7 +311,7 @@ async function startScan(file) {
       body: JSON.stringify({ image: prepared.base64, mime: 'image/jpeg' })
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) throw new Error(data.error === 'ai_error' && data.ai_status ? 'Photo reader error ' + data.ai_status + ': ' + (data.ai_detail || 'no details') : friendlyError(data.error, res.status));
+    if (!res.ok || !data.ok) throw new Error(data.error === 'ai_error' ? 'Photo reader error ' + data.ai_status + ': ' + (data.ai_detail || 'no details') : friendlyError(data.error, res.status));
 
     if (data.is_aquarium === false) {
       pending.error = "That doesn't look like an aquarium. Try a photo of your tank.";
@@ -329,7 +329,7 @@ async function startScan(file) {
     pending.tips = data.photo_tips || '';
   } catch (err) {
     if (err instanceof TypeError) pending.error = "Couldn't reach the server. Check your connection and try again.";
-    else if (err.message === 'bad_image') pending.error = friendlyError('bad_image');
+    else if (err.message === 'bad_image') pending.error = "This device couldn't open that photo. If it's an iPhone HEIC file, use the camera button or a JPG instead.";
     else pending.error = err.message || friendlyError();
   }
   pending.loading = false;
