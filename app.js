@@ -568,16 +568,12 @@ function putAll(parent, ...nodes) {
   parent.append(...nodes.filter(Boolean));
 }
 
-function tankChips(current, onPick) {
-  if (state.tanks.length < 2) return null;
-  return el('div', { class: 'chips tank-chips' }, ...state.tanks.map((x) => el('button', { type: 'button', class: 'chip-btn' + (x.id === current.id ? ' on' : ''), 'aria-pressed': x.id === current.id ? 'true' : 'false', text: tankLabel(x), onclick: () => onPick(x.id) })));
-}
 
 // A labelled drop-down for choosing which tank a check or scan is for. Works for any number of tanks.
 function tankSwitcher(current, label, onPick) {
   if (!current || state.tanks.length < 2) return null;
   const sel = el('select', { class: 'select', 'aria-label': label },
-    ...state.tanks.map((x) => el('option', { value: x.id, text: tankLabel(x) + (x.id === state.activeId ? ' (active)' : ''), selected: x.id === current.id })));
+    ...state.tanks.map((x) => el('option', { value: x.id, text: tankLabel(x), selected: x.id === current.id })));
   sel.addEventListener('change', () => onPick(sel.value));
   return el('div', { class: 'tank-switch' }, el('span', { class: 'label small', text: label }), sel);
 }
@@ -589,12 +585,6 @@ function setActiveTank(id) {
   saveState();
 }
 
-function renderScanTank() {
-  const box = $('scan-tank');
-  if (!box) return;
-  box.replaceChildren();
-  putAll(box, tankSwitcher(activeTank(), 'Scanning', (id) => { setActiveTank(id); renderScanTank(); }));
-}
 
 function svgEl(tag, attrs, ...kids) {
   const n = document.createElementNS(SVG_NS, tag);
@@ -953,14 +943,13 @@ function toast(message) {
 }
 
 // ---------- Navigation ----------
-const VIEWS = ['setup', 'home', 'scanhub', 'scan', 'results', 'explore', 'water', 'tanks', 'tank', 'species', 'dream', 'fishcheck', 'misses'];
+const VIEWS = ['setup', 'home', 'results', 'explore', 'water', 'tank', 'species', 'dream', 'fishcheck', 'misses'];
 let currentView = 'home';
-const NAV_FOR = { home: 'home', scanhub: 'home', scan: 'home', results: 'home', fishcheck: 'home', tanks: 'home', tank: 'home', explore: 'explore', species: 'explore', dream: 'home', water: 'home', misses: 'home' };
+const NAV_FOR = { home: 'home', results: 'home', fishcheck: 'home', tank: 'home', explore: 'explore', species: 'explore', dream: 'home', water: 'home', misses: 'home' };
 let openTankId = '';
 let editingSize = false;
 
 function showView(name) {
-  if (name === 'tanks' || name === 'scanhub' || name === 'scan') name = 'home';
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== name; });
   document.body.dataset.view = name;
   currentView = name;
@@ -972,14 +961,11 @@ function showView(name) {
   if (name === 'setup') fillSetupForm();
   if (name === 'home') renderHome();
   if (name === 'water') renderWater();
-  if (name === 'tanks') renderTanks();
   if (name === 'tank') renderTank();
   if (name === 'species') renderSpecies();
   if (name === 'dream') renderDream();
   if (name === 'fishcheck') renderFishCheck();
   if (name === 'misses') renderMisses();
-  if (name === 'scanhub') renderScanHub();
-  if (name === 'scan') renderScanTank();
   if (name === 'explore') renderExplore();
   window.scrollTo(0, 0);
 }
@@ -1224,7 +1210,7 @@ if ($('tank-add-fish')) $('tank-add-fish').addEventListener('click', () => {
 });
 
 $('setup-skip').addEventListener('click', () => {
-  if (state.setupDone) { showView('tanks'); return; }
+  if (state.setupDone) { showView('home'); return; }
   state.setupDone = true;
   saveState();
   showView('home');
@@ -1324,7 +1310,7 @@ function homeTankCard(t) {
     el('span', { class: 'home-tank-text' },
       el('strong', { text: tankLabel(t) }),
       el('span', { text: [tankSummary(t), count ? count + (count === 1 ? ' animal or plant' : ' animals and plants') : 'Empty so far'].filter(Boolean).join(' \u00b7 ') }),
-      el('span', { class: 'home-tank-pills' }, el('span', { class: 'pill ' + st.cls, text: st.text }), state.tanks.length > 1 && t.id === state.activeId ? el('span', { class: 'badge', text: 'Active' }) : null)),
+      el('span', { class: 'pill ' + st.cls, text: st.text })),
     chevron());
 }
 
@@ -1384,15 +1370,6 @@ function heroBtn(title, sub, icon, alt, onclick) {
     el('span', { class: 'hero-icon' }, ic));
 }
 
-function renderScanHub() {
-  const body = $('scanhub-body');
-  body.replaceChildren();
-  putAll(body,
-    heroBtn('Scan my tank', 'Photograph the whole tank and see every fish, plant and coral named', 'scan', false, () => showView('scan')),
-    heroBtn('Fish Check', 'At the store? Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckFrom = 'home'; showView('fishcheck'); }));
-  const t = activeTank();
-  putAll(body, tankSwitcher(t, 'Adding to', (id) => { setActiveTank(id); renderScanHub(); }));
-}
 
 let exploreSearch = null;
 function renderExplore() {
@@ -1431,37 +1408,6 @@ function lastTestLine(t) {
   return tests.length ? 'Last water test ' + agoText(tests[tests.length - 1].t) : '';
 }
 
-function renderTanks() {
-  const box = $('tanks-list');
-  box.replaceChildren();
-  $('tanks-add').hidden = state.tanks.length >= MAX_TANKS;
-  if (!state.tanks.length) {
-    box.append(el('div', { class: 'card' },
-      el('h2', { text: 'No tanks yet' }),
-      el('p', { class: 'muted', text: 'Add a tank to keep its fish, plants, water and photos in one place.' }),
-      el('button', { type: 'button', class: 'btn primary', text: 'Add your first tank', onclick: startAddTank })));
-    return;
-  }
-  const active = activeTank();
-  state.tanks.forEach((t) => {
-    const photo = t.photo
-      ? el('img', { class: 'tank-card-img', src: t.photo, alt: '', loading: 'lazy' })
-      : el('span', { class: 'tank-card-img empty' }, kindIcon('fish'));
-    const kinds = t.fish.length;
-    box.append(el('button', { type: 'button', class: 'tank-card', onclick: () => showTank(t.id) },
-      photo,
-      el('span', { class: 'tank-card-body' },
-        el('span', { class: 'tank-card-top' },
-          el('strong', { class: 'name', text: tankLabel(t) }),
-          t === active ? el('span', { class: 'badge', text: 'Active' }) : null),
-        el('span', { class: 'tank-tags' }, ...[sizeShort(t), t.type, t.style].filter(Boolean).map((x) => el('span', { class: 'tag', text: x }))),
-        el('span', { class: 'sub', text: kinds ? kinds + (kinds === 1 ? ' kind · ' : ' kinds · ') + totalFish(t) + ' in total' : 'No fish added yet' }),
-        lastTestLine(t) ? el('span', { class: 'sub', text: lastTestLine(t) }) : null
-      )));
-  });
-}
-
-$('tanks-add').addEventListener('click', startAddTank);
 
 // ---------- One tank ----------
 function chevron() {
@@ -1566,7 +1512,7 @@ function sizePill(t) {
 
 function renderTank() {
   const t = getTank(openTankId);
-  if (!t) { showView('tanks'); return; }
+  if (!t) { showView('home'); return; }
 
   $('tank-hero').replaceChildren(t.photo
     ? el('img', { src: t.photo, alt: 'Photo of ' + tankLabel(t) })
@@ -1604,13 +1550,6 @@ function renderTank() {
   const notes = $('tank-notes');
   if (document.activeElement !== notes) notes.value = t.notes;
 
-  const act = $('tank-active');
-  act.replaceChildren();
-  if (activeTank() === t) {
-    act.append(el('div', { class: 'badge-row' }, el('span', { class: 'badge', text: 'Active' }), el('span', { class: 'sub', text: 'Shown on Home and used first for scans' })));
-  } else {
-    act.append(el('button', { type: 'button', class: 'btn small', text: 'Make this my active tank', onclick: () => { state.activeId = t.id; saveState(); renderTank(); } }));
-  }
 
   const SECS = [['fish', 'Fish and plants'], ['water', 'Water'], ['care', 'Care']];
   const dueHere = t.tasks.filter((k) => taskInfo(k).diff <= 0).length;
@@ -1894,7 +1833,7 @@ function changeCount(tank, fish, delta) {
   if (currentView === 'species') renderSpecies(); else renderTank();
 }
 
-$('tank-back').addEventListener('click', () => showView('tanks'));
+$('tank-back').addEventListener('click', () => showView('home'));
 $('home-add').addEventListener('click', () => startAddTank());
 
 $('tank-title-input').addEventListener('change', () => {
@@ -1977,20 +1916,19 @@ $('tank-delete').addEventListener('click', () => {
   state.tanks = state.tanks.filter((x) => x !== t);
   if (state.activeId === t.id) state.activeId = state.tanks[0] ? state.tanks[0].id : '';
   saveState();
-  showView('tanks');
+  showView('home');
 });
 
 // ---------- Scan ----------
-function wirePhotoInput(buttonId, inputId) {
-  $(buttonId).addEventListener('click', () => $(inputId).click());
+function wirePhotoInput(inputId) {
   $(inputId).addEventListener('change', (event) => {
     const file = event.target.files && event.target.files[0];
     event.target.value = ''; // lets the same photo be picked again
     if (file) startScan(file);
   });
 }
-wirePhotoInput('camera-btn', 'camera-input');
-wirePhotoInput('gallery-btn', 'gallery-input');
+wirePhotoInput('camera-input');
+wirePhotoInput('gallery-input');
 
 $('rescan').addEventListener('click', () => $('gallery-input').click());
 $('add-photo').addEventListener('click', () => $('more-photo-input').click());
@@ -2726,7 +2664,7 @@ $('species-back').addEventListener('click', () => {
   else if (speciesOrigin === 'dream') showView('dream');
   else if (speciesOrigin === 'fishcheck') showView('fishcheck');
   else if (getTank(speciesOriginTank)) showTank(speciesOriginTank);
-  else showView('tanks');
+  else showView('home');
 });
 
 // Stock photos come from Wikipedia by name, with a link back to the page for credit.
@@ -3442,7 +3380,6 @@ function dreamResultCard(r) {
 
 $('dream-back').addEventListener('click', () => showView('home'));
 $('water-back').addEventListener('click', () => { if (waterFrom === 'tank' && getTank(openTankId)) showTank(openTankId); else showView('home'); waterFrom = 'home'; });
-$('scan-back').addEventListener('click', () => showView('scanhub'));
 
 // ---------- Splash ----------
 (function () {

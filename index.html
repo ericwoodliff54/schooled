@@ -106,34 +106,17 @@
     <div id="home-misses" class="home-misses"></div>
   </section>
 
-  <!-- Scan tab -->
-  <section id="view-scanhub" class="view" hidden>
-    <h1>Scan</h1>
-    <div id="scanhub-body" class="scanhub-body"></div>
-  </section>
-
   <!-- Explore tab -->
   <section id="view-explore" class="view" hidden>
     <h1>Species guide</h1>
     <div id="explore-body" class="explore-body"></div>
   </section>
 
-  <!-- Scan -->
-  <section id="view-scan" class="view" hidden>
-    <button type="button" id="scan-back" class="btn link back">&larr; Scan</button>
-    <h1>Scan your tank</h1>
-    <div id="scan-tank"></div>
-    <p class="muted">Take a clear photo of the whole tank, or choose one from your phone.</p>
-    <div class="viewfinder">
-      <img src="example-tank.jpg" width="696" height="516" alt="Example of a good tank photo: the whole tank in frame, lights on, no glare">
-      <i></i><i></i><i></i><i></i>
-      <span class="vf-caption">Example: whole tank in frame</span>
-    </div>
-    <button type="button" id="camera-btn" class="btn primary big">Take a photo</button>
-    <button type="button" id="gallery-btn" class="btn big outline">Choose from gallery</button>
-    <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
-    <input id="gallery-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
-  </section>
+
+  <div hidden>
+    <input id="camera-input" type="file" accept="image/*" capture="environment">
+    <input id="gallery-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff">
+  </div>
 
   <!-- Results -->
   <section id="view-results" class="view" hidden>
@@ -163,15 +146,6 @@
       <h2>Your tap water</h2>
       <p class="muted" id="water-tap-text"></p>
     </div>
-  </section>
-
-  <!-- My Tanks (list) -->
-  <section id="view-tanks" class="view" hidden>
-    <div class="head">
-      <h1>My Tanks</h1>
-      <button type="button" id="tanks-add" class="btn small primary">+ Add tank</button>
-    </div>
-    <div id="tanks-list" class="tank-cards"></div>
   </section>
 
   <!-- One tank -->
@@ -230,7 +204,6 @@
         <textarea id="tank-notes" class="textarea" maxlength="400" rows="3" placeholder="Filter, lights, fertilizer, anything you want to remember"></textarea>
       </label>
 
-      <div id="tank-active"></div>
       <button type="button" id="tank-delete" class="btn-link danger">Delete this tank</button>
     </details>
   </section>
