@@ -108,6 +108,14 @@
       <span class="hero-icon"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
     </button>
 
+    <button type="button" id="home-fishcheck" class="hero alt">
+      <span>
+        <strong>Fish Check</strong>
+        <small>At the store? Photograph a fish and see if it fits your tank</small>
+      </span>
+      <span class="hero-icon"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12c3-5 9-6 13-2l3-2v8l-3-2c-4 4-10 3-13-2z"/><circle cx="15" cy="11" r="0.8"/></svg></span>
+    </button>
+
     <div id="home-tanks" class="home-tanks"></div>
 
     <h2 class="home-h">Explore</h2>
@@ -208,6 +216,14 @@
     <div id="add-slot"></div>
 
     <button type="button" id="tank-delete" class="btn-link danger">Delete this tank</button>
+  </section>
+
+  <!-- Fish Check -->
+  <section id="view-fishcheck" class="view" hidden>
+    <button type="button" id="fishcheck-back" class="btn link back">&larr; Home</button>
+    <div id="fishcheck-body" class="dream-body"></div>
+    <input id="fishcheck-camera" type="file" accept="image/*" capture="environment" hidden>
+    <input id="fishcheck-gallery" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
   </section>
 
   <!-- Dream Tank -->

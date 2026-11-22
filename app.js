@@ -291,9 +291,9 @@ function toast(message) {
 }
 
 // ---------- Navigation ----------
-const VIEWS = ['setup', 'home', 'scan', 'results', 'water', 'tanks', 'tank', 'species', 'dream'];
+const VIEWS = ['setup', 'home', 'scan', 'results', 'water', 'tanks', 'tank', 'species', 'dream', 'fishcheck'];
 let currentView = 'home';
-const NAV_FOR = { home: 'home', scan: 'scan', results: 'scan', water: 'water', tanks: 'tanks', tank: 'tanks', species: 'tanks', dream: 'home' };
+const NAV_FOR = { home: 'home', scan: 'scan', results: 'scan', water: 'water', tanks: 'tanks', tank: 'tanks', species: 'tanks', dream: 'home', fishcheck: 'home' };
 let openTankId = '';
 let editingSize = false;
 
@@ -313,6 +313,7 @@ function showView(name) {
   if (name === 'tank') renderTank();
   if (name === 'species') renderSpecies();
   if (name === 'dream') renderDream();
+  if (name === 'fishcheck') renderFishCheck();
   window.scrollTo(0, 0);
 }
 
@@ -1671,7 +1672,7 @@ let speciesOriginTank = '';
 
 function showSpecies(name, tankId, fromChip) {
   if (fromChip && speciesView) speciesStack.push(speciesView);
-  else { speciesStack = []; speciesOrigin = currentView === 'home' ? 'home' : currentView === 'dream' ? 'dream' : 'tank'; speciesOriginTank = tankId || openTankId || ''; }
+  else { speciesStack = []; speciesOrigin = currentView === 'home' ? 'home' : currentView === 'dream' ? 'dream' : currentView === 'fishcheck' ? 'fishcheck' : 'tank'; speciesOriginTank = tankId || openTankId || ''; }
   speciesView = { name, tankId: tankId || '' };
   showView('species');
 }
@@ -1679,6 +1680,7 @@ $('species-back').addEventListener('click', () => {
   if (speciesStack.length) { speciesView = speciesStack.pop(); showView('species'); return; }
   if (speciesOrigin === 'home') showView('home');
   else if (speciesOrigin === 'dream') showView('dream');
+  else if (speciesOrigin === 'fishcheck') showView('fishcheck');
   else if (getTank(speciesOriginTank)) showTank(speciesOriginTank);
   else showView('tanks');
 });
@@ -1903,6 +1905,137 @@ function renderSpecies() {
 function stockCard(t) {
   return el('div', { class: 'card' }, el('div', { class: 'card-head' }, el('h2', { text: 'Stocking' })), stockBar(t));
 }
+
+// ---------- Fish Check ----------
+const SCAN_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75] };
+let fishCheck = null; // { photoUrl, loading, error, result, name, count, usage, model }
+
+function fishCheckCostLine(fc) {
+  if (!fc || !fc.usage) return null;
+  const p = SCAN_PRICES[fc.model];
+  const n = (x) => Number(x || 0).toLocaleString();
+  const bits = [fc.model + ', ' + n(fc.usage.input) + ' tokens in, ' + n(fc.usage.output) + ' out'];
+  if (p) bits.push('about ' + centsText((fc.usage.input * p[0] + fc.usage.output * p[1]) / 1e6));
+  return bits.join(' · ');
+}
+
+async function startFishCheck(file) {
+  const t = activeTank();
+  fishCheck = { photoUrl: '', loading: true, error: '', result: null, name: '', count: 1, usage: null, model: '' };
+  renderFishCheck();
+  try {
+    const image = await loadImage(file);
+    const single = makeSingle(image);
+    fishCheck.photoUrl = single.previewUrl;
+    renderFishCheck();
+    const data = await askWorker(single.images, 'fish', 45000, { tank_type: t && TYPES.includes(t.type) ? t.type : '' });
+    const r = data.fish;
+    fishCheck.usage = data.usage; fishCheck.model = data.model;
+    if (!r || !r.is_aquarium || !r.common_name) {
+      fishCheck.error = 'I could not find a fish, plant or coral in that photo. Move closer to one animal, hold still, and try again.';
+    } else {
+      fishCheck.result = r;
+      const hit = lookupSpecies(r.common_name);
+      fishCheck.name = hit ? hit.n : r.common_name;
+      fishCheck.count = hit && hit.c && hit.c.s > 1 ? hit.c.s : 1;
+    }
+  } catch (err) {
+    fishCheck.error = (err && err.message) || 'Something went wrong. Please try again.';
+  }
+  fishCheck.loading = false;
+  renderFishCheck();
+}
+
+function fishVerdict(t, name, count) {
+  const before = tankCheck(t);
+  const tmp = Object.assign({}, t, { fish: t.fish.map((f) => Object.assign({}, f)) });
+  addToTank(tmp, name, count, 'add');
+  const after = tankCheck(tmp);
+  const had = new Set(before.issues.map((i) => i.text));
+  const fresh = after.issues.filter((i) => !had.has(i.text));
+  return { tmp, fresh };
+}
+
+function renderFishCheck() {
+  const body = $('fishcheck-body');
+  body.replaceChildren();
+  const t = activeTank();
+  body.append(el('h1', { text: 'Fish Check' }),
+    el('p', { class: 'muted', text: 'Standing at the fish store? Photograph one fish, plant or coral. Get its name, what it needs, and whether it fits your tank. Including its name tag in the photo helps.' }));
+  const fc = fishCheck;
+  const actions = el('div', { class: 'row photo-actions' },
+    el('button', { type: 'button', class: 'btn primary', text: fc ? 'Check another' : 'Take photo', onclick: () => $('fishcheck-camera').click() }),
+    el('button', { type: 'button', class: 'btn', text: 'Choose photo', onclick: () => $('fishcheck-gallery').click() }));
+  body.append(actions);
+  if (!fc) return;
+  if (fc.photoUrl) body.append(el('img', { class: 'dream-image', src: fc.photoUrl, alt: 'The fish you photographed' }));
+  if (fc.loading) { body.append(el('p', { class: 'muted center', role: 'status', text: 'Looking…' })); return; }
+  if (fc.error) { body.append(el('div', { class: 'notice', role: 'status', text: fc.error })); return; }
+  const r = fc.result;
+  if (!r) return;
+  const entry = lookupSpecies(fc.name);
+  const sure = r.confidence >= 0.75 ? ['Sure', 'ok'] : r.confidence >= 0.45 ? ['Probably', 'warn'] : ['Not sure', 'bad'];
+  const card = el('div', { class: 'card dream-result' });
+  card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), el('span', { class: 'pill ' + sure[1], text: sure[0] })));
+  if (entry && entry.s) card.append(el('p', { class: 'muted small', text: entry.s }));
+  if (r.label_text) card.append(el('p', { class: 'muted small', text: 'Read from the tag: ' + r.label_text }));
+  if (r.confidence < 0.6) card.append(el('p', { class: 'muted small', text: 'Try a closer photo of one fish, or include its name tag. Fish look different when they are stressed in store tanks.' }));
+  const alts = r.alternatives.map((x) => lookupSpecies(x) ? lookupSpecies(x).n : x).filter((x) => canonKey(x) !== canonKey(fc.name));
+  if (alts.length) {
+    card.append(el('p', { class: 'label', text: 'Could also be' }),
+      el('div', { class: 'chips ideas' }, ...alts.map((x) => el('button', { type: 'button', class: 'chip-btn', text: x, onclick: () => {
+        fc.name = x; const h = lookupSpecies(x); fc.count = h && h.c && h.c.s > 1 ? h.c.s : 1; renderFishCheck();
+      } }))));
+  }
+  const care = entry && entry.c ? entry : null;
+  if (care) {
+    card.append(el('div', { class: 'facts' }, ...speciesFacts(care).slice(0, 8).map((row) => factRow(row[0], row[1]))));
+    if (care.c.n) card.append(el('p', { class: 'muted small', text: care.c.n }));
+  } else {
+    card.append(el('p', { class: 'muted', text: 'I do not have care details for this one yet. Before you buy, ask the store for its adult size, the smallest tank it needs and whether it gets along with other fish.' }));
+  }
+
+  if (t && care) {
+    const counter = el('div', { class: 'card-head' },
+      el('span', { class: 'label', text: 'How many would you buy?' }),
+      el('div', { class: 'stepper' },
+        el('button', { type: 'button', class: 'round', 'aria-label': 'One fewer', text: '\u2212', onclick: () => { fc.count = Math.max(1, fc.count - 1); renderFishCheck(); } }),
+        el('span', { class: 'count', text: String(fc.count) }),
+        el('button', { type: 'button', class: 'round', 'aria-label': 'One more', text: '+', onclick: () => { fc.count = Math.min(60, fc.count + 1); renderFishCheck(); } })));
+    const v = fishVerdict(t, fc.name, fc.count);
+    const bad = v.fresh.some((i) => i.level === 'bad');
+    card.append(el('h2', { class: 'dream-list-h', text: 'Will it work in ' + tankLabel(t) + '?' }), counter,
+      el('div', { class: 'water-line' }, el('strong', { text: 'Verdict' }),
+        !v.fresh.length ? el('span', { class: 'pill ok', text: 'Looks good' }) : el('span', { class: 'pill ' + (bad ? 'bad' : 'warn'), text: bad ? 'Not a good fit' : v.fresh.length + (v.fresh.length === 1 ? ' thing to know' : ' things to know') })),
+      v.fresh.length ? issueList(v.fresh.slice(0, 5)) : el('p', { class: 'muted small', text: 'No new problems with what you keep now.' }),
+      stockBar(v.tmp), el('p', { class: 'muted small', text: 'Stocking shown with ' + fc.count + ' added.' }));
+    const have = t.fish.find((f) => canonKey(f.name) === canonKey(fc.name));
+    if (have) card.append(el('p', { class: 'muted small', text: 'You already have ' + have.count + ' in this tank.' }));
+  } else if (!t && care) {
+    card.append(el('p', { class: 'muted small', text: 'Add a tank on the home screen to see whether this fish fits.' }));
+  }
+
+  const buttons = el('div', { class: 'row photo-actions' });
+  if (t) buttons.append(el('button', { type: 'button', class: 'btn primary', text: 'Add to ' + tankLabel(t), onclick: () => {
+    addToTank(t, fc.name, fc.count, 'add', r.kind);
+    saveState();
+    toast('Added ' + fc.count + ' ' + fc.name + ' to ' + tankLabel(t) + '.');
+    renderFishCheck();
+  } }));
+  if (entry) buttons.append(el('button', { type: 'button', class: 'btn', text: 'Full details', onclick: () => showSpecies(fc.name, t ? t.id : '') }));
+  card.append(buttons, el('p', { class: 'muted small', text: 'General guidance, and the AI can be wrong about which species it is. Confirm with the store before you buy.' }));
+  const cl = fishCheckCostLine(fc);
+  if (cl) card.append(el('p', { class: 'muted small cost-line', text: cl }));
+  body.append(card);
+}
+
+['fishcheck-camera', 'fishcheck-gallery'].forEach((id) => $(id).addEventListener('change', (event) => {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (file) startFishCheck(file);
+}));
+$('fishcheck-back').addEventListener('click', () => showView('home'));
+$('home-fishcheck').addEventListener('click', () => { fishCheck = null; showView('fishcheck'); });
 
 // ---------- Dream Tank ----------
 const DREAM_MONTHLY = 10;

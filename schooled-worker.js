@@ -253,6 +253,46 @@ function sanitize(parsed) {
   };
 }
 
+// ---------- Fish Check: one fish photographed in a store ----------
+const FISH_PROMPT =
+  'This photo was taken in a pet store or fish shop. Identify the ONE animal or plant that is most prominent or closest to the center. ' +
+  'If a name tag, price tag or label is clearly readable near it, read it and use it as strong evidence, and copy the text you read into label_text. ' +
+  'Do not guess from the other fish in the background. Give the common name hobbyists use, the scientific name only if you are reasonably sure, ' +
+  'the kind, a confidence from 0 to 1, and up to three alternatives when it could be a lookalike. ' +
+  'If you cannot see a single clear animal or plant, say so in note and keep confidence low. If it is not an aquarium animal or plant, set is_aquarium to false.';
+
+const FISH_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    is_aquarium: { type: 'BOOLEAN' },
+    common_name: { type: 'STRING' },
+    scientific_name: { type: 'STRING' },
+    kind: { type: 'STRING', enum: KINDS },
+    confidence: { type: 'NUMBER' },
+    alternatives: { type: 'ARRAY', items: { type: 'STRING' } },
+    label_text: { type: 'STRING' },
+    note: { type: 'STRING' }
+  },
+  required: ['is_aquarium', 'common_name', 'kind', 'confidence']
+};
+
+function sanitizeFish(parsed) {
+  const name = clean(parsed.common_name, 60);
+  const alts = (Array.isArray(parsed.alternatives) ? parsed.alternatives : []).map((x) => clean(x, 60)).filter((x) => x && x.toLowerCase() !== name.toLowerCase()).slice(0, 3);
+  return {
+    fish: {
+      is_aquarium: parsed.is_aquarium !== false && !!name,
+      common_name: name,
+      scientific_name: clean(parsed.scientific_name, 80),
+      kind: KINDS.includes(parsed.kind) ? parsed.kind : 'fish',
+      confidence: Math.min(1, Math.max(0, Number(parsed.confidence) || 0)),
+      alternatives: alts,
+      label_text: clean(parsed.label_text, 80),
+      note: clean(parsed.note, 160)
+    }
+  };
+}
+
 async function scan(request, env, origin) {
   if (!env.GEMINI_API_KEY) return json({ ok: false, error: 'server_not_configured' }, 500, origin);
 
@@ -277,7 +317,8 @@ async function scan(request, env, origin) {
   }
   if (total > MAX_TOTAL_CHARS) return json({ ok: false, error: 'too_large' }, 413, origin);
 
-  const mode = ['single', 'zoom', 'verify'].includes(body.mode) ? body.mode : (list.length > 1 ? 'zoom' : 'single');
+  const mode = ['single', 'zoom', 'verify', 'fish'].includes(body.mode) ? body.mode : (list.length > 1 ? 'zoom' : 'single');
+  if (mode === 'fish' && list.length !== 1) return json({ ok: false, error: 'bad_image' }, 400, origin);
   const tankType = Object.prototype.hasOwnProperty.call(TYPE_NOTES, body.tank_type) ? body.tank_type : '';
   let items = [];
   if (mode === 'verify') {
@@ -290,7 +331,7 @@ async function scan(request, env, origin) {
     if (!items.length || items.length !== list.length) return json({ ok: false, error: 'bad_image' }, 400, origin);
   }
   // Names of what the person already keeps in this tank. Cleaned hard, because it goes into the prompt.
-  const known = (Array.isArray(body.known) ? body.known : [])
+  const known = (mode === 'fish' ? [] : (Array.isArray(body.known) ? body.known : []))
     .filter((s) => typeof s === 'string')
     .map((s) => s.replace(/[^\p{L}\p{N} '.()\/-]/gu, '').trim().slice(0, 60))
     .filter(Boolean)
@@ -307,12 +348,12 @@ async function scan(request, env, origin) {
       }
       const part = { inline_data: { mime_type: mime, data } };
       if (withRes && mode === 'single') part.media_resolution = { level: 'MEDIA_RESOLUTION_ULTRA_HIGH' };
-      if (withRes && mode === 'verify') part.media_resolution = { level: 'MEDIA_RESOLUTION_HIGH' };
+      if (withRes && (mode === 'verify' || mode === 'fish')) part.media_resolution = { level: 'MEDIA_RESOLUTION_HIGH' };
       parts.push(part);
     });
     return parts;
   }
-  const basePrompt = mode === 'verify' ? VERIFY_PROMPT : (mode === 'zoom' ? PROMPT + ' ' + ZOOM_NOTE : PROMPT);
+  const basePrompt = mode === 'verify' ? VERIFY_PROMPT : mode === 'fish' ? FISH_PROMPT : (mode === 'zoom' ? PROMPT + ' ' + ZOOM_NOTE : PROMPT);
   const nameCodes = tankType === 'Saltwater' ? ['s'] : tankType === 'Brackish' ? ['b', 'f'] : ['f'];
   const nameList = [];
   nameCodes.forEach((c) => (DB.nm && DB.nm[c] || []).forEach((n) => { if (nameList.indexOf(n) === -1) nameList.push(n); }));
@@ -325,7 +366,7 @@ async function scan(request, env, origin) {
   const started = Date.now();
 
   async function ask(model, withThinking, ms, withRes) {
-    const generationConfig = { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : SCHEMA };
+    const generationConfig = { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : mode === 'fish' ? FISH_SCHEMA : SCHEMA };
     if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
     const payload = {
       systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
@@ -381,7 +422,7 @@ async function scan(request, env, origin) {
     data = await upstream.json();
     const text = data.candidates[0].content.parts.map((p) => p.text || '').join('');
     const parsedReply = JSON.parse(text);
-    const result = mode === 'verify' ? { items: sanitizeVerify(parsedReply, items.length) } : sanitize(parsedReply);
+    const result = mode === 'verify' ? { items: sanitizeVerify(parsedReply, items.length) } : mode === 'fish' ? sanitizeFish(parsedReply) : sanitize(parsedReply);
     const u = data.usageMetadata || {};
     const usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
     return json(Object.assign({ ok: true, model: usedModel, usage, mode }, result), 200, origin);
@@ -584,7 +625,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 16: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 17: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {
