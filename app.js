@@ -8,8 +8,11 @@ const WORKER_URL = 'https://schooled-worker.ericwoodliff.workers.dev';
 const STORE_KEY = 'schooled.v1';
 const MAX_PHOTO_SIDE = 1280; // preview and zoom-set whole picture
 const SINGLE_SIDE = 2048; // the one sharp picture sent first
-const MAX_ZOOM_SIDE = 1024; // each zoomed piece
-const MIN_SIDE_FOR_ZOOM = 1500; // smaller photos have no extra detail to zoom into
+const MAX_VERIFY = 6; // most kinds double-checked with close-ups in one scan
+const MONTAGE_CROP_MIN = 200; // close-ups are shown to the AI at least this big (pixels)
+const MONTAGE_CROP_MAX = 480;
+const MONTAGE_MAX_W = 1400;
+const KIND_LIST = ['fish', 'shrimp', 'snail', 'plant', 'coral', 'invert', 'other'];
 
 // ---------- Small helpers ----------
 const $ = (id) => document.getElementById(id);
@@ -34,7 +37,9 @@ const KIND_ICONS = {
   fish: ['M3 12c3-4.5 8-5.5 12-2.5l5-2.5v10l-5-2.5c-4 3-9 2-12-2.5z'],
   plant: ['M12 21V9', 'M12 13c-4 0-6-2.5-6-6 4 0 6 2 6 6z', 'M12 16c4 0 6-2.5 6-6-4 0-6 2-6 6z'],
   shrimp: ['M5 8c0-2.5 3-4 6-3 4 1.2 7 4.5 7 9 0 2-1 4-3 5', 'M5 8c0 2 1.5 3 3.5 3', 'M15 19l-3 1.5'],
-  snail: ['M5 19h14', 'M16 19c2.5 0 3-2.5 3-4a7 7 0 1 0-7 4', 'M12 15a2.5 2.5 0 1 1 2.5-2.5', 'M5 19c0-2 .5-4 2-5']
+  snail: ['M5 19h14', 'M16 19c2.5 0 3-2.5 3-4a7 7 0 1 0-7 4', 'M12 15a2.5 2.5 0 1 1 2.5-2.5', 'M5 19c0-2 .5-4 2-5'],
+  coral: ['M12 21v-8', 'M12 13c-3 0-5-2-5-5', 'M12 13c3 0 5-2 5-5', 'M7 8c0-2 1-3 1-5', 'M17 8c0-2-1-3-1-5', 'M12 13V4'],
+  invert: ['M12 3l2.6 5.6 6.1.8-4.5 4.2 1.1 6-5.3-3-5.3 3 1.1-6L3.3 9.4l6.1-.8z']
 };
 function kindIcon(kind) {
   const paths = KIND_ICONS[kind] || KIND_ICONS.fish;
@@ -56,8 +61,55 @@ function kindIcon(kind) {
   return svg;
 }
 function kindAvatar(kind) {
-  const safe = ['fish', 'plant', 'shrimp', 'snail'].includes(kind) ? kind : 'other';
+  const safe = ['fish', 'plant', 'shrimp', 'snail', 'coral', 'invert'].includes(kind) ? kind : 'other';
   return el('span', { class: 'avatar ' + safe }, kindIcon(safe));
+}
+
+// ---------- Species database (names, look-alike groups, autocomplete) ----------
+const DB = { ready: false, list: [], byKey: new Map(), groups: {} };
+
+function normKey(text) {
+  return String(text).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['\u2019]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+async function loadSpecies() {
+  try {
+    const res = await fetch('species.json');
+    const data = await res.json();
+    if (!data || !Array.isArray(data.species)) return;
+    DB.list = data.species;
+    DB.groups = data.groups || {};
+    DB.byKey = new Map();
+    DB.list.forEach((e) => {
+      [e.n, e.s].concat(e.a || []).forEach((key) => {
+        const k = normKey(key);
+        if (k && !DB.byKey.has(k)) DB.byKey.set(k, e);
+      });
+    });
+    DB.ready = true;
+  } catch (err) { /* the app works without the list, with plainer names */ }
+}
+
+function lookupSpecies(name) {
+  return DB.byKey.get(normKey(name)) || null;
+}
+
+// Same species whatever the spelling: "cardinals", "Cardinal Tetra" and its scientific name all match.
+function canonKey(name) {
+  const hit = lookupSpecies(name);
+  return normKey(hit ? hit.n : name);
+}
+
+function usableScientific(entry) {
+  return entry && /\s/.test(entry.s) && !/\bsp\.$/.test(entry.s) ? entry.s : '';
+}
+
+let speciesListType = null;
+function fillSpeciesList(type) {
+  if (!DB.ready || speciesListType === type) return;
+  speciesListType = type;
+  const codes = type === 'Saltwater' ? ['s'] : type === 'Brackish' ? ['b', 'f'] : ['f'];
+  $('species-list').replaceChildren(...DB.list.filter((e) => codes.some((c) => e.w.includes(c))).map((e) => el('option', { value: e.n })));
 }
 
 // ---------- Saved data (stays on the phone) ----------
@@ -92,7 +144,11 @@ function cleanFish(list) {
   if (!Array.isArray(list)) return [];
   return list
     .filter((f) => f && typeof f.name === 'string' && f.name.trim())
-    .map((f) => ({ name: f.name.trim().slice(0, 60), count: Math.min(999, Math.max(1, Math.round(Number(f.count)) || 1)) }));
+    .map((f) => {
+      const item = { name: f.name.trim().slice(0, 60), count: Math.min(999, Math.max(1, Math.round(Number(f.count)) || 1)) };
+      if (KIND_LIST.includes(f.kind)) item.kind = f.kind;
+      return item;
+    });
 }
 
 // Accepts anything from storage and returns a safe tank (or null).
@@ -238,17 +294,20 @@ function ensureTank() {
   return t;
 }
 
-function addToTank(tank, name, count, mode) {
-  const clean = name.trim().slice(0, 60);
+function addToTank(tank, name, count, mode, kind) {
+  let clean = name.trim().slice(0, 60);
   if (!clean) return;
-  const key = clean.toLowerCase();
-  const existing = tank.fish.find((f) => f.name.toLowerCase() === key);
+  const hit = lookupSpecies(clean);
+  if (hit) { clean = hit.n; kind = kind || hit.k; }
+  const key = canonKey(clean);
+  const existing = tank.fish.find((f) => canonKey(f.name) === key);
   if (existing) {
+    if (kind && !existing.kind) existing.kind = kind;
     if (mode === 'add') existing.count = Math.min(999, existing.count + count);
     else if (mode === 'scan') existing.count = Math.max(existing.count, count); // a scan can only add or confirm, never lower
     else existing.count = count;
   }
-  else tank.fish.push({ name: clean, count });
+  else tank.fish.push(kind && KIND_LIST.includes(kind) ? { name: clean, count, kind } : { name: clean, count });
 }
 
 function totalFish(tank) {
@@ -602,6 +661,7 @@ function sizePill(t) {
 function renderTank() {
   const t = getTank(openTankId);
   if (!t) { showView('tanks'); return; }
+  fillSpeciesList(TYPES.includes(t.type) ? t.type : 'Freshwater');
 
   $('tank-hero').replaceChildren(t.photo
     ? el('img', { src: t.photo, alt: 'Photo of ' + tankLabel(t) })
@@ -831,32 +891,6 @@ function makeSingle(image) {
   return { images: [sharp.split(',')[1]], previewUrl: preview };
 }
 
-function canZoom(image) {
-  return Math.max(image.width, image.height) >= MIN_SIDE_FOR_ZOOM;
-}
-
-// The closer look: the whole tank plus overlapping zoomed pieces, so small and far fish keep their detail.
-function makeZoomSet(image) {
-  const W = image.width;
-  const H = image.height;
-  const images = [drawToJpeg(image.source, 0, 0, W, H, MAX_PHOTO_SIDE, 0.82).split(',')[1]];
-  const landscape = W >= H * 1.3;
-  const cols = landscape ? 3 : 2;
-  const rows = 2;
-  const overlap = 0.2;
-  const tileW = W / (cols - (cols - 1) * overlap);
-  const tileH = H / (rows - (rows - 1) * overlap);
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const sx = Math.min(W - tileW, c * tileW * (1 - overlap));
-      const sy = Math.min(H - tileH, r * tileH * (1 - overlap));
-      const piece = drawToJpeg(image.source, Math.max(0, sx), Math.max(0, sy), tileW, tileH, MAX_ZOOM_SIDE, 0.85);
-      images.push(piece.split(',')[1]);
-    }
-  }
-  return images;
-}
-
 // ---------- Photo quality check (free, runs on the phone) ----------
 // Only catches clearly dark or clearly blurry photos, so it never nags about a decent shot.
 function photoQualityTip(image) {
@@ -907,11 +941,15 @@ function friendlyError(code, status) {
   }
 }
 
-async function askWorker(images, mode, timeoutMs, known) {
+async function askWorker(images, mode, timeoutMs, ctx) {
+  ctx = ctx || {};
+  const body = { images, mime: 'image/jpeg', mode, known: ctx.known || [] };
+  if (ctx.tank_type) body.tank_type = ctx.tank_type;
+  if (ctx.items) body.items = ctx.items;
   const res = await fetch(WORKER_URL + '/scan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ images, mime: 'image/jpeg', mode, known: known || [] }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs)
   });
   const data = await res.json().catch(() => ({}));
@@ -923,62 +961,149 @@ async function askWorker(images, mode, timeoutMs, known) {
   return data;
 }
 
-// A cheap first look is not always enough: far-away or hard-to-read tanks get a closer look.
-function needsCloserLook(data) {
-  const unsure = (data.species || []).filter((s) => s.kind !== 'plant' && s.confidence < 0.6).length;
-  return data.is_aquarium !== false && (data.too_far === true || unsure >= 2);
-}
-
-// Fish that are easy to mix up from a photo. A photo alone can't be "Sure" about these, and a lookalike
-// that is already in the tank goes first in the "Could also be" list.
-const LOOKALIKES = [
-  ['neon tetra', 'cardinal tetra', 'green neon tetra'],
-  ['siamese algae eater', 'chinese algae eater', 'flying fox'],
-  ['guppy', "endler's livebearer"]
-];
 function titleCase(text) {
   return text.replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/'S\b/g, "'s");
 }
-function lookalikeGuard(sp) {
-  if (sp.kind === 'plant') return;
-  const key = sp.name.trim().toLowerCase();
-  const group = LOOKALIKES.find((g) => g.includes(key));
-  if (!group) return;
-  const tank = getTank(pending && pending.tankId);
-  const have = (n) => !!tank && tank.fish.some((f) => f.name.trim().toLowerCase() === n);
-  const inTank = group.filter((n) => n !== key && have(n));
-  const seen = new Set([key]);
-  const alts = [];
-  [...inTank, ...(sp.alternatives || []), ...group.filter((n) => n !== key)].forEach((n) => {
-    const k = String(n).trim().toLowerCase();
-    if (k && !seen.has(k)) { seen.add(k); alts.push(group.includes(k) ? titleCase(k) : String(n).trim()); }
+function canonName(name) {
+  const hit = lookupSpecies(name);
+  return hit ? hit.n : String(name).trim().slice(0, 60);
+}
+function canonList(list) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(list) ? list : []).forEach((n) => {
+    const c = canonName(n || '');
+    const k = canonKey(c);
+    if (c && !seen.has(k)) { seen.add(k); out.push(c); }
   });
-  sp.alternatives = alts.slice(0, 3);
-  sp.tankMatches = inTank.map(titleCase);
-  sp.confidence = Math.min(sp.confidence, inTank.length ? 0.7 : 0.8);
+  return out;
 }
 
-function applyResult(data, mode, tokensSoFar) {
+// Fish that look alike get a tell-apart tip, and a photo alone can't be "Sure" about the hard groups.
+// A look-alike already in the tank goes first in "Could also be".
+function lookalikeGuard(sp) {
+  if (!DB.ready || sp.kind === 'plant' || !sp.group || !DB.groups[sp.group]) return;
+  const group = DB.groups[sp.group];
+  const tank = getTank(pending && pending.tankId);
+  const key = canonKey(sp.name);
+  const members = DB.list.filter((e) => e.g === sp.group && normKey(e.n) !== key);
+  const inTank = members.filter((e) => tank && tank.fish.some((f) => canonKey(f.name) === normKey(e.n)));
+  const seen = new Set([key]);
+  const alts = [];
+  inTank.map((e) => e.n).concat(sp.alternatives || [], members.map((e) => e.n)).forEach((n) => {
+    const k = canonKey(n);
+    if (n && !seen.has(k)) { seen.add(k); alts.push(n); }
+  });
+  sp.alternatives = alts.slice(0, 3);
+  sp.tankMatches = inTank.map((e) => e.n);
+  if (group.h && !sp.verified) sp.confidence = Math.min(sp.confidence, inTank.length ? 0.7 : 0.8);
+}
+
+function mergeDuplicates() {
+  const out = [];
+  pending.species.forEach((sp) => {
+    const same = out.find((o) => canonKey(o.name) === canonKey(sp.name) && o.kind === sp.kind);
+    if (!same) { out.push(sp); return; }
+    same.count = Math.min(999, same.count + sp.count);
+    same.confidence = Math.max(same.confidence, sp.confidence);
+    same.verified = same.verified || sp.verified;
+    same.boxes = (same.boxes || []).concat(sp.boxes || []).slice(0, 3);
+  });
+  pending.species = out;
+}
+
+function applyResult(data, mode) {
   if (data.is_aquarium === false) {
     pending.error = "That doesn't look like an aquarium. Try a photo of your tank.";
   } else if (!data.species || !data.species.length) {
-    pending.error = "Couldn't spot any fish or plants. Try getting closer, with less glare.";
+    pending.error = "Couldn't spot any fish, plants or corals. Try getting closer, with less glare.";
   }
-  pending.species = (data.species || []).map((s) => ({
-    name: s.common_name,
-    scientific: s.scientific_name || '',
-    kind: s.kind || 'fish',
-    count: s.count,
-    confidence: s.confidence,
-    alternatives: Array.isArray(s.alternatives) ? s.alternatives : [],
-    editing: false
-  }));
+  pending.species = (data.species || []).map((s) => {
+    const hit = lookupSpecies(s.common_name);
+    const kind = hit && KIND_LIST.includes(hit.k) ? hit.k : (s.kind || 'fish');
+    return {
+      name: hit ? hit.n : s.common_name,
+      scientific: usableScientific(hit) || s.scientific_name || '',
+      kind,
+      group: hit && hit.g ? hit.g : '',
+      count: s.count,
+      confidence: s.confidence,
+      alternatives: canonList(s.alternatives).filter((n) => canonKey(n) !== canonKey(hit ? hit.n : s.common_name)),
+      boxes: Array.isArray(s.boxes) ? s.boxes : [],
+      verified: false,
+      editing: false
+    };
+  });
+  mergeDuplicates();
   pending.species.forEach(lookalikeGuard);
   pending.tips = data.photo_tips || '';
   if (data.too_far && !pending.tips) pending.tips = 'Some fish look small here, so names may be off. Try again from closer, or photograph one end of the tank at a time.';
-  const used = data.usage ? (data.usage.input + data.usage.output) : 0;
-  pending.debug = data.model ? 'Read by ' + data.model + ' (' + (mode || data.mode) + ' scan' + (data.usage ? ', ' + data.usage.input + ' in, ' + data.usage.output + ' out tokens' : '') + (tokensSoFar ? '; first look used ' + tokensSoFar + ' more' : '') + ')' : '';
-  return used;
+  pending.debug = data.model ? 'Read by ' + data.model + ' (' + (mode || data.mode) + ' scan' + (data.usage ? ', ' + data.usage.input + ' in, ' + data.usage.output + ' out tokens' : '') + ')' : '';
+}
+
+// ---------- Find, then zoom in ----------
+const VERIFY_MAX = 6;
+function needsVerify(sp) {
+  const group = sp.group && DB.groups[sp.group];
+  if (!(sp.kind === 'fish' || sp.kind === 'coral' || sp.kind === 'invert' || group)) return false;
+  if (!sp.boxes || !sp.boxes.length) return false;
+  return sp.confidence < 0.9 || !!(group && group.h) || !lookupSpecies(sp.name);
+}
+
+// Boxes are [ymin, xmin, ymax, xmax] from 0 to 1000. Pad them so the fish isn't cut off.
+function cropRect(box, W, H) {
+  let x1 = box[1] / 1000 * W, x2 = box[3] / 1000 * W, y1 = box[0] / 1000 * H, y2 = box[2] / 1000 * H;
+  const padX = (x2 - x1) * 0.3, padY = (y2 - y1) * 0.3;
+  x1 = Math.max(0, x1 - padX); x2 = Math.min(W, x2 + padX);
+  y1 = Math.max(0, y1 - padY); y2 = Math.min(H, y2 + padY);
+  return { x: x1, y: y1, w: Math.max(16, x2 - x1), h: Math.max(16, y2 - y1) };
+}
+
+// Up to three close-ups of the same kind of animal, side by side in one picture.
+function makeMontage(image, boxes) {
+  const tiles = boxes.slice().sort((a, b) => (b[2] - b[0]) * (b[3] - b[1]) - (a[2] - a[0]) * (a[3] - a[1])).slice(0, 3).map((box) => {
+    const r = cropRect(box, image.width, image.height);
+    const scale = Math.min(2.5, 480 / Math.max(r.w, r.h));
+    return { r, w: Math.max(8, Math.round(r.w * scale)), h: Math.max(8, Math.round(r.h * scale)) };
+  });
+  const gap = 6;
+  let width = tiles.reduce((sum, t) => sum + t.w, 0) + gap * (tiles.length - 1);
+  const shrink = width > 1400 ? 1400 / width : 1;
+  width = Math.round(width * shrink);
+  const height = Math.round(Math.max(...tiles.map((t) => t.h)) * shrink);
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#222';
+  ctx.fillRect(0, 0, width, height);
+  let x = 0;
+  tiles.forEach((t) => {
+    const dw = Math.round(t.w * shrink), dh = Math.round(t.h * shrink);
+    ctx.drawImage(image.source, t.r.x, t.r.y, t.r.w, t.r.h, x, 0, dw, dh);
+    x += dw + Math.round(gap * shrink);
+  });
+  return canvas.toDataURL('image/jpeg', 0.88).split(',')[1];
+}
+
+function applyVerified(targets, data) {
+  (data.items || []).forEach((it) => {
+    const sp = targets[it.index];
+    if (!sp) return;
+    if (it.confidence >= 0.45 && !/^unidentified/i.test(it.common_name)) {
+      const hit = lookupSpecies(it.common_name);
+      sp.name = hit ? hit.n : it.common_name;
+      sp.scientific = usableScientific(hit) || it.scientific_name || '';
+      if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k;
+      sp.group = hit && hit.g ? hit.g : '';
+      sp.confidence = it.confidence;
+      sp.alternatives = canonList(it.alternatives).filter((n) => canonKey(n) !== canonKey(sp.name));
+      sp.verified = true;
+    } else {
+      sp.confidence = Math.min(sp.confidence, 0.5); // the close-ups didn't back up the first guess
+    }
+  });
+  mergeDuplicates();
+  pending.species.forEach(lookalikeGuard);
 }
 
 function showScanError(err) {
@@ -1004,23 +1129,24 @@ async function startScan(file) {
     pending.photoUrl = single.previewUrl;
     renderResults();
 
-    let data = await askWorker(single.images, 'single', 60000, known);
-    let mode = 'single';
-    let firstTokens = 0;
+    const ctx = { known, tank_type: target && TYPES.includes(target.type) ? target.type : '' };
+    const data = await askWorker(single.images, 'single', 60000, ctx);
+    applyResult(data, 'single');
 
-    if (needsCloserLook(data) && canZoom(image)) {
-      firstTokens = data.usage ? data.usage.input + data.usage.output : 0;
-      pending.loadingNote = 'Taking a closer look at the small fish…';
+    const targets = pending.species.filter(needsVerify).sort((a, b) => a.confidence - b.confidence).slice(0, VERIFY_MAX);
+    if (targets.length) {
+      pending.loadingNote = 'Zooming in on the fish that are hard to tell apart\u2026';
       renderResults();
       try {
-        data = await askWorker(makeZoomSet(image), 'zoom', 75000, known);
-        mode = 'zoom';
-      } catch (zoomError) {
+        const montages = targets.map((sp) => makeMontage(image, sp.boxes));
+        const items = targets.map((sp) => ({ name: sp.name, kind: sp.kind, count: sp.count, alternatives: sp.alternatives }));
+        const checked = await askWorker(montages, 'verify', 75000, Object.assign({ items }, ctx));
+        applyVerified(targets, checked);
+        if (checked.usage) pending.debug += '; zoom-in check on ' + targets.length + ': ' + checked.usage.input + ' in, ' + checked.usage.output + ' out';
+      } catch (verifyError) {
         // Keep the first look if the closer look fails.
-        firstTokens = 0;
       }
     }
-    applyResult(data, mode, mode === 'zoom' ? firstTokens : 0);
     if (qualityTip) pending.tips = pending.tips ? pending.tips + ' ' + qualityTip : qualityTip;
   } catch (err) {
     showScanError(err);
@@ -1115,7 +1241,7 @@ $('results-tank').addEventListener('change', () => {
 
 function inTankHint(sp) {
   const target = getTank(pending && pending.tankId);
-  const have = target && target.fish.find((f) => f.name.toLowerCase() === sp.name.trim().toLowerCase());
+  const have = target && target.fish.find((f) => canonKey(f.name) === canonKey(sp.name));
   if (!have) return el('span', { class: 'hint-new', text: 'New to your tank' });
   return el('span', { class: 'hint-have', text: have.count >= sp.count ? 'Already in your tank (' + have.count + ')' : 'Raises your count from ' + have.count });
 }
@@ -1128,8 +1254,12 @@ function resultRow(sp) {
         el('span', { class: 'sub', text: 'Could also be:' }),
         ...alts.map((n) => el('button', {
           type: 'button', class: 'alt-chip', text: n + ((sp.tankMatches || []).includes(n) ? ' · in your tank' : ''),
-          onclick: () => { sp.name = n; sp.scientific = ''; sp.alternatives = []; sp.confidence = 1; renderResults(); }
+          onclick: () => { const hit = lookupSpecies(n); sp.name = n; sp.scientific = usableScientific(hit); if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k; sp.group = hit && hit.g ? hit.g : ''; sp.alternatives = []; sp.confidence = 1; sp.verified = true; renderResults(); }
         })))
+    : null;
+  const grp = sp.group && DB.groups[sp.group];
+  const tellRow = grp && grp.tip && sp.confidence < 0.95
+    ? el('details', { class: 'tell' }, el('summary', { text: 'How to tell them apart' }), el('p', { text: grp.tip }))
     : null;
   return el('div', { class: 'item' },
     kindAvatar(sp.kind),
@@ -1140,14 +1270,15 @@ function resultRow(sp) {
         el('span', { class: 'pill ' + tone, text: label }),
         sp.scientific ? el('span', { class: 'sub sci', text: sp.scientific }) : (sp.kind ? el('span', { class: 'sub', text: sp.kind }) : null)
       ),
-      altRow
+      altRow,
+      tellRow
     ),
     el('button', { type: 'button', class: 'btn small', text: 'Edit', onclick: () => { sp.editing = true; renderResults(); } })
   );
 }
 
 function editRow(sp, index) {
-  const nameInput = el('input', { type: 'text', value: sp.name, maxlength: 60, 'aria-label': 'Name' });
+  const nameInput = el('input', { type: 'text', value: sp.name, maxlength: 60, 'aria-label': 'Name', list: 'species-list', autocomplete: 'off' });
   const countInput = el('input', { type: 'number', value: sp.count, min: 1, max: 999, 'aria-label': 'How many', style: 'max-width: 90px' });
   return el('div', { class: 'item edit-row' },
     nameInput,
@@ -1157,7 +1288,7 @@ function editRow(sp, index) {
       onclick: () => {
         const name = nameInput.value.trim();
         const count = Math.round(Number(countInput.value));
-        if (name) sp.name = name.slice(0, 60);
+        if (name) { const hit = lookupSpecies(name); sp.name = hit ? hit.n : name.slice(0, 60); sp.group = hit && hit.g ? hit.g : ''; if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k; }
         if (count >= 1 && count <= 999) sp.count = count;
         sp.confidence = 1; // the user checked it
         sp.editing = false;
@@ -1174,7 +1305,7 @@ function editRow(sp, index) {
 $('save-scan').addEventListener('click', () => {
   if (!pending) return;
   const target = getTank(pending.tankId) || ensureTank();
-  pending.species.forEach((sp) => addToTank(target, sp.name, sp.count, 'scan'));
+  pending.species.forEach((sp) => addToTank(target, sp.name, sp.count, 'scan', sp.kind));
   saveState();
   pending = null;
   showTank(target.id);
@@ -1187,4 +1318,8 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+loadSpecies().then(() => {
+  const t = activeTank();
+  fillSpeciesList(t && TYPES.includes(t.type) ? t.type : 'Freshwater');
+});
 showView(state.setupDone ? 'home' : 'setup');

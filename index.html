@@ -206,7 +206,7 @@
     <h2 class="section">Fish and plants</h2>
     <div id="tank-list" class="list"></div>
     <form id="add-form" class="addrow">
-      <input id="add-name" type="text" maxlength="60" placeholder="Add a fish or plant by name" aria-label="Add a fish or plant by name" autocomplete="off">
+      <input id="add-name" type="text" list="species-list" maxlength="60" placeholder="Add a fish or plant by name" aria-label="Add a fish or plant by name" autocomplete="off">
       <button type="submit" class="btn">Add</button>
     </form>
 
@@ -215,7 +215,8 @@
 
 </main>
 
-<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<datalist id="species-list"></datalist>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <nav id="nav" aria-label="Main" hidden>
   <button type="button" data-view="home">

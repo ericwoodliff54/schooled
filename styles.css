@@ -196,6 +196,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .avatar.plant { background: #E1F4E7; color: #1B7A45; }
 .avatar.shrimp, .avatar.snail { background: #FFEEDD; color: #A04A12; }
+.avatar.coral { background: #FFE4E8; color: #B3243F; }
+.avatar.invert { background: #E6EEFF; color: #2F52B8; }
 .avatar.other { background: #EEF0F6; color: #4A5A86; }
 
 .pill {
@@ -624,3 +626,7 @@ input::placeholder { color: #8DA3A9; }
 }
 .toast[hidden] { display: none; }
 .tank-card-img.empty { aspect-ratio: 16 / 5; }
+
+.tell { margin-top: 6px; font-size: 13px; color: #4A5A86; }
+.tell summary { cursor: pointer; font-weight: 600; }
+.tell p { margin: 6px 0 0; line-height: 1.4; }
