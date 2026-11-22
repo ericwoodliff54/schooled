@@ -1745,7 +1745,8 @@ function speciesFacts(e) {
   }
   const rows = [['Adult size', c.z + ' in'], ['Smallest tank', c.g + ' gal'], ['Temperature', temp], ['pH', ph]];
   if (TEMPER[c.m]) rows.push(['Temperament', TEMPER[c.m]]);
-  if (DIET[c.d]) rows.push(['Diet', DIET[c.d]]);
+  if (c.f) rows.push(['Eats', c.f]);
+  else if (DIET[c.d]) rows.push(['Diet', DIET[c.d]]);
   if (ZONE_FISH[c.y]) rows.push(['Lives in', ZONE_FISH[c.y]]);
   if (e.k === 'fish' || e.k === 'shrimp') rows.push(['Group size', c.s > 1 ? c.s + ' or more' : 'Fine on its own']);
   rows.push(['Care level', LEVEL[c.l]]);
@@ -1957,6 +1958,31 @@ function fishVerdict(t, name, count) {
   return { tmp, fresh };
 }
 
+const HEALTH_LOOK = {
+  healthy: ['Looks healthy', 'ok'],
+  some_concerns: ['Some concerns', 'warn'],
+  unwell: ['Looks unwell', 'bad'],
+  cannot_tell: ["Can't tell from this photo", 'warn']
+};
+function healthCard(h) {
+  const hh = h && HEALTH_LOOK[h.status] ? h : { status: 'cannot_tell', score: null, signs: [] };
+  const look = HEALTH_LOOK[hh.status];
+  const box = el('div', { class: 'health-box ' + look[1] });
+  box.append(el('div', { class: 'water-line' }, el('strong', { text: 'Health check' }), el('span', { class: 'pill ' + look[1], text: look[0] })));
+  if (hh.score !== null && hh.score !== undefined) {
+    box.append(el('div', { class: 'health-score' }, el('span', { class: 'health-num', text: hh.score + '/100' }),
+      el('div', { class: 'health-bar', role: 'img', 'aria-label': 'Health score ' + hh.score + ' out of 100' }, el('span', { style: 'width:' + hh.score + '%' }))));
+  }
+  if (hh.signs && hh.signs.length) box.append(el('ul', { class: 'health-signs' }, ...hh.signs.map((x) => el('li', { text: x }))));
+  const tip = hh.status === 'unwell'
+    ? 'I would pass on this one. Fish from the same tank can carry the same problem.'
+    : hh.status === 'cannot_tell'
+      ? 'Try a sharper, closer photo from the side. Watch it swim before you buy.'
+      : 'A photo cannot catch everything. Ask to see it eat, and keep new fish apart for a few weeks before adding them.';
+  box.append(el('p', { class: 'muted small', text: tip }));
+  return box;
+}
+
 function renderFishCheck() {
   const body = $('fishcheck-body');
   body.replaceChildren();
@@ -1979,6 +2005,7 @@ function renderFishCheck() {
   const card = el('div', { class: 'card dream-result' });
   card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), el('span', { class: 'pill ' + sure[1], text: sure[0] })));
   if (entry && entry.s) card.append(el('p', { class: 'muted small', text: entry.s }));
+  card.append(healthCard(r.health));
   if (r.label_text) card.append(el('p', { class: 'muted small', text: 'Read from the tag: ' + r.label_text }));
   if (r.confidence < 0.6) card.append(el('p', { class: 'muted small', text: 'Try a closer photo of one fish, or include its name tag. Fish look different when they are stressed in store tanks.' }));
   const alts = r.alternatives.map((x) => lookupSpecies(x) ? lookupSpecies(x).n : x).filter((x) => canonKey(x) !== canonKey(fc.name));

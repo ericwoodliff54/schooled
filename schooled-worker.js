@@ -259,7 +259,13 @@ const FISH_PROMPT =
   'If a name tag, price tag or label is clearly readable near it, read it and use it as strong evidence, and copy the text you read into label_text. ' +
   'Do not guess from the other fish in the background. Give the common name hobbyists use, the scientific name only if you are reasonably sure, ' +
   'the kind, a confidence from 0 to 1, and up to three alternatives when it could be a lookalike. ' +
-  'If you cannot see a single clear animal or plant, say so in note and keep confidence low. If it is not an aquarium animal or plant, set is_aquarium to false.';
+  'If you cannot see a single clear animal or plant, say so in note and keep confidence low. If it is not an aquarium animal or plant, set is_aquarium to false. ' +
+  'Also judge its visible health, only from what you can actually see. Look for: sunken belly or bloating, raised "pinecone" scales, white salt-like spots or gold dust (ich, velvet), ' +
+  'clamped, torn, frayed or white-edged fins, cloudy or bulging eyes, fuzzy patches, sores, red streaks or missing scales, rapid gill movement, hanging at the surface or sitting on the bottom, ' +
+  'tilted swimming, and very faded color. For plants look for melting, yellowing or holes; for corals look for bleaching, tissue loss or slime. ' +
+  'Store tanks have glare and stressed fish can look pale, so be fair: a pale or hiding fish with no other sign is not automatically sick. ' +
+  'Set health.status to healthy, some_concerns, unwell, or cannot_tell (blurry, too far away, hidden or glare). Set health.score from 0 to 100, where 100 means no visible problems; ' +
+  'omit it when cannot_tell. List up to four short visible signs in health.signs (only real concerns, plain words, empty when healthy).';
 
 const FISH_SCHEMA = {
   type: 'OBJECT',
@@ -271,7 +277,16 @@ const FISH_SCHEMA = {
     confidence: { type: 'NUMBER' },
     alternatives: { type: 'ARRAY', items: { type: 'STRING' } },
     label_text: { type: 'STRING' },
-    note: { type: 'STRING' }
+    note: { type: 'STRING' },
+    health: {
+      type: 'OBJECT',
+      properties: {
+        status: { type: 'STRING', enum: ['healthy', 'some_concerns', 'unwell', 'cannot_tell'] },
+        score: { type: 'NUMBER' },
+        signs: { type: 'ARRAY', items: { type: 'STRING' } }
+      },
+      required: ['status']
+    }
   },
   required: ['is_aquarium', 'common_name', 'kind', 'confidence']
 };
@@ -288,9 +303,26 @@ function sanitizeFish(parsed) {
       confidence: Math.min(1, Math.max(0, Number(parsed.confidence) || 0)),
       alternatives: alts,
       label_text: clean(parsed.label_text, 80),
-      note: clean(parsed.note, 160)
+      note: clean(parsed.note, 160),
+      health: sanitizeHealth(parsed.health)
     }
   };
+}
+
+const HEALTH_STATES = ['healthy', 'some_concerns', 'unwell', 'cannot_tell'];
+function sanitizeHealth(h) {
+  if (!h || typeof h !== 'object') return { status: 'cannot_tell', score: null, signs: [] };
+  const status = HEALTH_STATES.includes(h.status) ? h.status : 'cannot_tell';
+  let score = Number(h.score);
+  score = status === 'cannot_tell' || !isFinite(score) ? null : Math.round(Math.min(100, Math.max(0, score)));
+  // keep the score and the label in step with each other
+  if (score !== null) {
+    if (status === 'healthy') score = Math.max(score, 75);
+    else if (status === 'some_concerns') score = Math.min(74, Math.max(score, 40));
+    else score = Math.min(score, 45);
+  }
+  const signs = status === 'healthy' ? [] : (Array.isArray(h.signs) ? h.signs : []).map((x) => clean(x, 80)).filter(Boolean).slice(0, 4);
+  return { status, score, signs };
 }
 
 async function scan(request, env, origin) {
@@ -625,7 +657,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 17: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 18: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {
