@@ -141,7 +141,8 @@ async function scan(request, env, origin) {
       signal: AbortSignal.timeout(40000)
     });
   } catch (err) {
-    return json({ ok: false, error: 'ai_busy' }, 502, origin);
+    const timedOut = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
+    return json({ ok: false, error: 'ai_busy', ai_status: 0, ai_detail: timedOut ? 'Google took longer than 40 seconds to answer' : 'could not reach Google: ' + String(err && err.message || err).slice(0, 100) }, 502, origin);
   }
 
   if (!upstream.ok) {
