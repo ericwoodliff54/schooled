@@ -573,6 +573,29 @@ function tankChips(current, onPick) {
   return el('div', { class: 'chips tank-chips' }, ...state.tanks.map((x) => el('button', { type: 'button', class: 'chip-btn' + (x.id === current.id ? ' on' : ''), 'aria-pressed': x.id === current.id ? 'true' : 'false', text: tankLabel(x), onclick: () => onPick(x.id) })));
 }
 
+// A labelled drop-down for choosing which tank a check or scan is for. Works for any number of tanks.
+function tankSwitcher(current, label, onPick) {
+  if (!current || state.tanks.length < 2) return null;
+  const sel = el('select', { class: 'select', 'aria-label': label },
+    ...state.tanks.map((x) => el('option', { value: x.id, text: tankLabel(x) + (x.id === state.activeId ? ' (active)' : ''), selected: x.id === current.id })));
+  sel.addEventListener('change', () => onPick(sel.value));
+  return el('div', { class: 'tank-switch' }, el('span', { class: 'label small', text: label }), sel);
+}
+
+function setActiveTank(id) {
+  if (!getTank(id)) return;
+  state.activeId = id;
+  fishCheckTankId = '';
+  saveState();
+}
+
+function renderScanTank() {
+  const box = $('scan-tank');
+  if (!box) return;
+  box.replaceChildren();
+  putAll(box, tankSwitcher(activeTank(), 'Scanning', (id) => { setActiveTank(id); renderScanTank(); }));
+}
+
 function svgEl(tag, attrs, ...kids) {
   const n = document.createElementNS(SVG_NS, tag);
   Object.entries(attrs || {}).forEach(([k, v]) => n.setAttribute(k, String(v)));
@@ -955,6 +978,7 @@ function showView(name) {
   if (name === 'fishcheck') renderFishCheck();
   if (name === 'misses') renderMisses();
   if (name === 'scanhub') renderScanHub();
+  if (name === 'scan') renderScanTank();
   if (name === 'explore') renderExplore();
   window.scrollTo(0, 0);
 }
@@ -1275,7 +1299,7 @@ function homeTankCard(t) {
     el('span', { class: 'home-tank-text' },
       el('strong', { text: tankLabel(t) }),
       el('span', { text: [tankSummary(t), count ? count + (count === 1 ? ' animal or plant' : ' animals and plants') : 'Empty so far'].filter(Boolean).join(' \u00b7 ') }),
-      el('span', { class: 'pill ' + st.cls, text: st.text })),
+      el('span', { class: 'home-tank-pills' }, el('span', { class: 'pill ' + st.cls, text: st.text }), state.tanks.length > 1 && t.id === state.activeId ? el('span', { class: 'badge', text: 'Active' }) : null)),
     chevron());
 }
 
@@ -1341,7 +1365,7 @@ function renderScanHub() {
     heroBtn('Scan my tank', 'Photograph the whole tank and see every fish, plant and coral named', 'scan', false, () => showView('scan')),
     heroBtn('Fish Check', 'At the store? Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; showView('fishcheck'); }));
   const t = activeTank();
-  if (t && state.tanks.length > 1) putAll(body, el('p', { class: 'label small', text: 'Adding to' }), tankChips(t, (id) => { state.activeId = id; saveState(); renderScanHub(); }));
+  putAll(body, tankSwitcher(t, 'Adding to', (id) => { setActiveTank(id); renderScanHub(); }));
 }
 
 let exploreSearch = null;
@@ -3041,6 +3065,7 @@ function renderFishCheck() {
   const t = getTank(fishCheckTankId) || activeTank();
   body.append(el('h1', { text: 'Fish Check' }),
     el('p', { class: 'muted', text: 'Standing at the fish store? Photograph one fish, plant or coral. Get its name, what it needs, and whether it fits your tank. Including its name tag in the photo helps.' }));
+  putAll(body, tankSwitcher(t, 'Checking for', (id) => { fishCheckTankId = ''; setActiveTank(id); renderFishCheck(); }));
   const fc = fishCheck;
   const actions = el('div', { class: 'row photo-actions' },
     el('button', { type: 'button', class: 'btn primary', text: fc ? 'Check another' : 'Take photo', onclick: () => $('fishcheck-camera').click() }),
@@ -3106,10 +3131,7 @@ function renderFishCheck() {
         el('button', { type: 'button', class: 'round', 'aria-label': 'One more', text: '+', onclick: () => { fc.count = Math.min(60, fc.count + 1); renderFishCheck(); } })));
     const v = fishVerdict(t, fc.name, fc.count);
     const bad = v.fresh.some((i) => i.level === 'bad');
-    const picker = state.tanks.length > 1 ? el('div', { class: 'chips ideas', role: 'group', 'aria-label': 'Which tank' },
-      ...state.tanks.map((x) => el('button', { type: 'button', class: 'chip-btn' + (x.id === t.id ? ' on' : ''), 'aria-pressed': x.id === t.id ? 'true' : 'false', text: tankLabel(x),
-        onclick: () => { fishCheckTankId = x.id; renderFishCheck(); } }))) : null;
-    card.append(el('h2', { class: 'dream-list-h', text: 'Will it work in ' + tankLabel(t) + '?' }), ...(picker ? [el('p', { class: 'label', text: 'Which tank?' }), picker] : []), counter,
+    card.append(el('h2', { class: 'dream-list-h', text: 'Will it work in ' + tankLabel(t) + '?' }), counter,
       el('div', { class: 'water-line' }, el('strong', { text: 'Verdict' }),
         !v.fresh.length ? el('span', { class: 'pill ok', text: 'Looks good' }) : el('span', { class: 'pill ' + (bad ? 'bad' : 'warn'), text: bad ? 'Not a good fit' : v.fresh.length + (v.fresh.length === 1 ? ' thing to know' : ' things to know') })),
       v.fresh.length ? issueList(v.fresh.slice(0, 5)) : el('p', { class: 'muted small', text: 'No new problems with what you keep now.' }),

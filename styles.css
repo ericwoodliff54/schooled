@@ -965,3 +965,9 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .rem-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .rem-main strong { font-size: 15.5px; }
 .rem-row .task-edit { margin: 0 0 8px; padding-top: 8px; }
+
+.tank-switch { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 8px 12px; margin: 10px 0; }
+.tank-switch .label { margin: 0; white-space: nowrap; }
+.tank-switch .select { flex: 1; min-width: 0; min-height: 44px; font-size: 16px; font-weight: 700; }
+.home-tank-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.home-body .home-tank-pills .pill, .home-tank-pills .pill { margin-top: 0; }
