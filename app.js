@@ -1905,7 +1905,7 @@ function stockCard(t) {
 }
 
 // ---------- Dream Tank ----------
-const DREAM_MONTHLY = 2;
+const DREAM_MONTHLY = 10;
 const DREAM_KEY = 'schooled.dream';
 const DEVICE_KEY = 'schooled.device';
 const DREAM_IDEAS = ['A heavily planted, peaceful community tank with lots of color', 'A reef with soft corals, clownfish and a mandarin', 'A rocky Malawi cichlid tank full of blue and yellow', 'A quiet blackwater tank with small schooling fish and driftwood'];
@@ -2004,7 +2004,9 @@ async function runDream() {
       }
       const s = dreamLoad();
       if (image) s.used += 1;
-      s.last = { title: String(j.title || ''), summary: String(j.summary || ''), species: j.species, image, gallons: gal, type: f.type, at: Date.now() };
+      const cost = dreamCost(j.usage);
+      if (image) s.cost = Math.round(((Number(s.cost) || 0) + cost.dollars) * 10000) / 10000;
+      s.last = { title: String(j.title || ''), summary: String(j.summary || ''), species: j.species, image, gallons: gal, type: f.type, at: Date.now(), usage: j.usage || null, imageModel: String(j.image_model || '') };
       if (!dreamSave(s)) { s.last.image = ''; dreamSave(s); }
       dreamMessage = image ? '' : 'The AI made your list but could not make the picture this time, and no picture was used. Try again.' + (j.image_error ? ' (' + String(j.image_error).slice(0, 300) + ')' : '');
     }
@@ -2014,6 +2016,33 @@ async function runDream() {
   dreamBusy = false;
   renderDream();
   window.scrollTo(0, 0);
+}
+
+// Google's paid-tier prices per 1M tokens: [input, output]. Image output is priced much higher than text.
+const DREAM_PRICES = { 'gemini-3.1-flash-image': [0.5, 60], 'gemini-2.5-flash-image': [0.3, 30], 'gemini-3-pro-image': [2, 120] };
+function dreamCost(usage) {
+  const im = usage && usage.image;
+  const p = im && DREAM_PRICES[im.model];
+  if (!p) return { dollars: 0, known: false };
+  const out = (im.image_out || im.output || 0);
+  const textOut = Math.max(0, (im.output || 0) - (im.image_out || 0)) + (im.thoughts || 0);
+  const dollars = ((im.input || 0) * p[0] + (im.image_out ? im.image_out * p[1] + textOut * 3 : out * p[1]) ) / 1e6;
+  return { dollars, known: true };
+}
+function centsText(d) { return (d * 100).toFixed(d * 100 < 10 ? 2 : 1) + '\u00a2'; }
+function dreamCostLine(r) {
+  const u = r.usage;
+  if (!u || !u.image) return null;
+  const c = dreamCost(u);
+  const n = (x) => Number(x || 0).toLocaleString();
+  const bits = [
+    'Picture: ' + (u.image.model || 'unknown') + ', ' + n(u.image.input) + ' tokens in, ' + n(u.image.output) + ' out' + (u.image.image_out ? ' (' + n(u.image.image_out) + ' image)' : ''),
+    c.known ? 'about ' + centsText(c.dollars) + ' for the picture' : 'price for this model not in the app',
+    u.plan ? 'Plan: ' + (u.plan.model || 'unknown') + ', ' + n(u.plan.input) + ' in, ' + n(u.plan.output) + ' out (price not counted)' : ''
+  ].filter(Boolean);
+  const s = dreamLoad();
+  if (s.cost) bits.push('Pictures this month on this phone: about ' + centsText(s.cost));
+  return bits.join(' \u00b7 ');
 }
 
 function dreamPhotoButtons(rerender) {
@@ -2117,7 +2146,8 @@ function dreamResultCard(r) {
       showTank(tmp.id);
       toast('Created ' + tankLabel(tmp) + '. Add what you actually own as you go.');
     } }),
-    el('p', { class: 'muted small', text: 'Stocking advice is general guidance, and the AI can be wrong. Check each species before you buy.' }));
+    el('p', { class: 'muted small', text: 'Stocking advice is general guidance, and the AI can be wrong. Check each species before you buy.' }),
+    dreamCostLine(r) ? el('p', { class: 'muted small cost-line', text: dreamCostLine(r) }) : null);
   return card;
 }
 

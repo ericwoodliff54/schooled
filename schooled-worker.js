@@ -9,7 +9,7 @@ const FALLBACK_MODEL = 'gemini-4-hydrogen';
 const LAST_RESORT_MODEL = 'gemini-3.6-flash';
 const VERIFY_MODEL = 'gemini-3.6-flash'; // the close-up check is tiny, so a stronger model costs little there
 const IMAGE_MODEL = 'gemini-3.1-flash-image'; // Dream Tank pictures (env GEMINI_IMAGE_MODEL overrides)
-const DREAM_PER_MONTH = 2; // pictures per device per month, enforced here only when the LIMITS KV store is bound
+const DREAM_PER_MONTH = 10; // pictures per device per month, enforced here only when the LIMITS KV store is bound
 const DREAM_PER_DAY_ALL = 60; // pictures per day across everyone, same condition
 const DREAM_RATE_MAX = 3; // and no more than this many tries per 10 minutes from one address
 const TOTAL_BUDGET_MS = 52000; // stop trying more models after this long
@@ -501,7 +501,7 @@ async function dream(request, env, origin) {
       const text = data.candidates[0].content.parts.map((p) => p.text || '').join('');
       plan = JSON.parse(text);
       const u = data.usageMetadata || {};
-      planUsage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
+      planUsage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0), model };
       break;
     } catch (err) { planErrors.push(model + ': ' + ((err && (err.name === 'TimeoutError' || err.name === 'AbortError')) ? 'too slow' : 'bad reply')); }
   }
@@ -554,7 +554,8 @@ async function dream(request, env, origin) {
       const data = await res.json();
       const got = pickImage(data);
       const u = data.usageMetadata || {};
-      imageUsage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
+      const det = (Array.isArray(u.candidatesTokensDetails) ? u.candidatesTokensDetails : []).find((d) => d && String(d.modality).toUpperCase() === 'IMAGE');
+      imageUsage = { input: Number(u.promptTokenCount) || 0, output: Number(u.candidatesTokenCount) || 0, thoughts: Number(u.thoughtsTokenCount) || 0, image_out: det ? Number(det.tokenCount) || 0 : 0, model };
       if (got) { image = got; imageModel = model; break; }
       const why = (data.promptFeedback && data.promptFeedback.blockReason) || (data.candidates && data.candidates[0] && data.candidates[0].finishReason) || 'no image in reply';
       const said = ((data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || []).map((p) => p.text || '').join(' ').replace(/\s+/g, ' ').trim().slice(0, 90);
