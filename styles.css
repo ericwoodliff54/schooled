@@ -234,7 +234,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   cursor: pointer;
 }
 .round:active { background: var(--mist); }
-.item .btn.small { min-height: 42px; }
+.item .btn.small { min-height: 40px; padding: 0 14px; }
 .edit-row { flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
 .edit-row input { flex: 1 1 140px; }
 

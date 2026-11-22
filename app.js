@@ -406,10 +406,10 @@ async function startScan(file) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ images: prepared.images, mime: 'image/jpeg' }),
-      signal: AbortSignal.timeout(60000)
+      signal: AbortSignal.timeout(75000)
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) throw new Error((data.error === 'ai_error' || data.error === 'ai_busy') && data.ai_detail !== undefined ? 'Photo reader error ' + data.ai_status + ': ' + (data.ai_detail || 'no details') : friendlyError(data.error, res.status));
+    if (!res.ok || !data.ok) throw new Error((data.error === 'ai_error' || data.error === 'ai_busy') && data.ai_detail !== undefined ? 'The photo reader had trouble (' + (data.ai_detail || 'error ' + data.ai_status) + '). Please try again in a moment.' : friendlyError(data.error, res.status));
 
     if (data.is_aquarium === false) {
       pending.error = "That doesn't look like an aquarium. Try a photo of your tank.";
@@ -518,7 +518,7 @@ function resultRow(sp) {
   return el('div', { class: 'item' },
     kindAvatar(sp.kind),
     el('div', { class: 'grow' },
-      el('span', { class: 'name', text: sp.name + (sp.count > 1 ? ' × ' + sp.count : '') }),
+      el('span', { class: 'name', text: sp.name + (sp.count > 1 ? '\u00a0×\u00a0' + sp.count : '') }),
       el('div', { class: 'meta' },
         el('span', { class: 'pill ' + tone, text: label }),
         sp.scientific ? el('span', { class: 'sub sci', text: sp.scientific }) : (sp.kind ? el('span', { class: 'sub', text: sp.kind }) : null)

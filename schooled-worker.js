@@ -6,6 +6,8 @@
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io'];
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL = 'gemini-4-hydrogen';
+const LAST_RESORT_MODEL = 'gemini-3.6-flash';
+const TOTAL_BUDGET_MS = 52000; // stop trying more models after this long
 const MAX_IMAGE_CHARS = 2800000; // about 2 MB per photo
 const MAX_IMAGES = 7; // the whole tank plus up to 6 zoomed pieces
 const MAX_TOTAL_CHARS = 14000000;
@@ -38,6 +40,10 @@ const PROMPT =
   'Fish that look clearly different from each other (different color, pattern or body shape) must be separate entries, even if each has only one or two individuals. ' +
   'Never lump different-looking fish into one entry or one count. Some cichlids are hybrids or unusual color morphs; if so, say "likely hybrid" in the name. ' +
   'Only as a last resort, when a fish is too small or blurry to guess a specific name, use "Unidentified" plus the group (for example "Unidentified tetra") with confidence below 0.4. ' +
+  'Tell-apart tips: a cardinal tetra has a red stripe along the whole underside of its body, while a neon tetra has red only on the rear half. ' +
+  'Corydoras: skunk cories have a black stripe along the back, julii-type have spotted or lined patterns, panda cories have black eye patches and a black tail base. ' +
+  'Siamese algae eaters have a black stripe running through the eye to the tail and no barbels. ' +
+  'Only list what you can actually see clearly. If the photo is very dark, blurry or reflective, list fewer things with low confidence rather than guessing; never list a plant or fish you cannot see. ' +
   'Set too_far to true if many fish are too small or far away to identify reliably. ' +
   'If the photo is not an aquarium, set is_aquarium to false and return no species. ' +
   'If photo quality limited your answer (glare, too far, dark), put one short tip in photo_tips, otherwise leave it empty.';
@@ -167,9 +173,10 @@ async function scan(request, env, origin) {
   const promptText = list.length > 1 ? PROMPT + ' ' + ZOOM_NOTE : PROMPT;
 
   const primary = env.GEMINI_MODEL || DEFAULT_MODEL;
-  const models = primary === FALLBACK_MODEL ? [primary] : [primary, FALLBACK_MODEL];
+  const models = [primary, FALLBACK_MODEL, LAST_RESORT_MODEL].filter((m, i, all) => all.indexOf(m) === i);
+  const started = Date.now();
 
-  async function ask(model, withThinking) {
+  async function ask(model, withThinking, ms) {
     const generationConfig = { responseMimeType: 'application/json', responseSchema: SCHEMA };
     if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
     const payload = {
@@ -181,31 +188,43 @@ async function scan(request, env, origin) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(28000)
+      signal: AbortSignal.timeout(ms)
     });
   }
 
   let upstream = null;
-  let failure = null;
+  const problems = [];
+  let lastError = 'ai_busy';
+  let lastStatus = 0;
   let usedModel = '';
   for (const model of models) {
+    const left = TOTAL_BUDGET_MS - (Date.now() - started);
+    if (left < 6000) break;
+    const ms = Math.min(24000, left);
+    let res = null;
     try {
-      upstream = await ask(model, true);
-      if (upstream.status === 400) upstream = await ask(model, false); // model may not accept a thinking level
+      res = await ask(model, true, ms);
+      if (res.status === 400) res = await ask(model, false, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started))); // model may not accept a thinking level
+      if ((res.status === 503 || res.status === 429) && TOTAL_BUDGET_MS - (Date.now() - started) > 12000) {
+        await new Promise((r) => setTimeout(r, 1200)); // one quick retry when Google says "busy"
+        res = await ask(model, true, Math.min(20000, TOTAL_BUDGET_MS - (Date.now() - started)));
+      }
     } catch (err) {
       const timedOut = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
-      failure = { error: 'ai_busy', ai_status: 0, ai_detail: model + ': ' + (timedOut ? 'no answer after 28 seconds' : 'could not reach Google') };
-      upstream = null;
+      problems.push(model + ': ' + (timedOut ? 'too slow' : 'could not reach Google'));
+      lastError = 'ai_busy';
+      lastStatus = 0;
       continue;
     }
-    if (upstream.ok) { failure = null; usedModel = model; break; }
-    let detail = '';
-    try { detail = String(((await upstream.json()).error || {}).message || '').slice(0, 140); } catch (e) {}
-    const busy = upstream.status === 429 || upstream.status === 503;
-    failure = { error: busy ? 'ai_busy' : 'ai_error', ai_status: upstream.status, ai_detail: model + ': ' + detail };
-    upstream = null;
+    if (res.ok) { upstream = res; usedModel = model; break; }
+    const busy = res.status === 429 || res.status === 503;
+    problems.push(model + ': ' + (busy ? 'busy' : 'error ' + res.status));
+    lastError = busy ? 'ai_busy' : 'ai_error';
+    lastStatus = res.status;
   }
-  if (!upstream) return json(Object.assign({ ok: false }, failure), 502, origin);
+  if (!upstream) {
+    return json({ ok: false, error: lastError, ai_status: lastStatus, ai_detail: problems.join('; ').slice(0, 200) }, 502, origin);
+  }
 
   let data = null;
   try {
@@ -229,7 +248,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 10: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 11: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/scan') {
