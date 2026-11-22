@@ -276,9 +276,11 @@ const FISH_PROMPT =
   'Set health.status to healthy, some_concerns, unwell, or cannot_tell (blurry, too far away, hidden or glare). Set health.score from 0 to 100, where 100 means no visible problems; ' +
   'omit it when cannot_tell. List up to four short visible signs in health.signs (only real concerns, plain words, empty when healthy). ' +
   'Check the face and mouth on their own: white, grey or cottony patches or erosion around the lips or mouth ("cotton mouth", columnaris) are a real concern, as are white fuzzy edges on fins. ' +
-  'Be strict about the photo: if it is blurry, small, taken head-on, or part of the body is hidden, you cannot rule problems out, so do not score above 80 and say what you could not see in health.signs ' +
-  '(for example "photo too blurry to check the mouth"). Use cannot_tell when you really cannot judge, and then put the one short reason in health.signs ' +
-  '(for example "heavy blue color tint", "fish is too small in the photo", "blurry", "seen head-on"). ' +
+  'Be fair about the photo and give a verdict whenever the animal is reasonably visible. If you can see most of the body and there are no signs of illness, answer healthy with a score of 75 to 90. ' +
+  'If part of the body is hidden or the angle is not ideal, still judge what you can see and keep the score between 70 and 85. ' +
+  'Mild glare, ordinary store lighting, a small fish, a slightly soft photo or a head-on or three-quarter view are NOT reasons for cannot_tell. ' +
+  'Use cannot_tell only when the animal is mostly hidden, extremely blurry, or far too tiny to make out its body, and then put the one short reason in health.signs ' +
+  '(for example "fish is too small in the photo", "extremely blurry", "mostly hidden"). Never use cannot_tell just because of a color tint or because you are unsure of the species. ' +
   'Strong color tints from store lighting or photo filters change how a fish looks, so do not rely on color alone to tell look-alike species apart, and lower your confidence when the colors look unnatural.';
 
 const FISH_SCHEMA = {

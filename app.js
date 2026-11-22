@@ -3163,7 +3163,7 @@ function renderFishCheck() {
     renderFishCheck();
   } }));
   if (!fc.deep && fc.images) buttons.append(el('button', { type: 'button', class: 'btn', text: 'Look closer', title: 'Runs the photo again with a stronger AI', onclick: () => runFish(true) }));
-  card.append(buttons, el('a', { class: 'link-out', href: 'https://en.wikipedia.org/w/index.php?search=' + encodeURIComponent((entry && usableScientific(entry)) || fc.name), target: '_blank', rel: 'noopener noreferrer', text: 'See more photos and info on Wikipedia \u2197' }), el('p', { class: 'muted small', text: 'General guidance, and the AI can be wrong about which species it is. Confirm with the store before you buy.' }));
+  card.append(buttons, el('a', { class: 'link-out', href: 'https://www.google.com/search?q=' + encodeURIComponent(((entry && entry.n) || fc.name) + ' aquarium care'), target: '_blank', rel: 'noopener noreferrer', text: 'More photos and care info on Google \u2197'}), el('p', { class: 'muted small', text: 'General guidance, and the AI can be wrong about which species it is. Confirm with the store before you buy.' }));
   const cl = fishCheckCostLine(fc);
   if (cl) card.append(el('p', { class: 'muted small cost-line', text: cl }));
   body.append(card);
