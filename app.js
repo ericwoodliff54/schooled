@@ -1194,11 +1194,31 @@ $('setup-form').addEventListener('submit', (event) => {
   else showTank(tank.id);
 });
 
-$('tank-scan').addEventListener('click', () => {
-  if (!getTank(openTankId)) return;
-  state.activeId = openTankId;
-  saveState();
-  showView('scan');
+let fishCheckFrom = 'home';
+let waterFrom = 'explore';
+let menuTank = '';
+function closeAddMenu() {
+  $('tank-add-menu').hidden = true;
+  $('tank-add-fish').setAttribute('aria-expanded', 'false');
+}
+function renderTankAddMenu() {
+  const box = $('tank-add-menu');
+  const t = getTank(openTankId);
+  box.replaceChildren();
+  if (!t) return;
+  putAll(box,
+    featureBtn({ icon: 'scan', color: 'blue', title: 'Scan the whole tank', text: 'Photograph the tank and name every fish, plant and coral',
+      go: () => { state.activeId = t.id; saveState(); closeAddMenu(); $('gallery-input').click(); } }),
+    featureBtn({ icon: 'fish', color: 'aqua', title: 'Check one fish', text: 'Photograph a fish and see if it fits ' + tankLabel(t),
+      go: () => { fishCheck = null; fishCheckTankId = t.id; fishCheckFrom = 'tank'; closeAddMenu(); showView('fishcheck'); $('fishcheck-gallery').click(); } }),
+    featureBtn({ icon: 'plus', color: 'orange', title: 'Add by name', text: 'Search the list and add it yourself',
+      go: () => { closeAddMenu(); tankSection = 'fish'; renderTank(); const inp = addSearch.root.querySelector('input'); if (inp) { inp.scrollIntoView({ block: 'center' }); inp.focus(); } } }));
+}
+$('tank-add-fish').addEventListener('click', () => {
+  const box = $('tank-add-menu');
+  box.hidden = !box.hidden;
+  $('tank-add-fish').setAttribute('aria-expanded', String(!box.hidden));
+  if (!box.hidden) renderTankAddMenu();
 });
 
 $('setup-skip').addEventListener('click', () => {
@@ -1245,11 +1265,14 @@ function kindTotals(t) {
 
 
 
+const TANK_TOOLS = [
+  { icon: 'drop', color: 'aqua', title: 'Tap water', text: 'What your tap water means for this tank', go: () => { state.activeId = openTankId; saveState(); waterFrom = 'tank'; showView('water'); } },
+  { icon: 'strip', color: 'orange', title: 'Test strip reader', text: 'Photograph a strip and read your water', soon: true },
+  { icon: 'chat', color: 'blue', title: 'Ask the tank', text: 'Ask questions about this tank', soon: true }
+];
 const FEATURES = [
   { icon: 'star', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you want, fish and plants included', go: () => showView('dream') },
-  { icon: 'drop', color: 'aqua', title: 'Tap water', text: 'What your tap water means for your tank', go: () => showView('water') },
-  { icon: 'strip', color: 'orange', title: 'Test strip reader', text: 'Photograph a strip and read your water', soon: true },
-  { icon: 'chat', color: 'blue', title: 'Ask the tank', text: 'Ask questions about your own tank', soon: true }
+  { icon: 'drop', color: 'aqua', title: 'Tap water', text: 'What your tap water means for your tank', go: () => showView('water') }
 ];
 const FEATURE_ICONS = {
   fish: KIND_ICONS.fish,
@@ -1340,7 +1363,7 @@ function renderHome() {
       putAll(body, card);
     }
   }
-  putAll(body, heroBtn('At the fish store?', 'Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; showView('fishcheck'); $('fishcheck-gallery').click(); }));
+  putAll(body, heroBtn('At the fish store?', 'Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckFrom = 'home'; showView('fishcheck'); $('fishcheck-gallery').click(); }));
   updateBadge();
   const misses = loadMisses();
   if (misses.length) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
@@ -1363,7 +1386,7 @@ function renderScanHub() {
   body.replaceChildren();
   putAll(body,
     heroBtn('Scan my tank', 'Photograph the whole tank and see every fish, plant and coral named', 'scan', false, () => showView('scan')),
-    heroBtn('Fish Check', 'At the store? Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; showView('fishcheck'); }));
+    heroBtn('Fish Check', 'At the store? Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckFrom = 'home'; showView('fishcheck'); }));
   const t = activeTank();
   putAll(body, tankSwitcher(t, 'Adding to', (id) => { setActiveTank(id); renderScanHub(); }));
 }
@@ -1549,6 +1572,8 @@ function renderTank() {
   $('tank-photo-camera').textContent = t.photo ? 'Retake' : 'Take photo';
   $('tank-photo-gallery').textContent = t.photo ? 'Change' : 'Choose photo';
 
+  if (menuTank !== t.id) { menuTank = t.id; closeAddMenu(); }
+  $('tank-tools').replaceChildren(...TANK_TOOLS.map(featureBtn));
   const nameInput = $('tank-title-input');
   if (document.activeElement !== nameInput) nameInput.value = t.name;
 
@@ -1964,14 +1989,14 @@ function wirePhotoInput(buttonId, inputId) {
 wirePhotoInput('camera-btn', 'camera-input');
 wirePhotoInput('gallery-btn', 'gallery-input');
 
-$('rescan').addEventListener('click', () => showView('scan'));
+$('rescan').addEventListener('click', () => $('gallery-input').click());
 $('add-photo').addEventListener('click', () => $('more-photo-input').click());
 $('more-photo-input').addEventListener('change', (event) => {
   const file = event.target.files && event.target.files[0];
   event.target.value = '';
   if (file) startScan(file, true);
 });
-$('results-back').addEventListener('click', () => showView('scan'));
+$('results-back').addEventListener('click', () => { const t = getTank(pending && pending.tankId) || activeTank(); pending = null; if (t) showTank(t.id); else showView('home'); });
 
 // Opens a photo from almost any format. Tries the browser first, then a converter for iPhone HEIC photos.
 async function decodeWithBrowser(blob) {
@@ -3162,7 +3187,7 @@ function renderFishCheck() {
   event.target.value = '';
   if (file) startFishCheck(file);
 }));
-$('fishcheck-back').addEventListener('click', () => showView('scanhub'));
+$('fishcheck-back').addEventListener('click', () => (fishCheckFrom === 'tank' && getTank(openTankId) ? showTank(openTankId) : showView('home')));
 $('misses-back').addEventListener('click', () => showView('home'));
 
 // ---------- Dream Tank ----------
@@ -3413,7 +3438,7 @@ function dreamResultCard(r) {
 }
 
 $('dream-back').addEventListener('click', () => showView('explore'));
-$('water-back').addEventListener('click', () => showView('explore'));
+$('water-back').addEventListener('click', () => { if (waterFrom === 'tank' && getTank(openTankId)) showTank(openTankId); else showView('explore'); waterFrom = 'explore'; });
 $('scan-back').addEventListener('click', () => showView('scanhub'));
 
 // ---------- Splash ----------

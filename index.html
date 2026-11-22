@@ -157,7 +157,7 @@
 
   <!-- Tap water -->
   <section id="view-water" class="view" hidden>
-    <button type="button" id="water-back" class="btn link back">&larr; Explore</button>
+    <button type="button" id="water-back" class="btn link back">&larr; Back</button>
     <h1>Tap water</h1>
     <div class="card" id="water-tap">
       <h2>Your tap water</h2>
@@ -178,7 +178,8 @@
   <section id="view-tank" class="view" hidden>
     <button type="button" id="tank-back" class="btn link back">&larr; My Tanks</button>
     <div id="tank-hero" class="tank-hero"></div>
-    <button type="button" id="tank-scan" class="btn primary big">Scan this tank</button>
+    <button type="button" id="tank-add-fish" class="btn primary big" aria-expanded="false" aria-controls="tank-add-menu">Add fish</button>
+    <div id="tank-add-menu" class="add-menu features" hidden></div>
 
     <input id="tank-title-input" class="title-input" type="text" maxlength="40" placeholder="Tank name" aria-label="Tank name" autocomplete="off">
     <p class="hint small" id="tank-pill-hint">Tap any pill to change it.</p>
@@ -194,6 +195,9 @@
     </div>
     <div id="tank-sec-water" class="log-body" hidden></div>
     <div id="tank-sec-care" class="log-body" hidden></div>
+
+    <h2 class="section">Tank tools</h2>
+    <div id="tank-tools" class="features"></div>
 
     <details class="card tank-settings" id="tank-gear">
       <summary>Equipment <span id="tank-gear-count" class="summary-count"></span></summary>
@@ -233,7 +237,7 @@
 
   <!-- Fish Check -->
   <section id="view-fishcheck" class="view" hidden>
-    <button type="button" id="fishcheck-back" class="btn link back">&larr; Home</button>
+    <button type="button" id="fishcheck-back" class="btn link back">&larr; Back</button>
     <div id="fishcheck-body" class="dream-body"></div>
     <input id="fishcheck-camera" type="file" accept="image/*" capture="environment" hidden>
     <input id="fishcheck-gallery" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
