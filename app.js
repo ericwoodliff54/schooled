@@ -1223,7 +1223,7 @@ const FEATURE_ICONS = {
   chart: ['M4 20V4', 'M4 20h16', 'M8 15l4-4 3 3 5-6'],
   bell: ['M6 16V11a6 6 0 1 1 12 0v5l2 2H4z', 'M10 21h4'],
   chat: ['M4 5h16v11H9l-5 4z'],
-  scan: ['M4 8h3l2-3h6l2 3h3v11H4z', 'M12 9.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z'],
+  scan: ['M4 8V5a1 1 0 0 1 1-1h3', 'M16 4h3a1 1 0 0 1 1 1v3', 'M20 16v3a1 1 0 0 1-1 1h-3', 'M8 20H5a1 1 0 0 1-1-1v-3', 'M8 12c1.5-2 4-2 6 0-2 2-4.5 2-6 0z', 'M14 12l2-1.2v2.4z'],
   plus: ['M12 5v14', 'M5 12h14']
 };
 function featureIcon(name) {
@@ -1293,15 +1293,16 @@ function renderHome() {
       const next = [];
       state.tanks.forEach((x) => x.tasks.forEach((k) => next.push({ tank: x, task: k, info: taskInfo(k) })));
       next.sort((p, q) => p.info.diff - q.info.diff);
+      if (!next.length) putAll(body, el('button', { type: 'button', class: 'card note care-empty', onclick: () => showTank(activeTank().id, 'care') }, el('strong', { text: 'Care reminders' }), el('p', { class: 'muted small', text: 'No reminders yet. Tap to add water changes and other chores to your tank.' })));
       if (next.length) putAll(body, el('div', { class: 'card note' }, el('strong', { text: 'Nothing due right now' }),
         el('p', { class: 'muted small', text: 'Next up: ' + next[0].task.label + (state.tanks.length > 1 ? ' (' + tankLabel(next[0].tank) + ')' : '') + ', ' + next[0].info.text.toLowerCase() + '.' })));
     }
   }
-  putAll(body, el('button', { type: 'button', class: 'home-tank', onclick: () => { fishCheck = null; fishCheckTankId = ''; showView('fishcheck'); } },
-    el('span', { class: 'home-tank-pic empty' }, featureIcon('fish')),
+  putAll(body, el('button', { type: 'button', class: 'home-tank store-card', 'aria-label': 'At the fish store? Scan here to check a fish', onclick: () => { fishCheck = null; fishCheckTankId = ''; showView('fishcheck'); $('fishcheck-camera').click(); } },
+    el('span', { class: 'home-tank-pic empty' }, featureIcon('scan')),
     el('span', { class: 'home-tank-text' },
-      el('strong', { text: 'At the fish store?' }),
-      el('span', { text: 'Fish Identifier' })),
+      el('strong', { text: 'AT THE FISH STORE?' }),
+      el('span', { text: 'SCAN HERE' })),
     chevron()));
   updateBadge();
   const misses = loadMisses();

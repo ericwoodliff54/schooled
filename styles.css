@@ -928,5 +928,14 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .home-head-text h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); line-height: 1.15; }
 .home-head-text p { margin: 1px 0 0; font-size: 13px; color: var(--muted); font-weight: 500; }
 .home-tank-pic.empty svg { width: 28px; height: 28px; }
-#nav button.scan-tab { min-height: 56px; justify-content: center; font-size: 15px; font-weight: 800; color: var(--teal); }
-#nav button.scan-tab[aria-current="page"] { background: var(--shallows); color: var(--teal); }
+
+.home-head { flex-direction: column; align-items: flex-start; gap: 6px; }
+.home-logo { width: 220px; max-width: 70%; height: auto; border-radius: 14px; display: block; box-shadow: 0 4px 14px -6px rgba(10, 37, 64, 0.5); }
+.home-head p { margin: 0 2px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.store-card { background: linear-gradient(135deg, var(--teal-2), var(--teal)); color: #fff; border: 0; }
+.store-card .home-tank-text strong { color: #fff; letter-spacing: 0.02em; }
+.store-card .home-tank-text span { color: rgba(255, 255, 255, 0.92); font-weight: 800; letter-spacing: 0.06em; }
+.store-card .home-tank-pic { background: rgba(255, 255, 255, 0.18); color: #fff; }
+.store-card .chev, .store-card > svg { color: #fff; }
+.care-empty { text-align: left; font: inherit; width: 100%; cursor: pointer; border: 0; }
+.care-empty p { margin: 4px 0 0; }
