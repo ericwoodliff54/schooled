@@ -25,6 +25,7 @@ class SpeciesDB:
 
     def __init__(self, path):
         data = json.load(open(path, encoding='utf-8'))
+        self.groups = data.get('groups', {})
         self.list = data['species']
         self.by_key, self.by_genus = {}, {}
         for e in self.list:
@@ -208,6 +209,8 @@ def main():
                 models[data.get('model', '?')] += 1
                 hit, how = db.resolve(f.get('common_name'), f.get('scientific_name'))
                 conf = f.get('confidence') or 0
+                if hit and hit.get('g') and db.groups.get(hit['g'], {}).get('h'):
+                    conf = min(conf, 0.85)  # the app never says Confident for look-alike groups
                 row.update(answer=f.get('common_name', ''), sci=f.get('scientific_name', ''), conf=conf, matched=hit['n'] if hit else '', how=how)
                 if not f.get('is_aquarium', True) or not f.get('common_name'):
                     row['verdict'] = 'no_answer'
