@@ -308,7 +308,8 @@ async function startScan(file) {
     const res = await fetch(WORKER_URL + '/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: prepared.base64, mime: 'image/jpeg' })
+      body: JSON.stringify({ image: prepared.base64, mime: 'image/jpeg' }),
+      signal: AbortSignal.timeout(50000)
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data.error === 'ai_error' ? 'Photo reader error ' + data.ai_status + ': ' + (data.ai_detail || 'no details') : friendlyError(data.error, res.status));
@@ -328,7 +329,8 @@ async function startScan(file) {
     }));
     pending.tips = data.photo_tips || '';
   } catch (err) {
-    if (err instanceof TypeError) pending.error = "Couldn't reach the server. Check your connection and try again.";
+    if (err && err.name === 'TimeoutError') pending.error = 'That took too long. Try again, or try a smaller or clearer photo.';
+    else if (err instanceof TypeError) pending.error = "Couldn't reach the server. Check your connection and try again.";
     else if (err.message === 'bad_image') pending.error = "This device couldn't open that photo. If it's an iPhone HEIC file, use the camera button or a JPG instead.";
     else pending.error = err.message || friendlyError();
   }

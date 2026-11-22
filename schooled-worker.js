@@ -129,7 +129,7 @@ async function scan(request, env, origin) {
   const payload = {
     systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
     contents: [{ role: 'user', parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data: image } }] }],
-    generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: SCHEMA }
+    generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: SCHEMA, thinkingConfig: { thinkingLevel: 'low' } }
   };
 
   let upstream;
@@ -137,7 +137,8 @@ async function scan(request, env, origin) {
     upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(40000)
     });
   } catch (err) {
     return json({ ok: false, error: 'ai_busy' }, 502, origin);
