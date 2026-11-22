@@ -1,0 +1,51 @@
+name: Accuracy check
+# Run it by hand: Actions tab, "Accuracy check", Run workflow.
+# It pulls labeled photos from Wikimedia Commons, sends them to the Worker the same way the app does,
+# and writes a report (shown on the run page, and saved as a download for 30 days).
+# Rough cost: about 0.15 cents per photo, so the default run (25 species x 2 photos) is under 10 cents.
+on:
+workflow_dispatch:
+inputs:
+species:
+description: 'How many species to test (random sample from test_species.txt)'
+default: '25'
+photos:
+description: 'Photos per species (1 to 6)'
+default: '2'
+kinds:
+description: 'Only these kinds, comma separated (fish, coral, plant, shrimp, snail). Blank = all'
+default: ''
+names:
+description: 'Or test exactly these species, comma separated (overrides the list above)'
+default: ''
+seed:
+description: 'Same number = same species and photos, so you can compare before and after a change'
+default: '7'
+permissions:
+contents: read
+jobs:
+check:
+runs-on: ubuntu-latest
+timeout-minutes: 90
+steps:
+- uses: actions/checkout@v4
+- uses: actions/setup-python@v5
+with:
+python-version: '3.12'
+- run: pip install requests
+- name: Run the check
+env:
+TEST_KEY: ${{ secrets.TEST_KEY }}
+run: |
+python accuracy_check.py \
+--limit "${{ inputs.species }}" \
+--per "${{ inputs.photos }}" \
+--kinds "${{ inputs.kinds }}" \
+--names "${{ inputs.names }}" \
+--seed "${{ inputs.seed }}"
+- uses: actions/upload-artifact@v4
+if: always()
+with:
+name: accuracy-report
+path: accuracy-out/
+retention-days: 30
