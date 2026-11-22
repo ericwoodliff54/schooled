@@ -253,11 +253,13 @@ def write_report(a, db, results, sent, uin, uout, models):
     if errs or nophoto:
         lines += ['Not scored: %d Worker errors, %d species with no usable photo.' % (len(errs), len(nophoto)), '']
 
-    hi = [r for r in scored if r.get('conf', 0) >= 0.85]
-    hi_ok = [r for r in hi if r['verdict'] == 'correct']
-    lines += ['## Does confidence mean anything?', '',
-              'Photos the app would label **Confident** (85%% or more): %d. Correct: %s.' % (len(hi), pct(len(hi_ok), len(hi))),
-              'Photos labeled Likely or Unsure: %d. Correct: %s.' % (n - len(hi), pct(sum(1 for r in scored if r.get('conf', 0) < 0.85 and r['verdict'] == 'correct'), n - len(hi))), '']
+    hi = [r for r in scored if r.get('conf', 0) >= 0.95]
+    tiers = [('Confident (95%% or more)', 0.95, 2), ('Likely (80 to 94%%)', 0.8, 0.95), ('Not sure (under 80%%)', 0, 0.8)]
+    lines += ['## Do the labels mean anything?', '', '| Label in the app | Photos | Correct |', '|---|---|---|']
+    for name, lo, hi_ in tiers:
+        rs = [r for r in scored if lo <= r.get('conf', 0) < hi_]
+        lines.append('| ' + name % () + ' | %d | %s |' % (len(rs), pct(sum(1 for r in rs if r['verdict'] == 'correct'), len(rs))))
+    lines.append('')
 
     lines += ['## By kind', '', '| Kind | Photos | Correct |', '|---|---|---|']
     for k in sorted({r['kind'] for r in scored}):
