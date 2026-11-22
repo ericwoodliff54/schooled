@@ -4,7 +4,7 @@
 // Optional plain variable: GEMINI_MODEL (to change models without editing code).
 
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io'];
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-3.8-flash';
 const MAX_IMAGE_CHARS = 2800000; // about 2 MB of photo data
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
