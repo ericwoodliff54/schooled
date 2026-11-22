@@ -94,9 +94,15 @@
 
   <!-- Home -->
   <section id="view-home" class="view" hidden>
-    <img id="home-photo" class="home-photo" alt="" hidden>
-    <p class="muted" id="home-sub"></p>
-    <h1 id="home-title">My tank</h1>
+    <img class="home-banner" src="logo-banner.jpg" alt="Schooled" width="1100" height="463">
+
+    <div class="home-head">
+      <img id="home-photo" class="home-thumb" alt="" hidden>
+      <div class="home-head-text">
+        <h1 id="home-title">My tank</h1>
+        <p class="muted" id="home-sub"></p>
+      </div>
+    </div>
     <label id="home-switch-row" class="switch-row" hidden>
       <span class="label">Tank</span>
       <select id="home-switch" class="select" aria-label="Switch tank"></select>
@@ -105,17 +111,23 @@
     <button type="button" id="home-scan" class="hero">
       <span>
         <strong>Scan my tank</strong>
-        <small>Name your fish from a photo</small>
+        <small>Name your fish, plants and corals from a photo</small>
       </span>
       <span class="hero-icon"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
     </button>
 
+    <div id="home-stats" class="stats" hidden></div>
+
     <div class="card" id="home-fish"></div>
 
-    <div class="card note">
-      <strong>Coming soon</strong>
-      <p class="muted small">Test strip reading, tap water info for your ZIP, and tank mate warnings.</p>
+    <div class="card" id="home-add" hidden>
+      <h2>Add something by hand</h2>
+      <div id="home-add-slot"></div>
     </div>
+
+    <div class="card" id="home-water" hidden></div>
+
+    <p class="muted small center soon">Coming soon: test strip reading and tank mate warnings.</p>
   </section>
 
   <!-- Scan -->
@@ -205,17 +217,13 @@
 
     <h2 class="section">Fish and plants</h2>
     <div id="tank-list" class="list"></div>
-    <form id="add-form" class="addrow">
-      <input id="add-name" type="text" list="species-list" maxlength="60" placeholder="Add a fish or plant by name" aria-label="Add a fish or plant by name" autocomplete="off">
-      <button type="submit" class="btn">Add</button>
-    </form>
+    <div id="add-slot"></div>
 
     <button type="button" id="tank-delete" class="btn-link danger">Delete this tank</button>
   </section>
 
 </main>
 
-<datalist id="species-list"></datalist>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <nav id="nav" aria-label="Main" hidden>

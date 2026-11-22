@@ -104,12 +104,72 @@ function usableScientific(entry) {
   return entry && /\s/.test(entry.s) && !/\bsp\.$/.test(entry.s) ? entry.s : '';
 }
 
-let speciesListType = null;
-function fillSpeciesList(type) {
-  if (!DB.ready || speciesListType === type) return;
-  speciesListType = type;
+// ---------- Search box for species (names, aliases and scientific names) ----------
+function speciesMatches(query, type) {
+  const q = normKey(query);
+  if (!q || !DB.ready) return [];
   const codes = type === 'Saltwater' ? ['s'] : type === 'Brackish' ? ['b', 'f'] : ['f'];
-  $('species-list').replaceChildren(...DB.list.filter((e) => codes.some((c) => e.w.includes(c))).map((e) => el('option', { value: e.n })));
+  const scored = [];
+  DB.list.forEach((e) => {
+    if (!codes.some((c) => e.w.includes(c))) return;
+    let best = 99;
+    [e.n, e.s].concat(e.a || []).forEach((raw) => {
+      const n = normKey(raw);
+      if (!n) return;
+      if (n === q) best = Math.min(best, 0);
+      else if (n.startsWith(q)) best = Math.min(best, 1);
+      else if (n.split(' ').some((w) => w.startsWith(q))) best = Math.min(best, 2);
+      else if (n.includes(q)) best = Math.min(best, 3);
+    });
+    if (best < 99) scored.push([best, e]);
+  });
+  scored.sort((a, b) => a[0] - b[0] || a[1].n.localeCompare(b[1].n));
+  return scored.slice(0, 8).map((x) => x[1]);
+}
+
+// A search-as-you-type box. onPick(name, entry) gets called with the database entry, or null for text typed in by hand.
+function createSearch(opts) {
+  const input = el('input', {
+    type: 'text', class: 'search-input', placeholder: opts.placeholder, 'aria-label': opts.label,
+    maxlength: 60, autocomplete: 'off', autocapitalize: 'words', spellcheck: 'false', enterkeyhint: 'search', value: opts.value || ''
+  });
+  const results = el('div', { class: 'search-results', role: 'listbox' });
+  results.hidden = true;
+  const root = el('div', { class: 'search' }, input, results);
+  function render() {
+    const q = input.value.trim();
+    results.replaceChildren();
+    if (!q) { results.hidden = true; return; }
+    const found = speciesMatches(q, opts.type ? opts.type() : 'Freshwater');
+    found.forEach((e) => results.append(
+      el('button', { type: 'button', class: 'search-row', role: 'option', onclick: () => opts.onPick(e.n, e) },
+        kindAvatar(e.k),
+        el('span', { class: 'grow' },
+          el('span', { class: 'name', text: e.n }),
+          usableScientific(e) ? el('span', { class: 'sub sci', text: e.s }) : null))
+    ));
+    if (!found.some((e) => normKey(e.n) === normKey(q))) {
+      results.append(
+        el('button', { type: 'button', class: 'search-row custom', role: 'option', onclick: () => opts.onPick(q.slice(0, 60), null) },
+          el('span', { class: 'avatar other', text: '+' }),
+          el('span', { class: 'grow' },
+            el('span', { class: 'name', text: 'Add \u201c' + q + '\u201d' }),
+            el('span', { class: 'sub', text: found.length ? 'Not what you meant? Add it as typed' : 'Not in the list, add it as typed' })))
+      );
+    }
+    results.hidden = false;
+    if (typeof results.scrollIntoView === 'function') results.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  input.addEventListener('input', render);
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); const first = results.querySelector('.search-row'); if (first) first.click(); }
+    else if (ev.key === 'Escape') results.hidden = true;
+  });
+  return {
+    root, input,
+    close() { results.hidden = true; },
+    clear() { input.value = ''; results.replaceChildren(); results.hidden = true; }
+  };
 }
 
 // ---------- Saved data (stays on the phone) ----------
@@ -237,6 +297,7 @@ let editingSize = false;
 
 function showView(name) {
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== name; });
+  document.body.dataset.view = name;
   $('nav').hidden = name === 'setup';
   document.querySelectorAll('#nav button').forEach((b) => {
     if (b.dataset.view === NAV_FOR[name]) b.setAttribute('aria-current', 'page');
@@ -454,21 +515,56 @@ $('setup-skip').addEventListener('click', () => {
 });
 
 // ---------- Home ----------
+function rosterKind(f) {
+  const hit = lookupSpecies(f.name);
+  const k = f.kind || (hit && hit.k) || 'fish';
+  return KIND_LIST.includes(k) ? k : 'fish';
+}
+function kindTotals(t) {
+  const sums = { fish: 0, plant: 0, other: 0 };
+  t.fish.forEach((f) => {
+    const k = rosterKind(f);
+    sums[k === 'fish' ? 'fish' : k === 'plant' ? 'plant' : 'other'] += f.count;
+  });
+  return sums;
+}
+
+const homeAdd = createSearch({
+  placeholder: 'Search to add a fish, plant or coral', label: 'Add a fish, plant or coral',
+  type: () => { const t = activeTank(); return t ? t.type : 'Freshwater'; },
+  onPick: (name, entry) => {
+    const t = activeTank();
+    if (!t) return;
+    addToTank(t, name, 1, 'add', entry ? entry.k : undefined);
+    homeAdd.clear();
+    saveState();
+    renderHome();
+    toast('Added ' + canonName(name));
+  }
+});
+$('home-add-slot').append(homeAdd.root);
+
 function renderHome() {
   const t = activeTank();
   const photo = $('home-photo');
   const switchRow = $('home-switch-row');
   const box = $('home-fish');
+  const stats = $('home-stats');
+  const water = $('home-water');
   box.replaceChildren();
+  water.replaceChildren();
 
   if (!t) {
     photo.hidden = true;
     switchRow.hidden = true;
+    stats.hidden = true;
+    water.hidden = true;
+    $('home-add').hidden = true;
     $('home-title').textContent = 'Welcome';
     $('home-sub').textContent = 'No tank added yet.';
     box.append(
       el('h2', { text: 'Add your first tank' }),
-      el('p', { class: 'muted', text: 'Give it a name and a photo, and keep its fish and plants in one place.' }),
+      el('p', { class: 'muted', text: 'Give it a name and a photo, and keep its fish, plants and corals in one place.' }),
       el('button', { type: 'button', class: 'btn primary small', text: 'Add a tank', onclick: startAddTank })
     );
     return;
@@ -488,18 +584,46 @@ function renderHome() {
     switchRow.hidden = true;
   }
 
+  // At a glance
+  const sums = kindTotals(t);
+  const third = t.type === 'Saltwater' ? 'Corals & inverts' : 'Shrimp & snails';
+  stats.replaceChildren(
+    el('div', { class: 'stat' }, el('strong', { text: String(sums.fish) }), el('span', { text: 'Fish' })),
+    el('div', { class: 'stat' }, el('strong', { text: String(sums.plant) }), el('span', { text: 'Plants' })),
+    el('div', { class: 'stat' }, el('strong', { text: String(sums.other) }), el('span', { text: third }))
+  );
+  stats.hidden = !t.fish.length;
+
+  // What's in the tank
   if (!t.fish.length) {
     box.append(
-      el('h2', { text: 'No fish yet' }),
-      el('p', { class: 'muted', text: 'Scan your tank and Schooled will name what it sees.' })
+      el('h2', { text: 'Nothing in this tank yet' }),
+      el('p', { class: 'muted', text: 'Scan a photo and Schooled will name what it sees, or search below to add things by hand.' })
     );
   } else {
+    const top = t.fish.slice().sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 5);
     box.append(
-      el('h2', { text: t.fish.length + (t.fish.length === 1 ? ' kind' : ' kinds') + ' in this tank' }),
-      el('p', { class: 'muted', text: totalFish(t) + ' fish and plants in total' }),
-      el('button', { type: 'button', class: 'btn small', text: 'See this tank', onclick: () => showTank(t.id) })
+      el('div', { class: 'card-head' },
+        el('h2', { text: 'In this tank' }),
+        el('button', { type: 'button', class: 'btn small', text: t.fish.length > top.length ? 'See all ' + t.fish.length : 'Edit', onclick: () => showTank(t.id) })
+      ),
+      el('div', { class: 'roster' }, ...top.map((f) => el('div', { class: 'item' },
+        kindAvatar(rosterKind(f)),
+        el('div', { class: 'grow' }, el('span', { class: 'name', text: f.name })),
+        el('span', { class: 'count-chip', text: '\u00d7\u00a0' + f.count })
+      )))
     );
   }
+  $('home-add').hidden = false;
+
+  // Water
+  const line = t.water === 'city' ? (t.zip ? 'City water \u00b7 ZIP ' + t.zip : 'City water \u00b7 add your ZIP for tap water info')
+    : t.water === 'well' ? 'Well water' : 'RO / filtered water';
+  water.append(el('div', { class: 'water-line' },
+    el('div', {}, el('h2', { text: 'Water' }), el('span', { class: 'sub', text: line })),
+    el('button', { type: 'button', class: 'btn small', text: 'Details', onclick: () => showView('water') })
+  ));
+  water.hidden = false;
 }
 
 $('home-switch').addEventListener('change', () => {
@@ -661,7 +785,6 @@ function sizePill(t) {
 function renderTank() {
   const t = getTank(openTankId);
   if (!t) { showView('tanks'); return; }
-  fillSpeciesList(TYPES.includes(t.type) ? t.type : 'Freshwater');
 
   $('tank-hero').replaceChildren(t.photo
     ? el('img', { src: t.photo, alt: 'Photo of ' + tankLabel(t) })
@@ -774,16 +897,19 @@ $('tank-photo-remove').addEventListener('click', () => {
   renderTank();
 });
 
-$('add-form').addEventListener('submit', (event) => {
-  event.preventDefault();
-  const t = getTank(openTankId);
-  const input = $('add-name');
-  if (!t || !input.value.trim()) return;
-  addToTank(t, input.value, 1, 'add');
-  input.value = '';
-  saveState();
-  renderTank();
+const addSearch = createSearch({
+  placeholder: 'Search to add a fish, plant or coral', label: 'Add a fish, plant or coral',
+  type: () => { const t = getTank(openTankId); return t ? t.type : 'Freshwater'; },
+  onPick: (name, entry) => {
+    const t = getTank(openTankId);
+    if (!t) return;
+    addToTank(t, name, 1, 'add', entry ? entry.k : undefined);
+    addSearch.clear();
+    saveState();
+    renderTank();
+  }
 });
+$('add-slot').append(addSearch.root);
 
 let deleteArmed = false;
 let deleteTimer = null;
@@ -1278,10 +1404,15 @@ function resultRow(sp) {
 }
 
 function editRow(sp, index) {
-  const nameInput = el('input', { type: 'text', value: sp.name, maxlength: 60, 'aria-label': 'Name', list: 'species-list', autocomplete: 'off' });
+  const searchBox = createSearch({
+    placeholder: 'Search by name', label: 'Name', value: sp.name,
+    type: () => { const t = getTank(pending && pending.tankId); return t ? t.type : 'Freshwater'; },
+    onPick: (name) => { searchBox.input.value = name; searchBox.close(); }
+  });
+  const nameInput = searchBox.input;
   const countInput = el('input', { type: 'number', value: sp.count, min: 1, max: 999, 'aria-label': 'How many', style: 'max-width: 90px' });
   return el('div', { class: 'item edit-row' },
-    nameInput,
+    searchBox.root,
     countInput,
     el('button', {
       type: 'button', class: 'btn small primary', text: 'Done',
@@ -1319,7 +1450,8 @@ if ('serviceWorker' in navigator) {
 }
 
 loadSpecies().then(() => {
-  const t = activeTank();
-  fillSpeciesList(t && TYPES.includes(t.type) ? t.type : 'Freshwater');
+  // Names and kinds come from the list, so redraw once it has loaded.
+  if (!$('view-home').hidden) renderHome();
+  else if (!$('view-tank').hidden) renderTank();
 });
 showView(state.setupDone ? 'home' : 'setup');

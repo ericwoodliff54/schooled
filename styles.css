@@ -630,3 +630,40 @@ input::placeholder { color: #8DA3A9; }
 .tell { margin-top: 6px; font-size: 13px; color: #4A5A86; }
 .tell summary { cursor: pointer; font-weight: 600; }
 .tell p { margin: 6px 0 0; line-height: 1.4; }
+
+/* Logo banner, home */
+body[data-view="home"] .brand { display: none; }
+.home-banner { width: 100%; height: auto; aspect-ratio: 1100 / 463; object-fit: cover; border-radius: var(--radius); box-shadow: var(--shadow); display: block; }
+.home-head { display: flex; align-items: center; gap: 12px; }
+.home-head-text { min-width: 0; flex: 1; }
+.home-head-text h1 { margin: 0; overflow-wrap: anywhere; }
+.home-head-text p { margin: 2px 0 0; }
+.home-thumb { width: 64px; height: 64px; border-radius: 18px; object-fit: cover; box-shadow: var(--shadow); flex-shrink: 0; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stats[hidden] { display: none; }
+.stat { background: var(--card); border: 1px solid rgba(11, 107, 106, 0.08); border-radius: 18px; padding: 12px 10px; text-align: center; box-shadow: var(--shadow); }
+.stat strong { display: block; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--teal-dark); }
+.stat span { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-top: 2px; }
+.roster { margin: 0 -18px; }
+.roster .item { min-height: 56px; }
+.roster .count-chip { font-weight: 800; color: var(--teal-dark); background: var(--mist); border-radius: 999px; padding: 4px 11px; font-size: 14px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card-head h2 { margin: 0; }
+.soon { margin: 4px 0 0; }
+.water-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.water-line .sub { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+/* Species search */
+.search { position: relative; flex: 1; min-width: 0; width: 100%; }
+.search-input { width: 100%; min-height: 50px; font-size: 16px; }
+.search-results { scroll-margin-bottom: 120px; margin-top: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden auto; max-height: 340px; box-shadow: var(--shadow); }
+.search-results[hidden] { display: none; }
+.search-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 12px; border: 0; border-bottom: 1px solid #EBF1F0; background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.search-row:last-child { border-bottom: 0; }
+.search-row:active { background: var(--mist); }
+.search-row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.search-row .name { font-size: 15.5px; font-weight: 700; overflow-wrap: anywhere; }
+.search-row .sub { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+.search-row .sci { font-style: italic; }
+.search-row.custom .avatar { font-size: 22px; font-weight: 700; }
+.edit-row .search { flex: 1 1 100%; }
