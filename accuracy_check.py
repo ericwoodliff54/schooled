@@ -40,6 +40,7 @@ class SpeciesDB:
         return self.by_key.get(norm_key(name)) if name else None
 
     def resolve(self, common, scientific):
+        common = re.sub(r'\s*\(.*?(\)|$)', '', (common or '').split(' / ')[0]).strip()
         hit = self.find(common)
         how = 'exact' if hit else ''
         if not hit and scientific:
