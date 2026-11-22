@@ -5,7 +5,7 @@
 
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io'];
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
-const FALLBACK_MODEL = 'gemini-3.6-flash';
+const FALLBACK_MODEL = 'gemini-4-hydrogen';
 const MAX_IMAGE_CHARS = 2800000; // about 2 MB of photo data
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
@@ -186,7 +186,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 6: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/scan') {
