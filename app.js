@@ -553,126 +553,85 @@ function kindTotals(t) {
   return sums;
 }
 
-const homeAdd = createSearch({
-  placeholder: 'Search to add a fish, plant or coral', label: 'Add a fish, plant or coral',
-  type: () => { const t = activeTank(); return t ? t.type : 'Freshwater'; },
-  onPick: (name, entry) => {
-    const t = activeTank();
-    if (!t) return;
-    addToTank(t, name, 1, 'add', entry ? entry.k : undefined);
-    homeAdd.clear();
-    saveState();
-    renderHome();
-    toast('Added ' + canonName(name));
-  }
-});
-$('home-add-slot').append(homeAdd.root);
 
-function renderHome() {
-  const t = activeTank();
-  const photo = $('home-photo');
-  const switchRow = $('home-switch-row');
-  const box = $('home-fish');
-  const stats = $('home-stats');
-  const water = $('home-water');
-  box.replaceChildren();
-  water.replaceChildren();
 
-  if (!t) {
-    photo.hidden = true;
-    switchRow.hidden = true;
-    stats.hidden = true;
-    $('home-health').hidden = true;
-    water.hidden = true;
-    $('home-add').hidden = true;
-    $('home-greet').textContent = 'Welcome to Schooled';
-    $('home-title').textContent = 'Welcome';
-    $('home-sub').textContent = 'No tank added yet.';
-    box.append(
-      el('h2', { text: 'Add your first tank' }),
-      el('p', { class: 'muted', text: 'Give it a name and a photo, and keep its fish, plants and corals in one place.' }),
-      el('button', { type: 'button', class: 'btn primary small', text: 'Add a tank', onclick: startAddTank })
-    );
-    return;
-  }
-
-  const hr = new Date().getHours();
-  $('home-greet').textContent = hr < 5 ? 'Up late?' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
-  $('home-title').textContent = tankLabel(t);
-  $('home-sub').textContent = tankSummary(t) || 'Open My Tanks to add details.';
-  if (t.photo) { photo.src = t.photo; photo.alt = 'Photo of ' + tankLabel(t); photo.hidden = false; }
-  else { photo.removeAttribute('src'); photo.hidden = true; }
-
-  if (state.tanks.length > 1) {
-    const sel = $('home-switch');
-    sel.replaceChildren(...state.tanks.map((x) => el('option', { value: x.id, text: tankLabel(x) })));
-    sel.value = t.id;
-    switchRow.hidden = false;
-  } else {
-    switchRow.hidden = true;
-  }
-
-  // At a glance
-  const sums = kindTotals(t);
-  const third = t.type === 'Saltwater' ? 'Corals & inverts' : 'Shrimp & snails';
-  const chips = [[sums.fish, 'Fish'], [sums.plant, 'Plants'], [sums.other, third]].filter((c, i) => i === 0 || c[0] > 0);
-  stats.replaceChildren(...chips.map((c) => el('div', { class: 'stat' }, el('strong', { text: String(c[0]) }), el('span', { text: c[1] }))));
-  stats.hidden = !t.fish.length;
-
-  const health = $('home-health');
-  health.replaceChildren();
-  if (t.fish.length) {
-    const r = tankCheck(t);
-    const bad = r.issues.some((i) => i.level === 'bad');
-    health.append(
-      el('h2', { text: 'Tank health' }),
-      stockBar(t),
-      el('div', { class: 'water-line' },
-        r.issues.length
-          ? el('span', { class: 'pill ' + (bad ? 'bad' : 'warn'), text: r.issues.length + (r.issues.length === 1 ? ' tank mate warning' : ' tank mate warnings') })
-          : el('span', { class: 'pill ok', text: 'Tank mates look good' }),
-        el('button', { type: 'button', class: 'btn small', text: 'Review', onclick: () => showTank(t.id) }))
-    );
-    health.hidden = false;
-  } else {
-    health.hidden = true;
-  }
-
-  // What's in the tank
-  if (!t.fish.length) {
-    box.append(
-      el('h2', { text: 'Nothing in this tank yet' }),
-      el('p', { class: 'muted', text: 'Scan a photo and Schooled will name what it sees, or search below to add things by hand.' })
-    );
-  } else {
-    const top = t.fish.slice().sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 14);
-    box.append(
-      el('div', { class: 'card-head' },
-        el('h2', { text: 'In this tank' }),
-        el('button', { type: 'button', class: 'btn small', text: t.fish.length > top.length ? 'See all ' + t.fish.length : 'Edit', onclick: () => showTank(t.id) })
-      ),
-      el('div', { class: 'strip' }, ...top.map((f) => el('button', { type: 'button', class: 'strip-item row-main', 'aria-label': 'Details for ' + f.name, onclick: () => showSpecies(f.name, t.id) },
-        el('span', { class: 'strip-pic' }, rowAvatar(f), el('span', { class: 'strip-count', text: '\u00d7' + f.count })),
-        el('span', { class: 'name', text: f.name })
-      )))
-    );
-  }
-  $('home-add').hidden = false;
-
-  // Water
-  const line = t.water === 'city' ? (t.zip ? 'City water \u00b7 ZIP ' + t.zip : 'City water \u00b7 add your ZIP for tap water info')
-    : t.water === 'well' ? 'Well water' : 'RO / filtered water';
-  water.append(el('div', { class: 'water-line' },
-    el('div', {}, el('h2', { text: 'Water' }), el('span', { class: 'sub', text: line })),
-    el('button', { type: 'button', class: 'btn small', text: 'Details', onclick: () => showView('water') })
-  ));
-  water.hidden = false;
+const FEATURES = [
+  { icon: 'fish', color: 'teal', title: 'My Tanks', text: 'Fish, plants, stocking and tank mate checks', go: () => showView('tanks') },
+  { icon: 'search', color: 'blue', title: 'Species guide', text: 'Look up care, size and good tank mates', go: () => openLookup() },
+  { icon: 'drop', color: 'aqua', title: 'Water and tap info', text: 'Tap water and what it means for your tank', go: () => showView('water') },
+  { icon: 'star', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you want, fish and plants included', soon: true },
+  { icon: 'strip', color: 'orange', title: 'Test strip reader', text: 'Photograph a strip and read your water', soon: true },
+  { icon: 'chart', color: 'green', title: 'Water log', text: 'Track readings and spot trends', soon: true },
+  { icon: 'bell', color: 'pink', title: 'Reminders', text: 'Water changes, feedings and filter care', soon: true },
+  { icon: 'chat', color: 'blue', title: 'Ask the tank', text: 'Ask questions about your own tank', soon: true }
+];
+const FEATURE_ICONS = {
+  fish: KIND_ICONS.fish,
+  search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'M20 20l-4-4'],
+  drop: ['M12 3c4 5 6 8 6 11a6 6 0 0 1-12 0c0-3 2-6 6-11z'],
+  star: ['M12 3l2.6 5.6 6.1.8-4.5 4.2 1.1 6-5.3-3-5.3 3 1.1-6L3.3 9.4l6.1-.8z'],
+  strip: ['M8 3h8v18H8z', 'M8 8h8', 'M8 12h8', 'M8 16h8'],
+  chart: ['M4 20V4', 'M4 20h16', 'M8 15l4-4 3 3 5-6'],
+  bell: ['M6 16V11a6 6 0 1 1 12 0v5l2 2H4z', 'M10 21h4'],
+  chat: ['M4 5h16v11H9l-5 4z']
+};
+function featureIcon(name) {
+  const svg = kindIcon('fish');
+  svg.replaceChildren();
+  (FEATURE_ICONS[name] || FEATURE_ICONS.fish).forEach((d) => {
+    const p = document.createElementNS(SVG_NS, 'path');
+    p.setAttribute('d', d);
+    svg.append(p);
+  });
+  return svg;
 }
 
-$('home-switch').addEventListener('change', () => {
-  const id = $('home-switch').value;
-  if (getTank(id)) { state.activeId = id; saveState(); renderHome(); }
-});
+let lookupBox = null;
+function openLookup() {
+  const input = document.querySelector('#home-lookup .search-input');
+  if (lookupBox) { lookupBox.scrollIntoView && lookupBox.scrollIntoView({ block: 'center' }); }
+  if (input) input.focus();
+}
+
+function renderHome() {
+  const tanks = $('home-tanks');
+  tanks.replaceChildren();
+  if (!state.tanks.length) {
+    tanks.append(el('div', { class: 'card' },
+      el('h2', { text: 'Add your first tank' }),
+      el('p', { class: 'muted', text: 'Give it a name and a photo, and keep its fish, plants and corals in one place.' }),
+      el('button', { type: 'button', class: 'btn primary small', text: 'Add a tank', onclick: startAddTank })));
+  } else {
+    const active = activeTank();
+    state.tanks.forEach((t) => {
+      const sums = kindTotals(t);
+      const count = sums.fish + sums.plant + sums.other;
+      tanks.append(el('button', { type: 'button', class: 'home-tank', 'aria-label': 'Open ' + tankLabel(t), onclick: () => { state.activeId = t.id; saveState(); showTank(t.id); } },
+        t.photo ? el('img', { class: 'home-tank-pic', src: t.photo, alt: '' }) : el('span', { class: 'home-tank-pic empty' }, kindIcon('fish')),
+        el('span', { class: 'home-tank-text' },
+          el('strong', { text: tankLabel(t) }),
+          el('span', { text: [tankSummary(t), count ? count + (count === 1 ? ' animal or plant' : ' animals and plants') : 'Empty so far'].filter(Boolean).join(' \u00b7 ') })),
+        active && t.id === active.id && state.tanks.length > 1 ? el('span', { class: 'pill ok', text: 'Active' }) : null,
+        chevron()));
+    });
+  }
+
+  const box = $('home-features');
+  box.replaceChildren(...FEATURES.map((f) => el('button', { type: 'button', class: 'feature ' + f.color + (f.soon ? ' soon' : ''), onclick: () => (f.soon ? toast(f.title + ' is coming soon.') : f.go()) },
+    el('span', { class: 'feature-icon' }, featureIcon(f.icon)),
+    el('span', { class: 'feature-text' }, el('strong', { text: f.title }), el('span', { text: f.text })),
+    f.soon ? el('span', { class: 'soon-badge', text: 'Soon' }) : chevron())));
+
+  if (!lookupBox) {
+    const lookup = createSearch({
+      placeholder: 'Look up any fish, plant or coral', label: 'Look up a species',
+      type: () => { const t = activeTank(); return t ? t.type : 'Freshwater'; },
+      onPick: (name) => { lookup.clear(); const t = activeTank(); showSpecies(name, t ? t.id : ''); }
+    });
+    lookupBox = el('div', { id: 'home-lookup', class: 'home-lookup' }, lookup.root);
+  }
+  if (lookupBox.parentNode !== box.parentNode) $('home-tanks').after(lookupBox);
+}
 
 $('home-scan').addEventListener('click', () => showView('scan'));
 
