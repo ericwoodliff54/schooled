@@ -689,9 +689,9 @@ body[data-view="home"] .brand { display: none; }
 .stock-fill.full { background: linear-gradient(90deg, var(--teal-2), #E8A93A); }
 .stock-fill.high { background: linear-gradient(90deg, #E8A93A, #E5722D); }
 .stock-fill.over { background: linear-gradient(90deg, #E5722D, #C93A2E); }
-.stock-mark { position: absolute; left: 75%; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; border-radius: 2px; background: var(--ink); opacity: 0.55; }
+.stock-mark { position: absolute; right: 0; top: -5px; bottom: -5px; width: 2px; border-radius: 2px; background: var(--ink); opacity: 0.55; }
 .stock-scale { position: relative; height: 16px; font-size: 11.5px; font-weight: 600; color: var(--muted); display: flex; justify-content: space-between; }
-.stock-full { position: absolute; left: 75%; transform: translateX(-50%); color: var(--ink); }
+.stock-full { color: var(--ink); }
 
 .issues { display: flex; flex-direction: column; gap: 2px; }
 .issue { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 9px 4px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 12px; }
@@ -716,3 +716,24 @@ body[data-view="home"] .brand { display: none; }
 .fact-label { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .fact-value { font-size: 15px; font-weight: 700; color: var(--teal-dark); overflow-wrap: anywhere; }
 .mates { margin-top: 0; }
+
+/* Splash */
+#splash {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: radial-gradient(ellipse at 50% 35%, #046a8c 0%, #015378 55%, #01384f 100%);
+  transition: opacity 0.4s ease;
+}
+#splash.leaving { opacity: 0; pointer-events: none; }
+#splash img {
+  width: min(92vw, 560px); height: auto;
+  -webkit-mask-image: radial-gradient(ellipse closest-side, #000 58%, transparent 100%);
+  mask-image: radial-gradient(ellipse closest-side, #000 58%, transparent 100%);
+  animation: splash-in 0.9s ease both;
+}
+#splash p {
+  margin: 0; color: #BFEDEA; font-size: 19px; font-weight: 700; letter-spacing: 0.02em;
+  animation: splash-in 0.9s ease 0.5s both;
+}
+@keyframes splash-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { #splash, #splash img, #splash p { animation: none; transition: none; } }

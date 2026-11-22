@@ -519,8 +519,25 @@ $('setup-skip').addEventListener('click', () => {
 });
 
 // ---------- Home ----------
+// Your own photo first, then the Wikipedia picture for known species, then the plain icon.
+let thumbQueue = Promise.resolve();
 function rowAvatar(f) {
-  return f.photo ? el('img', { class: 'avatar photo', src: f.photo, alt: '' }) : kindAvatar(rosterKind(f));
+  if (f.photo) return el('img', { class: 'avatar photo', src: f.photo, alt: '' });
+  const icon = kindAvatar(rosterKind(f));
+  const entry = lookupSpecies(f.name);
+  if (!entry) return icon;
+  const make = (found) => {
+    const img = el('img', { class: 'avatar photo', src: found.src, alt: '', loading: 'lazy' });
+    img.addEventListener('error', () => { if (img.parentNode) img.replaceWith(kindAvatar(rosterKind(f))); });
+    return img;
+  };
+  const cached = stockCached(entry, entry.n);
+  if (cached) return make(cached);
+  if (cached === 0) return icon;
+  thumbQueue = thumbQueue.then(() => fetchStock(entry, entry.n)).then((found) => {
+    if (found && icon.parentNode) icon.replaceWith(make(found));
+  }, () => {});
+  return icon;
 }
 function rosterKind(f) {
   const hit = lookupSpecies(f.name);
@@ -753,6 +770,7 @@ function todayString() {
 
 function datePill(t) {
   const input = el('input', { type: 'date', value: t.started, max: todayString(), 'aria-label': 'Running since' });
+  input.addEventListener('click', () => { try { if (input.showPicker) input.showPicker(); } catch (err) { /* older browsers open it themselves */ } });
   input.addEventListener('change', () => {
     t.started = /^\d{4}-\d{2}-\d{2}$/.test(input.value) ? input.value : '';
     saveState();
@@ -1612,17 +1630,21 @@ function tankCheck(t) {
 
 function stocking(t) {
   const gal = tankGallons(t);
-  let load = 0, skipped = 0, known = 0;
+  let load = 0, skipped = 0, known = 0, need = 0, needName = '';
   t.fish.forEach((f) => {
     const e = careOf(f.name);
     if (!e) { skipped++; return; }
     known++;
+    if (e.k !== 'plant' && e.c.g > need) { need = e.c.g; needName = e.n; }
     if (e.k === 'fish') load += f.count * e.c.z * (hasTag(e, 'heavy') ? 2 : 1);
     else if (isMobile(e)) load += f.count * e.c.z * 0.25;
   });
   const factor = t.type === 'Saltwater' ? 0.4 : t.type === 'Brackish' ? 0.7 : 1;
   const cap = gal * factor;
-  return { gal, load, cap, pct: cap ? load / cap : 0, skipped, known };
+  // A fish that needs a bigger tank than this one counts as over capacity, however few inches it adds up to.
+  const tooSmall = gal && need > gal ? { name: needName, gal: need } : null;
+  const byInches = cap ? load / cap : 0;
+  return { gal, load, cap, pct: tooSmall ? Math.max(byInches, need / gal) : byInches, skipped, known, tooSmall };
 }
 function stockLevel(pct) {
   if (pct <= 0.55) return { label: 'Room to grow', tone: 'low', hint: 'Plenty of room to add more.' };
@@ -1639,16 +1661,17 @@ function stockBar(t) {
   if (!s.gal) { box.append(el('p', { class: 'muted small', text: 'Add your tank size on the tank page to see how full it is.' })); return box; }
   if (!s.known) { box.append(el('p', { class: 'muted small', text: 'Add fish to see how full this tank is.' })); return box; }
   const lvl = stockLevel(s.pct);
-  const fill = Math.max(2, Math.min(s.pct / 1.33, 1) * 100);
+  const fill = Math.max(2, Math.min(s.pct, 1) * 100);
+  const over = s.pct > 1 ? Math.round((s.pct - 1) * 100) : 0;
   box.append(
     el('div', { class: 'stock-top' },
       el('strong', { text: lvl.label }),
-      el('span', { class: 'stock-pct', text: Math.round(s.pct * 100) + '% of capacity' })),
+      el('span', { class: 'stock-pct', text: over ? over + '% over capacity' : Math.round(s.pct * 100) + '% of capacity' })),
     el('div', { class: 'stock-track', role: 'img', 'aria-label': lvl.label + ', ' + Math.round(s.pct * 100) + ' percent of capacity' },
       el('div', { class: 'stock-fill ' + lvl.tone, style: 'width:' + fill.toFixed(1) + '%' }),
       el('div', { class: 'stock-mark' })),
     el('div', { class: 'stock-scale' }, el('span', { text: 'Empty' }), el('span', { class: 'stock-full', text: 'Full' })),
-    el('p', { class: 'muted small', text: lvl.hint + ' An estimate from adult sizes.' + (s.skipped ? ' ' + s.skipped + ' not counted (no size data).' : '') })
+    el('p', { class: 'muted small', text: (s.tooSmall ? s.tooSmall.name + ' needs at least ' + s.tooSmall.gal + ' gallons, which is more than this tank holds.' : lvl.hint) + ' An estimate from adult sizes.' + (s.skipped ? ' ' + s.skipped + ' not counted (no size data).' : '') })
   );
   return box;
 }
@@ -1703,6 +1726,17 @@ function saveStock(key, value) {
   if (Object.keys(stockSaved).length > 150) stockSaved = {};
   stockSaved[key] = value;
   try { localStorage.setItem('schooled.stock', JSON.stringify(stockSaved)); } catch (err) { /* cache is optional */ }
+}
+// Cached Wikipedia picture: the photo if we have one, 0 if every title is known to have none, undefined if unknown.
+function stockCached(entry, name) {
+  const titles = [usableScientific(entry), entry ? entry.n : name].filter(Boolean);
+  let unknown = false;
+  for (const title of titles) {
+    const v = stockSaved[normKey(title)];
+    if (v) return v;
+    if (v === undefined) unknown = true;
+  }
+  return unknown ? undefined : 0;
 }
 async function fetchStock(entry, name) {
   const titles = [usableScientific(entry), entry ? entry.n : name].filter(Boolean);
@@ -1905,6 +1939,16 @@ function renderSpecies() {
 function stockCard(t) {
   return el('div', { class: 'card' }, el('div', { class: 'card-head' }, el('h2', { text: 'Stocking' })), stockBar(t));
 }
+
+// ---------- Splash ----------
+(function () {
+  const s = document.getElementById('splash');
+  if (!s) return;
+  setTimeout(() => {
+    s.classList.add('leaving');
+    setTimeout(() => s.remove(), 450);
+  }, 2500);
+})();
 
 // ---------- Start ----------
 if ('serviceWorker' in navigator) {
