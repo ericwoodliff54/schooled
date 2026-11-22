@@ -9,9 +9,54 @@ import argparse, base64, collections, datetime, io, json, os, random, sys, time
 import requests
 from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from accuracy_check import SpeciesDB, commons_candidates, download, norm_key, pct, ORIGIN, UA
+from accuracy_check import SpeciesDB, commons_candidates, download, norm_key, pct, genus_of, ORIGIN, UA
 
 TILE = 640
+
+
+def montage(img, boxes):
+    """Same close-up picture the app builds: up to three padded crops of one kind of animal, side by side."""
+    W, H = img.size
+    tiles = []
+    for b in sorted(boxes, key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))[:3]:
+        x1, x2, y1, y2 = b[1] / 1000 * W, b[3] / 1000 * W, b[0] / 1000 * H, b[2] / 1000 * H
+        px, py = (x2 - x1) * 0.3, (y2 - y1) * 0.3
+        x1, x2, y1, y2 = max(0, x1 - px), min(W, x2 + px), max(0, y1 - py), min(H, y2 + py)
+        w, h = max(16, x2 - x1), max(16, y2 - y1)
+        k = min(2.5, 480 / max(w, h))
+        tiles.append((img.crop((int(x1), int(y1), int(x1 + w), int(y1 + h))).resize((max(8, round(w * k)), max(8, round(h * k)))),))
+    if not tiles:
+        return None
+    gap = 6
+    width = sum(t[0].width for t in tiles) + gap * (len(tiles) - 1)
+    height = max(t[0].height for t in tiles)
+    sheet = Image.new('RGB', (width, height), (34, 34, 34))
+    x = 0
+    for t in tiles:
+        sheet.paste(t[0], (x, 0))
+        x += t[0].width + gap
+    if width > 1400:
+        sheet = sheet.resize((1400, max(1, round(height * 1400 / width))))
+    out = io.BytesIO()
+    sheet.save(out, 'JPEG', quality=88)
+    return out.getvalue()
+
+
+def call_verify(worker, key, montages, items, tank_type):
+    headers = {'Origin': ORIGIN, 'Content-Type': 'application/json'}
+    if key:
+        headers['X-Test-Key'] = key
+    body = {'mode': 'verify', 'mime': 'image/jpeg', 'images': [base64.b64encode(m).decode() for m in montages], 'items': items, 'tank_type': tank_type}
+    for attempt in range(3):
+        try:
+            r = requests.post(worker.rstrip('/') + '/scan', json=body, headers=headers, timeout=90)
+            if r.status_code == 429:
+                time.sleep(65)
+                continue
+            return r.json()
+        except (requests.RequestException, ValueError):
+            time.sleep(5)
+    return {'ok': False}
 
 
 def call_scan(worker, key, jpg, tank_type):
@@ -64,6 +109,7 @@ def main():
     ap.add_argument('--worker', default='https://schooled-worker.ericwoodliff.workers.dev')
     ap.add_argument('--commons', default='https://commons.wikimedia.org/w/api.php')
     ap.add_argument('--delay', type=float, default=-1)
+    ap.add_argument('--no-verify', dest='verify', action='store_false', help='skip the zoom-in check the app does after the first look')
     ap.add_argument('--out', default='scan-out')
     a = ap.parse_args()
 
@@ -82,7 +128,7 @@ def main():
             pool['Saltwater' if e['w'] == 's' else 'Freshwater'].append(e)
     print('Species pool: %d freshwater, %d saltwater' % (len(pool['Freshwater']), len(pool['Saltwater'])))
 
-    photo_cache, results, sent = {}, [], 0
+    photo_cache, results, sent, sent_verify = {}, [], 0, 0
     for ti in range(a.tanks):
         ttype = 'Saltwater' if ti % 3 == 2 and len(pool['Saltwater']) >= per else 'Freshwater'
         if len(pool[ttype]) < per:
@@ -119,7 +165,34 @@ def main():
         found = []
         for sp in data.get('species') or []:
             hit, how = db.resolve(sp.get('common_name'), sp.get('scientific_name'))
-            found.append({'said': sp.get('common_name', ''), 'matched': hit['n'] if hit else '', 'count': sp.get('count', 0), 'conf': sp.get('confidence', 0), 'kind': sp.get('kind', '')})
+            found.append({'said': sp.get('common_name', ''), 'matched': hit['n'] if hit else '', 'count': sp.get('count', 0), 'conf': sp.get('confidence', 0), 'kind': sp.get('kind', ''), 'boxes': sp.get('boxes') or [], 'alts': sp.get('alternatives') or [], 'first': sp.get('common_name', '')})
+        if a.verify:
+            sheet = Image.open(io.BytesIO(jpg)).convert('RGB')
+            targets = []
+            for f in found:
+                hit = db.find(f['matched']) if f['matched'] else None
+                grp = db.groups.get(hit['g']) if hit and hit.get('g') else None
+                if (f['kind'] in ('fish', 'coral', 'invert') or grp) and f['boxes'] and (f['conf'] < 0.9 or (grp and grp.get('h')) or not hit):
+                    targets.append(f)
+            targets = sorted(targets, key=lambda f: f['conf'])[:6]
+            if targets:
+                ms = [montage(sheet, f['boxes']) for f in targets]
+                pairs = [(f, m) for f, m in zip(targets, ms) if m]
+                if pairs:
+                    items = [{'name': f['said'], 'kind': f['kind'], 'count': f['count'], 'alternatives': f['alts']} for f, m in pairs]
+                    chk = call_verify(a.worker, key, [m for f, m in pairs], items, ttype)
+                    sent_verify += 1
+                    for it in chk.get('items') or []:
+                        if it.get('index') is None or it['index'] >= len(pairs):
+                            continue
+                        f = pairs[it['index']][0]
+                        if (it.get('confidence') or 0) >= 0.45 and not str(it.get('common_name', '')).lower().startswith('unidentified'):
+                            hit, how = db.resolve(it.get('common_name'), it.get('scientific_name'))
+                            f['said'] = it.get('common_name', f['said'])
+                            f['matched'] = hit['n'] if hit else ''
+                            f['conf'] = it.get('confidence')
+            for f in found:
+                f.pop('boxes', None)
         row['found'] = found
         row['too_far'] = bool(data.get('too_far'))
         got = {f['matched'] for f in found if f['matched']}
@@ -132,15 +205,23 @@ def main():
         print('Tank %d: %d of %d found' % (ti + 1, len(row['hits']), len(truth)))
         time.sleep(delay)
 
-    write_report(a, results, sent)
+    write_report(a, results, sent, sent_verify, db)
 
 
-def write_report(a, results, sent):
+def write_report(a, results, sent, sent_verify, db):
     ok = [r for r in results if 'found' in r]
     total = sum(len(r['truth']) for r in ok)
     hits = sum(len(r['hits']) for r in ok)
     extras = sum(len(r['extra']) for r in ok)
     reported = sum(len(r['found']) for r in ok)
+    def near(truth_name, row):
+        t = db.find(truth_name)
+        for f in row['found']:
+            h = db.find(f['matched']) if f['matched'] else None
+            if h and t and h['n'] != t['n'] and ((h.get('g') and h.get('g') == t.get('g')) or (genus_of(h.get('s')) and genus_of(h.get('s')) == genus_of(t.get('s')))):
+                return True
+        return False
+    nearmiss = sum(1 for r in ok for n in r['missed'] if near(n, r))
     exact1 = sum(1 for r in ok for n, c in r['counts'].items() if c == 1)
     counted = sum(len(r['counts']) for r in ok)
     lines = ['# Schooled tank scan check', '',
@@ -150,6 +231,7 @@ def write_report(a, results, sent):
              '| Measure | Result |', '|---|---|',
              '| Species found (recall) | %d of %d (%s) |' % (hits, total, pct(hits, total)),
              '| Answers that were really in the tank (precision) | %d of %d (%s) |' % (reported - extras, reported, pct(reported - extras, reported)),
+             '| Missed but named a close relative (same genus or look-alike group) | %d |' % nearmiss,
              '| Count right (one of each) | %d of %d (%s) |' % (exact1, counted, pct(exact1, counted)), '']
     errs = [r for r in results if 'error' in r]
     if errs:
@@ -163,7 +245,7 @@ def write_report(a, results, sent):
     lines += ['## Every test tank', '', '| Tank | Water | In the picture | Found | Missed | Extras |', '|---|---|---|---|---|---|']
     for r in ok:
         lines.append('| %d | %s | %s | %d | %s | %s |' % (r['tank'], r['type'], ', '.join(r['truth']), len(r['hits']), ', '.join(r['missed']) or '-', ', '.join(f['said'] for f in r['extra']) or '-'))
-    lines += ['', '## Cost', '', '%d scans. A first-pass scan costs about 0.55 cents, so this run cost roughly %.1f cents.' % (sent, sent * 0.55)]
+    lines += ['', '## Cost', '', '%d scans plus %d zoom-in checks. A first look costs about 0.55 cents and a zoom-in check roughly 0.3 cents, so this run cost about %.1f cents.' % (sent, sent_verify, sent * 0.55 + sent_verify * 0.3)]
     os.makedirs(a.out, exist_ok=True)
     text = '\n'.join(lines) + '\n'
     open(os.path.join(a.out, 'scan-report.md'), 'w', encoding='utf-8').write(text)
