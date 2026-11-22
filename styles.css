@@ -667,3 +667,52 @@ body[data-view="home"] .brand { display: none; }
 .search-row .sci { font-style: italic; }
 .search-row.custom .avatar { font-size: 22px; font-weight: 700; }
 .edit-row .search { flex: 1 1 100%; }
+
+/* Species pages, stocking and tank mate check */
+.row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 0; margin: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.row-main::after { content: ""; }
+.row-main .name { font-size: 16px; font-weight: 700; overflow-wrap: anywhere; letter-spacing: -0.01em; }
+.row-main .sub { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+.row-main .sci { font-style: italic; }
+.avatar.photo { object-fit: cover; padding: 0; border-radius: 14px; background: var(--mist); }
+.insights { display: flex; flex-direction: column; gap: 14px; }
+.insights:empty { display: none; }
+
+.stock { display: flex; flex-direction: column; gap: 6px; }
+.stock-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.stock-top strong { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+.stock-pct { font-size: 13px; color: var(--muted); font-weight: 600; }
+.stock-track { position: relative; height: 12px; border-radius: 999px; background: var(--mist); margin: 4px 0 0; }
+.stock-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+.stock-fill.low { background: linear-gradient(90deg, #5CC9C2, var(--aqua)); }
+.stock-fill.ok { background: linear-gradient(90deg, var(--aqua), var(--teal-2)); }
+.stock-fill.full { background: linear-gradient(90deg, var(--teal-2), #E8A93A); }
+.stock-fill.high { background: linear-gradient(90deg, #E8A93A, #E5722D); }
+.stock-fill.over { background: linear-gradient(90deg, #E5722D, #C93A2E); }
+.stock-mark { position: absolute; left: 75%; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; border-radius: 2px; background: var(--ink); opacity: 0.55; }
+.stock-scale { position: relative; height: 16px; font-size: 11.5px; font-weight: 600; color: var(--muted); display: flex; justify-content: space-between; }
+.stock-full { position: absolute; left: 75%; transform: translateX(-50%); color: var(--ink); }
+
+.issues { display: flex; flex-direction: column; gap: 2px; }
+.issue { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 9px 4px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 12px; }
+.issue.static { cursor: default; }
+.issue:not(.static):active { background: var(--mist); }
+.issue .dot { flex-shrink: 0; width: 10px; height: 10px; margin-top: 6px; border-radius: 50%; background: #E8A93A; }
+.issue.bad .dot { background: #C93A2E; }
+.issue-text { font-size: 14.5px; line-height: 1.4; font-weight: 500; }
+
+.species-body { display: flex; flex-direction: column; gap: 14px; }
+.species-title { margin: 0; overflow-wrap: anywhere; }
+.species-body .sci { margin: -8px 0 0; font-style: italic; }
+.species-photo { aspect-ratio: 16 / 10; }
+.species-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.species-photo-wrap { display: flex; flex-direction: column; gap: 4px; }
+.photo-credit { margin: 0; }
+.photo-credit a { color: var(--teal-dark); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.stepper { display: flex; align-items: center; gap: 10px; }
+.facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fact { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--mist); border-radius: 14px; }
+.fact-label { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.fact-value { font-size: 15px; font-weight: 700; color: var(--teal-dark); overflow-wrap: anywhere; }
+.mates { margin-top: 0; }

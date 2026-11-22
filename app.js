@@ -187,6 +187,7 @@ const SIZE_PRESETS = {
   liters: [20, 40, 60, 100, 150, 200, 300, 400, 500, 700, 1000]
 };
 const TANK_PHOTO_SIDE = 800;
+const SPECIES_PHOTO_SIDE = 640;
 const MAX_TANKS = 12;
 
 function uid() {
@@ -290,14 +291,16 @@ function toast(message) {
 }
 
 // ---------- Navigation ----------
-const VIEWS = ['setup', 'home', 'scan', 'results', 'water', 'tanks', 'tank'];
-const NAV_FOR = { home: 'home', scan: 'scan', results: 'scan', water: 'water', tanks: 'tanks', tank: 'tanks' };
+const VIEWS = ['setup', 'home', 'scan', 'results', 'water', 'tanks', 'tank', 'species'];
+let currentView = 'home';
+const NAV_FOR = { home: 'home', scan: 'scan', results: 'scan', water: 'water', tanks: 'tanks', tank: 'tanks', species: 'tanks' };
 let openTankId = '';
 let editingSize = false;
 
 function showView(name) {
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== name; });
   document.body.dataset.view = name;
+  currentView = name;
   $('nav').hidden = name === 'setup';
   document.querySelectorAll('#nav button').forEach((b) => {
     if (b.dataset.view === NAV_FOR[name]) b.setAttribute('aria-current', 'page');
@@ -308,6 +311,7 @@ function showView(name) {
   if (name === 'water') renderWater();
   if (name === 'tanks') renderTanks();
   if (name === 'tank') renderTank();
+  if (name === 'species') renderSpecies();
   window.scrollTo(0, 0);
 }
 
@@ -376,10 +380,10 @@ function totalFish(tank) {
 }
 
 // Reads a photo from almost any file type and shrinks it to fit in saved storage.
-async function photoFromFile(file) {
+async function photoFromFile(file, side) {
   const image = await loadImage(file);
   try {
-    return drawToJpeg(image.source, 0, 0, image.width, image.height, TANK_PHOTO_SIDE, 0.8);
+    return drawToJpeg(image.source, 0, 0, image.width, image.height, side || TANK_PHOTO_SIDE, 0.8);
   } finally {
     image.done();
   }
@@ -515,6 +519,9 @@ $('setup-skip').addEventListener('click', () => {
 });
 
 // ---------- Home ----------
+function rowAvatar(f) {
+  return f.photo ? el('img', { class: 'avatar photo', src: f.photo, alt: '' }) : kindAvatar(rosterKind(f));
+}
 function rosterKind(f) {
   const hit = lookupSpecies(f.name);
   const k = f.kind || (hit && hit.k) || 'fish';
@@ -558,6 +565,7 @@ function renderHome() {
     photo.hidden = true;
     switchRow.hidden = true;
     stats.hidden = true;
+    $('home-health').hidden = true;
     water.hidden = true;
     $('home-add').hidden = true;
     $('home-title').textContent = 'Welcome';
@@ -594,6 +602,25 @@ function renderHome() {
   );
   stats.hidden = !t.fish.length;
 
+  const health = $('home-health');
+  health.replaceChildren();
+  if (t.fish.length) {
+    const r = tankCheck(t);
+    const bad = r.issues.some((i) => i.level === 'bad');
+    health.append(
+      el('h2', { text: 'Tank health' }),
+      stockBar(t),
+      el('div', { class: 'water-line' },
+        r.issues.length
+          ? el('span', { class: 'pill ' + (bad ? 'bad' : 'warn'), text: r.issues.length + (r.issues.length === 1 ? ' tank mate warning' : ' tank mate warnings') })
+          : el('span', { class: 'pill ok', text: 'Tank mates look good' }),
+        el('button', { type: 'button', class: 'btn small', text: 'Review', onclick: () => showTank(t.id) }))
+    );
+    health.hidden = false;
+  } else {
+    health.hidden = true;
+  }
+
   // What's in the tank
   if (!t.fish.length) {
     box.append(
@@ -608,8 +635,9 @@ function renderHome() {
         el('button', { type: 'button', class: 'btn small', text: t.fish.length > top.length ? 'See all ' + t.fish.length : 'Edit', onclick: () => showTank(t.id) })
       ),
       el('div', { class: 'roster' }, ...top.map((f) => el('div', { class: 'item' },
-        kindAvatar(rosterKind(f)),
-        el('div', { class: 'grow' }, el('span', { class: 'name', text: f.name })),
+        rowAvatar(f),
+        el('button', { type: 'button', class: 'row-main', 'aria-label': 'Details for ' + f.name, onclick: () => showSpecies(f.name, t.id) },
+          el('span', { class: 'name', text: f.name })),
         el('span', { class: 'count-chip', text: '\u00d7\u00a0' + f.count })
       )))
     );
@@ -831,15 +859,21 @@ function renderTank() {
   const list = $('tank-list');
   list.replaceChildren();
   t.fish.forEach((f) => {
+    const sci = usableScientific(lookupSpecies(f.name));
     list.append(
       el('div', { class: 'item' },
-        el('div', { class: 'grow' }, el('span', { class: 'name', text: f.name })),
-        el('button', { type: 'button', class: 'round', 'aria-label': 'One fewer ' + f.name, text: '−', onclick: () => changeCount(t, f, -1) }),
+        rowAvatar(f),
+        el('button', { type: 'button', class: 'row-main', 'aria-label': 'Details for ' + f.name, onclick: () => showSpecies(f.name, t.id) },
+          el('span', { class: 'name', text: f.name }),
+          sci ? el('span', { class: 'sub sci', text: sci }) : null),
+        el('button', { type: 'button', class: 'round', 'aria-label': 'One fewer ' + f.name, text: '\u2212', onclick: () => changeCount(t, f, -1) }),
         el('span', { class: 'count', text: String(f.count) }),
         el('button', { type: 'button', class: 'round', 'aria-label': 'One more ' + f.name, text: '+', onclick: () => changeCount(t, f, 1) })
       )
     );
   });
+  const ins = $('tank-insights');
+  ins.replaceChildren(stockCard(t), mateCheckCard(t));
 }
 
 function changeCount(tank, fish, delta) {
@@ -847,7 +881,7 @@ function changeCount(tank, fish, delta) {
   if (fish.count < 1) tank.fish = tank.fish.filter((f) => f !== fish);
   if (fish.count > 999) fish.count = 999;
   saveState();
-  renderTank();
+  if (currentView === 'species') renderSpecies(); else renderTank();
 }
 
 $('tank-back').addEventListener('click', () => showView('tanks'));
@@ -1441,6 +1475,392 @@ $('save-scan').addEventListener('click', () => {
   pending = null;
   showTank(target.id);
 });
+
+// ---------- Care data, tank mate check and stocking ----------
+const TEMPER = { p: 'Peaceful', s: 'Semi-aggressive', a: 'Aggressive' };
+const DIET = { o: 'Eats most things', c: 'Meat eater', h: 'Plant and algae eater', p: 'Filter feeder' };
+const ZONE_FISH = { t: 'Top of the tank', m: 'Middle of the tank', b: 'Bottom of the tank', a: 'All levels' };
+const ZONE_PLANT = { f: 'Foreground', m: 'Midground', k: 'Background', x: 'Floating', a: 'Tied to wood or rock' };
+const LEVEL = { e: 'Beginner friendly', m: 'Some experience', h: 'Experienced keepers' };
+
+function hasTag(e, tag) { return !!(e && e.c && e.c.x && e.c.x.indexOf(tag) !== -1); }
+function careOf(name) { const e = lookupSpecies(name); return e && e.c ? e : null; }
+function isMobile(e) { return e.k === 'fish' || e.k === 'shrimp' || e.k === 'snail' || (e.k === 'invert' && !hasTag(e, 'sting')); }
+function sharesWater(a, b) { return [...a.w].some((c) => b.w.indexOf(c) !== -1); }
+function rangeGap(r1, r2) { return Math.max(0, Math.max(r1[0], r2[0]) - Math.min(r1[1], r2[1])); }
+function tankGallons(t) {
+  const n = parseFloat(t && t.size);
+  if (!(n > 0)) return 0;
+  return t.unit === 'liters' ? n / 3.785 : n;
+}
+
+// One animal's effect on another (only the direction given).
+function directional(x, y) {
+  const out = [];
+  const xs = x.c.z, ys = y.c.z;
+  if (hasTag(x, 'pred') && y.k === 'fish' && ys <= xs / 2) out.push({ level: 'bad', text: x.n + ' will likely eat ' + y.n });
+  else if (hasTag(x, 'opp') && y.k === 'fish' && ys <= xs / 3.2) out.push({ level: 'warn', text: x.n + ' may eat ' + y.n + ' once it is grown' });
+  if (hasTag(x, 'shrimp') && y.k === 'shrimp') out.push({ level: 'bad', text: x.n + ' hunts shrimp, so ' + y.n + ' will not last' });
+  if (hasTag(x, 'snail') && y.k === 'snail') out.push({ level: 'warn', text: x.n + ' eats snails such as ' + y.n });
+  if (hasTag(x, 'nip') && y.k === 'fish' && hasTag(y, 'longfin')) out.push({ level: 'warn', text: x.n + ' may nip the fins of ' + y.n });
+  if (x.k === 'fish' && y.k === 'fish' && x.c.m === 'a' && y.c.m === 'p' && ys <= xs * 1.5 && !hasTag(x, 'pred')) out.push({ level: 'warn', text: x.n + ' is aggressive and may bully ' + y.n });
+  const prey = y.k === 'coral' || y.k === 'invert' || y.k === 'shrimp' || y.k === 'snail';
+  if (hasTag(x, 'reefunsafe') && prey) out.push({ level: 'bad', text: x.n + ' eats or damages ' + y.n });
+  else if (hasTag(x, 'reefrisk') && prey) out.push({ level: 'warn', text: x.n + ' may nibble on ' + y.n });
+  if (hasTag(x, 'sting') && y.k === 'coral') out.push({ level: 'warn', text: x.n + ' can sting ' + y.n + ' if they touch, so leave space between them' });
+  if (hasTag(x, 'eatsplants') && y.k === 'plant' && y.c.y !== 'a') out.push({ level: 'warn', text: x.n + ' may eat ' + y.n });
+  return out;
+}
+
+function pairIssues(a, b) {
+  if (!a || !b || a === b || !a.c || !b.c) return [];
+  if (a.k === 'plant' && b.k === 'plant') return [];
+  const out = [];
+  if (!sharesWater(a, b)) {
+    out.push({ level: 'bad', text: a.n + ' and ' + b.n + ' need different water (freshwater vs saltwater)' });
+    return out;
+  }
+  if (a.k !== 'plant' && b.k !== 'plant') {
+    const tg = rangeGap(a.c.t, b.c.t);
+    const range = (e) => Math.round(e.c.t[0]) + '-' + Math.round(e.c.t[1]) + '°F';
+    if (tg > 6) out.push({ level: 'bad', text: a.n + ' (' + range(a) + ') and ' + b.n + ' (' + range(b) + ') want very different temperatures' });
+    else if (tg >= 3) out.push({ level: 'warn', text: a.n + ' (' + range(a) + ') and ' + b.n + ' (' + range(b) + ') like different temperatures' });
+    const pg = rangeGap(a.c.p, b.c.p);
+    if (pg > 1.0) out.push({ level: 'bad', text: a.n + ' and ' + b.n + ' want very different water (pH ' + a.c.p[0] + '-' + a.c.p[1] + ' vs ' + b.c.p[0] + '-' + b.c.p[1] + ')' });
+    else if (pg > 0.5) out.push({ level: 'warn', text: a.n + ' and ' + b.n + ' prefer different pH (' + a.c.p[0] + '-' + a.c.p[1] + ' vs ' + b.c.p[0] + '-' + b.c.p[1] + ')' });
+  }
+  out.push(...directional(a, b), ...directional(b, a));
+  if (a.g && a.g === b.g && hasTag(a, 'terr') && hasTag(b, 'terr') && a.g !== 'cichmal' && a.g !== 'tanganyika') {
+    out.push({ level: 'warn', text: a.n + ' and ' + b.n + ' are territorial relatives and may fight' });
+  }
+  return out;
+}
+
+// Things about one species in this tank: tank size and group size.
+function singleIssues(e, count, gal) {
+  const out = [];
+  if (e.k === 'plant' || !e.c) return out;
+  if (gal && e.c.g > gal) out.push({ level: 'bad', text: e.n + ' needs a tank of at least ' + e.c.g + ' gallons' });
+  if (e.c.s >= 3 && count < e.c.s && (e.k === 'fish' || e.k === 'shrimp')) out.push({ level: 'warn', text: e.n + ' do best in groups of ' + e.c.s + ' or more (you have ' + count + ')' });
+  if (count > 1 && e.k === 'fish' && hasTag(e, 'terr') && e.c.s <= 1 && e.g !== 'cfish' && gal && gal < e.c.g * count * 2) {
+    out.push({ level: 'warn', text: 'Several ' + e.n + ' may fight in a tank this size' });
+  }
+  return out;
+}
+
+function tankCheck(t) {
+  const gal = tankGallons(t);
+  const items = t.fish.map((f) => ({ f, e: careOf(f.name) })).filter((x) => x.e);
+  const issues = [];
+  const seen = new Set();
+  const push = (names, list) => list.forEach((i) => {
+    if (seen.has(i.text)) return;
+    seen.add(i.text);
+    issues.push({ level: i.level, text: i.text, names });
+  });
+  items.forEach((it) => push([it.e.n], singleIssues(it.e, it.f.count, gal)));
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) push([items[i].e.n, items[j].e.n], pairIssues(items[i].e, items[j].e));
+  }
+  issues.sort((p, q) => (p.level === q.level ? 0 : p.level === 'bad' ? -1 : 1));
+  return { issues, checked: items.length, unknown: t.fish.length - items.length };
+}
+
+function stocking(t) {
+  const gal = tankGallons(t);
+  let load = 0, skipped = 0, known = 0;
+  t.fish.forEach((f) => {
+    const e = careOf(f.name);
+    if (!e) { skipped++; return; }
+    known++;
+    if (e.k === 'fish') load += f.count * e.c.z * (hasTag(e, 'heavy') ? 2 : 1);
+    else if (isMobile(e)) load += f.count * e.c.z * 0.25;
+  });
+  const factor = t.type === 'Saltwater' ? 0.4 : t.type === 'Brackish' ? 0.7 : 1;
+  const cap = gal * factor;
+  return { gal, load, cap, pct: cap ? load / cap : 0, skipped, known };
+}
+function stockLevel(pct) {
+  if (pct <= 0.55) return { label: 'Room to grow', tone: 'low', hint: 'Plenty of room to add more.' };
+  if (pct <= 0.85) return { label: 'Comfortable', tone: 'ok', hint: 'A comfortable load for this size tank.' };
+  if (pct <= 1.0) return { label: 'Getting full', tone: 'full', hint: 'Getting full. Add new fish slowly.' };
+  if (pct <= 1.25) return { label: 'Fully stocked', tone: 'high', hint: 'Fully stocked. Good filtration and regular water changes matter.' };
+  return { label: 'Overstocked', tone: 'over', hint: 'Too many fish for this tank over time.' };
+}
+
+// A slim bar with a mark where the tank is full.
+function stockBar(t) {
+  const s = stocking(t);
+  const box = el('div', { class: 'stock' });
+  if (!s.gal) { box.append(el('p', { class: 'muted small', text: 'Add your tank size on the tank page to see how full it is.' })); return box; }
+  if (!s.known) { box.append(el('p', { class: 'muted small', text: 'Add fish to see how full this tank is.' })); return box; }
+  const lvl = stockLevel(s.pct);
+  const fill = Math.max(2, Math.min(s.pct / 1.33, 1) * 100);
+  box.append(
+    el('div', { class: 'stock-top' },
+      el('strong', { text: lvl.label }),
+      el('span', { class: 'stock-pct', text: Math.round(s.pct * 100) + '% of capacity' })),
+    el('div', { class: 'stock-track', role: 'img', 'aria-label': lvl.label + ', ' + Math.round(s.pct * 100) + ' percent of capacity' },
+      el('div', { class: 'stock-fill ' + lvl.tone, style: 'width:' + fill.toFixed(1) + '%' }),
+      el('div', { class: 'stock-mark' })),
+    el('div', { class: 'stock-scale' }, el('span', { text: 'Empty' }), el('span', { class: 'stock-full', text: 'Full' })),
+    el('p', { class: 'muted small', text: lvl.hint + ' An estimate from adult sizes.' + (s.skipped ? ' ' + s.skipped + ' not counted (no size data).' : '') })
+  );
+  return box;
+}
+
+let mateShowAll = false;
+function mateCheckCard(t) {
+  const r = tankCheck(t);
+  const bad = r.issues.some((i) => i.level === 'bad');
+  const chip = !r.issues.length
+    ? el('span', { class: 'pill ok', text: 'All clear' })
+    : el('span', { class: 'pill ' + (bad ? 'bad' : 'warn'), text: r.issues.length + (r.issues.length === 1 ? ' thing to look at' : ' things to look at') });
+  const shown = mateShowAll ? r.issues : r.issues.slice(0, 5);
+  const card = el('div', { class: 'card' },
+    el('div', { class: 'card-head' }, el('h2', { text: 'Tank mate check' }), chip));
+  if (!t.fish.length) card.append(el('p', { class: 'muted small', text: 'Add fish and I will check how they get along.' }));
+  else if (!r.issues.length) card.append(el('p', { class: 'muted small', text: r.checked ? 'No problems found between the ' + r.checked + ' kinds I could check.' : 'None of these names are in the species list yet, so nothing could be checked.' }));
+  shown.forEach((i) => card.append(
+    el('button', { type: 'button', class: 'issue ' + i.level, onclick: () => showSpecies(i.names[0], t.id) },
+      el('span', { class: 'dot', 'aria-hidden': 'true' }),
+      el('span', { class: 'issue-text', text: i.text }))
+  ));
+  if (r.issues.length > 5) card.append(el('button', { type: 'button', class: 'btn small', text: mateShowAll ? 'Show fewer' : 'Show all ' + r.issues.length, onclick: () => { mateShowAll = !mateShowAll; renderTank(); } }));
+  if (r.issues.length || r.unknown) {
+    card.append(el('p', { class: 'muted small', text: 'General guidance, and every fish is different.' + (r.unknown ? ' ' + r.unknown + ' not in the species list, so not checked.' : '') }));
+  }
+  return card;
+}
+
+// ---------- Species page ----------
+let speciesView = null;      // { name, tankId }
+let speciesStack = [];
+let speciesOrigin = 'tank';
+let speciesOriginTank = '';
+
+function showSpecies(name, tankId, fromChip) {
+  if (fromChip && speciesView) speciesStack.push(speciesView);
+  else { speciesStack = []; speciesOrigin = currentView === 'home' ? 'home' : 'tank'; speciesOriginTank = tankId || openTankId || ''; }
+  speciesView = { name, tankId: tankId || '' };
+  showView('species');
+}
+$('species-back').addEventListener('click', () => {
+  if (speciesStack.length) { speciesView = speciesStack.pop(); showView('species'); return; }
+  if (speciesOrigin === 'home') showView('home');
+  else if (getTank(speciesOriginTank)) showTank(speciesOriginTank);
+  else showView('tanks');
+});
+
+// Stock photos come from Wikipedia by name, with a link back to the page for credit.
+let stockSaved = {};
+try { stockSaved = JSON.parse(localStorage.getItem('schooled.stock') || '{}') || {}; } catch (err) { stockSaved = {}; }
+function saveStock(key, value) {
+  if (Object.keys(stockSaved).length > 150) stockSaved = {};
+  stockSaved[key] = value;
+  try { localStorage.setItem('schooled.stock', JSON.stringify(stockSaved)); } catch (err) { /* cache is optional */ }
+}
+async function fetchStock(entry, name) {
+  const titles = [usableScientific(entry), entry ? entry.n : name].filter(Boolean);
+  for (const title of titles) {
+    const key = normKey(title);
+    if (stockSaved[key] !== undefined) { if (stockSaved[key]) return stockSaved[key]; continue; }
+    try {
+      const res = await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(title.replace(/ /g, '_')), { signal: AbortSignal.timeout(8000) });
+      if (res.ok) {
+        const j = await res.json();
+        if (j && j.type === 'standard' && j.thumbnail && /^https:\/\//.test(j.thumbnail.source || '')) {
+          const found = { src: j.thumbnail.source, page: (j.content_urls && j.content_urls.desktop && j.content_urls.desktop.page) || '' };
+          saveStock(key, found);
+          return found;
+        }
+        saveStock(key, 0);
+      } else if (res.status === 404) saveStock(key, 0);
+    } catch (err) { /* offline: try again next time */ }
+  }
+  return null;
+}
+
+function rosterRow(t, name) {
+  return t ? t.fish.find((f) => canonKey(f.name) === canonKey(name)) : null;
+}
+
+function factRow(label, value) {
+  return el('div', { class: 'fact' }, el('span', { class: 'fact-label', text: label }), el('span', { class: 'fact-value', text: value }));
+}
+function speciesFacts(e) {
+  const c = e.c;
+  const temp = Math.round(c.t[0]) + '-' + Math.round(c.t[1]) + '°F';
+  const ph = c.p[0] + '-' + c.p[1];
+  if (e.k === 'plant') {
+    const light = hasTag(e, 'highlight') ? 'Bright light' : hasTag(e, 'lowlight') ? 'Low light' : 'Medium light';
+    return [['Height', 'Up to ' + c.z + ' in'], ['Placement', ZONE_PLANT[c.y] || 'Anywhere'], ['Light', light], ['CO2', hasTag(e, 'co2') ? 'Helps a lot' : 'Not needed'], ['Growth', hasTag(e, 'fast') ? 'Fast' : 'Slow to medium'], ['Temperature', temp], ['pH', ph], ['Care level', LEVEL[c.l]]];
+  }
+  if (e.k === 'coral') {
+    return [['Size', 'Up to ' + c.z + ' in'], ['Smallest tank', c.g + ' gal'], ['Temperature', temp], ['pH', ph], ['Stings neighbors', hasTag(e, 'sting') ? 'Yes, leave space' : 'Not much'], ['Care level', LEVEL[c.l]]];
+  }
+  const rows = [['Adult size', c.z + ' in'], ['Smallest tank', c.g + ' gal'], ['Temperature', temp], ['pH', ph]];
+  if (TEMPER[c.m]) rows.push(['Temperament', TEMPER[c.m]]);
+  if (DIET[c.d]) rows.push(['Diet', DIET[c.d]]);
+  if (ZONE_FISH[c.y]) rows.push(['Lives in', ZONE_FISH[c.y]]);
+  if (e.k === 'fish' || e.k === 'shrimp') rows.push(['Group size', c.s > 1 ? c.s + ' or more' : 'Fine on its own']);
+  rows.push(['Care level', LEVEL[c.l]]);
+  return rows;
+}
+
+function issueList(list) {
+  return el('div', { class: 'issues' }, ...list.map((i) => el('div', { class: 'issue static ' + i.level }, el('span', { class: 'dot', 'aria-hidden': 'true' }), el('span', { class: 'issue-text', text: i.text }))));
+}
+
+function speciesPhotoBox(entry, name, f, t) {
+  const box = el('div', { class: 'photo-box species-photo' });
+  const credit = el('p', { class: 'muted small photo-credit' });
+  const wrap = el('div', { class: 'species-photo-wrap' }, box, credit);
+  const icon = () => el('div', { class: 'tank-hero-empty' }, kindIcon(entry && entry.k ? entry.k : 'fish'), el('span', { text: 'No photo yet' }));
+  if (f && f.photo) {
+    box.append(el('img', { src: f.photo, alt: 'Your ' + name }));
+    credit.textContent = 'Your photo';
+  } else {
+    box.append(icon());
+    const shownFor = speciesView && speciesView.name;
+    fetchStock(entry, name).then((found) => {
+      if (!found || !speciesView || speciesView.name !== shownFor || (f && f.photo)) return;
+      box.replaceChildren(el('img', { src: found.src, alt: name, loading: 'lazy' }));
+      credit.replaceChildren(document.createTextNode('Photo from Wikipedia. It may be a different color form. '),
+        found.page ? el('a', { href: found.page, target: '_blank', rel: 'noopener noreferrer', text: 'Credits' }) : '');
+    });
+  }
+  return wrap;
+}
+
+function renderSpecies() {
+  const body = $('species-body');
+  body.replaceChildren();
+  if (!speciesView) { showView('home'); return; }
+  const t = getTank(speciesView.tankId) || activeTank();
+  const entry = lookupSpecies(speciesView.name);
+  const name = entry ? entry.n : speciesView.name;
+  const f = rosterRow(t, name);
+  const gal = tankGallons(t);
+
+  // Photo and photo buttons
+  body.append(speciesPhotoBox(entry, name, f, t));
+  if (f) {
+    const wire = (input) => input.addEventListener('change', async (event) => {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = '';
+      if (!file) return;
+      try {
+        f.photo = await photoFromFile(file, SPECIES_PHOTO_SIDE);
+        if (!saveState()) { f.photo = ''; return; }
+        renderSpecies();
+      } catch (err) { toast("This device couldn't open that photo. Try another one."); }
+    });
+    const cam = el('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true });
+    const gal2 = el('input', { type: 'file', accept: 'image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff', hidden: true });
+    wire(cam); wire(gal2);
+    body.append(el('div', { class: 'row photo-actions' },
+      el('button', { type: 'button', class: 'btn small', text: f.photo ? 'Retake' : 'Take photo', onclick: () => cam.click() }),
+      el('button', { type: 'button', class: 'btn small', text: f.photo ? 'Change' : 'Choose photo', onclick: () => gal2.click() }),
+      f.photo ? el('button', { type: 'button', class: 'btn small', text: 'Use stock photo', onclick: () => { f.photo = ''; saveState(); renderSpecies(); } }) : null),
+      cam, gal2);
+  }
+
+  // Name and tags
+  body.append(
+    el('h1', { class: 'species-title', text: name }),
+    entry && usableScientific(entry) ? el('p', { class: 'muted sci', text: entry.s }) : null);
+  if (entry && entry.c) {
+    body.append(el('div', { class: 'chips' },
+      el('span', { class: 'pill', text: entry.k === 'plant' ? 'Plant' : entry.k === 'coral' ? 'Coral' : entry.k === 'shrimp' ? 'Shrimp' : entry.k === 'snail' ? 'Snail' : entry.k === 'invert' ? 'Invertebrate' : 'Fish' }),
+      el('span', { class: 'pill ' + (entry.c.l === 'e' ? 'ok' : entry.c.l === 'h' ? 'warn' : ''), text: LEVEL[entry.c.l] }),
+      TEMPER[entry.c.m] ? el('span', { class: 'pill ' + (entry.c.m === 'p' ? 'ok' : entry.c.m === 'a' ? 'bad' : 'warn'), text: TEMPER[entry.c.m] }) : null));
+  }
+
+  // In your tank
+  const inTank = el('div', { class: 'card' });
+  if (t && f) {
+    inTank.append(
+      el('div', { class: 'card-head' }, el('h2', { text: 'In ' + tankLabel(t) }),
+        el('div', { class: 'stepper' },
+          el('button', { type: 'button', class: 'round', 'aria-label': 'One fewer ' + name, text: '−', onclick: () => changeCount(t, f, -1) }),
+          el('span', { class: 'count', text: String(f.count) }),
+          el('button', { type: 'button', class: 'round', 'aria-label': 'One more ' + name, text: '+', onclick: () => changeCount(t, f, 1) }))));
+  } else if (t) {
+    inTank.append(
+      el('div', { class: 'card-head' }, el('h2', { text: 'Not in ' + tankLabel(t) }),
+        el('button', { type: 'button', class: 'btn small primary', text: 'Add to tank', onclick: () => { addToTank(t, name, 1, 'add', entry ? entry.k : undefined); saveState(); renderSpecies(); } })));
+  }
+  if (inTank.childNodes.length) body.append(inTank);
+
+  if (!entry || !entry.c) {
+    body.append(el('div', { class: 'card' }, el('p', { class: 'muted', text: 'This name is not in the species list yet, so there are no care details. You can still keep it in your tank and add your own photo.' })));
+    return;
+  }
+
+  // Fit with this tank
+  if (t) {
+    let mine = [];
+    if (f) {
+      mine = tankCheck(t).issues.filter((i) => i.names.indexOf(entry.n) !== -1);
+    } else {
+      mine = singleIssues(entry, 1, gal);
+      t.fish.forEach((o) => { const oe = careOf(o.name); if (oe) mine.push(...pairIssues(entry, oe)); });
+      mine.sort((p, q) => (p.level === q.level ? 0 : p.level === 'bad' ? -1 : 1));
+    }
+    const fit = el('div', { class: 'card' }, el('h2', { text: f ? 'How it fits your tank' : 'If you add it to your tank' }));
+    if (!mine.length) fit.append(el('p', { class: 'muted small', text: t.fish.length ? 'No problems found with what you keep now.' : 'Nothing to compare with yet.' }));
+    else fit.append(issueList(mine));
+    body.append(fit);
+  }
+
+  // Facts
+  body.append(el('div', { class: 'card' }, el('h2', { text: 'Quick facts' }),
+    el('div', { class: 'facts' }, ...speciesFacts(entry).map((r) => factRow(r[0], r[1])))));
+
+  // About and look-alike tip
+  const about = el('div', { class: 'card' }, el('h2', { text: 'Habitat and care' }), el('p', { text: entry.c.n }));
+  const grp = entry.g && DB.groups[entry.g];
+  if (grp && grp.tip && entry.k !== 'plant') about.append(el('details', { class: 'tell' }, el('summary', { text: 'How to tell it from lookalikes' }), el('p', { text: grp.tip })));
+  body.append(about);
+
+  // Mates
+  if (entry.k !== 'plant') {
+    const type = t && TYPES.includes(t.type) ? t.type : 'Freshwater';
+    const codes = type === 'Saltwater' ? ['s'] : type === 'Brackish' ? ['b', 'f'] : ['f'];
+    const wantKinds = entry.k === 'coral' ? ['fish', 'coral', 'invert', 'shrimp', 'snail'] : ['fish', 'shrimp', 'snail', 'invert'];
+    const good = [], avoid = [];
+    DB.list.forEach((c) => {
+      if (c === entry || !c.c || wantKinds.indexOf(c.k) === -1 || !codes.some((x) => c.w.indexOf(x) !== -1)) return;
+      const issues = pairIssues(entry, c);
+      if (!issues.length) { if (!gal || c.c.g <= gal) good.push(c); }
+      else if (issues.some((i) => i.level === 'bad')) avoid.push({ c, text: issues.find((i) => i.level === 'bad').text });
+    });
+    const score = (c) => (c.c.m === 'p' ? 0 : 6) + Math.abs(c.c.z - entry.c.z) * 0.6 + (c.c.y === entry.c.y ? 2 : 0) + (c.c.l === 'h' ? 3 : 0);
+    good.sort((p, q) => score(p) - score(q));
+    const goodCard = el('div', { class: 'card' }, el('h2', { text: 'Good tank mates' }));
+    if (good.length) {
+      goodCard.append(el('div', { class: 'alts mates' }, ...good.slice(0, 14).map((c) => el('button', { type: 'button', class: 'alt-chip', text: c.n + (rosterRow(t, c.n) ? ' · in your tank' : ''), onclick: () => showSpecies(c.n, t && t.id, true) }))));
+      goodCard.append(el('p', { class: 'muted small', text: 'Showing the best matches for ' + type.toLowerCase() + ' tanks. Check size and temperament before buying.' }));
+    } else goodCard.append(el('p', { class: 'muted small', text: 'No clear matches in the list for this tank type.' }));
+    body.append(goodCard);
+    if (avoid.length) {
+      avoid.sort((p, q) => (p.c.c.l === q.c.c.l ? p.c.n.localeCompare(q.c.n) : p.c.c.l < q.c.c.l ? -1 : 1));
+      const shrimpHits = avoid.filter((a) => a.c.k === 'shrimp');
+      if (shrimpHits.length > 1) {
+        const first = avoid.indexOf(shrimpHits[0]);
+        avoid.splice(0, avoid.length, ...avoid.filter((a) => a.c.k !== 'shrimp'));
+        avoid.splice(Math.min(first, avoid.length), 0, { c: shrimpHits[0].c, text: shrimpHits[0].text.replace(/so .* will not last/, 'so shrimp will not last') });
+      }
+      body.append(el('div', { class: 'card' }, el('h2', { text: 'Better to avoid' }),
+        el('div', { class: 'issues' }, ...avoid.slice(0, 6).map((a) => el('button', { type: 'button', class: 'issue bad', onclick: () => showSpecies(a.c.n, t && t.id, true) }, el('span', { class: 'dot', 'aria-hidden': 'true' }), el('span', { class: 'issue-text', text: a.text }))))));
+    }
+  }
+}
+
+function stockCard(t) {
+  return el('div', { class: 'card' }, el('div', { class: 'card-head' }, el('h2', { text: 'Stocking' })), stockBar(t));
+}
 
 // ---------- Start ----------
 if ('serviceWorker' in navigator) {
