@@ -268,7 +268,7 @@ function uid() {
 function newTank(partial) {
   return Object.assign({
     id: uid(), name: '', size: '', unit: 'gallons', type: 'Freshwater', style: '',
-    water: 'city', zip: '', photo: '', started: '', notes: '', fish: [], log: [], tasks: []
+    water: 'city', zip: '', photo: '', started: '', notes: '', fish: [], log: [], tasks: [], gear: [], gearSkip: [], dismissed: []
   }, partial || {});
 }
 
@@ -302,6 +302,9 @@ function cleanTank(raw) {
   t.fish = cleanFish(raw.fish);
   t.log = cleanLog(raw.log);
   t.tasks = cleanTasks(raw.tasks);
+  t.gear = cleanGear(raw.gear);
+  t.gearSkip = cleanStrings(raw.gearSkip, 30, 80);
+  t.dismissed = cleanStrings(raw.dismissed, 60, 200);
   return t;
 }
 
@@ -1562,6 +1565,250 @@ function renderTank() {
   });
   const ins = $('tank-insights');
   ins.replaceChildren(stockCard(t), mateCheckCard(t));
+  renderGear();
+  if (photoState.tank !== t.id || photoState.list === null) { photoState.list = null; loadProgressPhotos(); } else renderProgress();
+}
+
+// ---------- Equipment and progress photos (one expandable card each, inside every tank) ----------
+const GEAR_KINDS = ['Filter', 'Heater', 'Light', 'Pump or wavemaker', 'Protein skimmer', 'Air pump', 'CO2 system', 'Fan or chiller', 'Auto top-off', 'Test kit', 'Water conditioner', 'Substrate', 'Other'];
+
+function cleanGear(list) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, 40).map((g) => {
+    if (!g || typeof g !== 'object') return null;
+    const kind = GEAR_KINDS.includes(g.kind) ? g.kind : 'Other';
+    const name = typeof g.name === 'string' ? g.name.trim().slice(0, 60) : '';
+    if (!name) return null;
+    return {
+      id: typeof g.id === 'string' && g.id ? g.id.slice(0, 40) : uid(),
+      kind, name,
+      note: typeof g.note === 'string' ? g.note.slice(0, 120) : '',
+      added: typeof g.added === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(g.added) ? g.added : ''
+    };
+  }).filter(Boolean);
+}
+function cleanStrings(list, max, len) {
+  return Array.isArray(list) ? list.filter((x) => typeof x === 'string' && x).map((x) => x.slice(0, len)).slice(0, max) : [];
+}
+function todayISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Rule-based ideas from the tank's water type, size and what lives in it.
+function gearSuggestions(t) {
+  const gal = tankGallons(t);
+  const salt = t.type === 'Saltwater';
+  const brackish = t.type === 'Brackish';
+  const items = t.fish.map((f) => ({ f, e: careOf(f.name) })).filter((x) => x.e);
+  const has = (k) => items.some((x) => x.e.k === k);
+  const corals = has('coral');
+  const plants = has('plant');
+  const inverts = has('shrimp') || has('invert') || has('snail');
+  const heavy = items.some((x) => x.e.k === 'fish' && hasTag(x.e, 'heavy'));
+  const coolFish = items.some((x) => x.e.k === 'fish' && x.e.c.t && x.e.c.t[1] < 74);
+  const out = [];
+  const add = (kind, title, why) => out.push({ kind, title, why });
+  const sizeTxt = gal ? ' for about ' + Math.round(gal) + ' gallons' : '';
+
+  add('Filter', 'Filter' + sizeTxt,
+    gal ? 'Look for a filter rated for ' + Math.round(gal * (heavy ? 1.5 : 1)) + ' gallons or more' + (heavy ? ' (you have big or messy fish)' : '') + '. Flow of about ' + Math.round(gal * (salt ? 5 : 4)) + ' gallons per hour is a good start.' : 'Add your tank size on the tank page and I can suggest a size.');
+  if (!coolFish) {
+    add('Heater', 'Heater' + sizeTxt,
+      gal ? 'About ' + Math.round(gal * 3) + ' to ' + Math.round(gal * 5) + ' watts keeps most tanks steady. A second small heater is a good backup in bigger tanks.' : 'Most tropical tanks want 3 to 5 watts per gallon.');
+  }
+  add('Test kit', 'Liquid test kit', salt ? 'For ' + (corals ? 'reef' : 'saltwater') + ' tanks: salinity (refractometer), ammonia, nitrite, nitrate, alkalinity and calcium.' : 'Ammonia, nitrite, nitrate and pH. Liquid kits are more accurate than strips.');
+  if (!salt) add('Water conditioner', 'Water conditioner', 'Removes chlorine and chloramine from tap water before it goes in the tank.');
+  if (plants) {
+    add('Light', 'Plant light', 'Full spectrum light (about 6500K) on a timer, 6 to 8 hours a day.');
+    add('Substrate', 'Plant substrate or root tabs', 'Rooted plants like Vallisneria and Swords feed from the substrate.');
+    if (gal >= 20) add('CO2 system', 'CO2 (optional)', 'Only needed for demanding plants. Many easy plants do fine without it.');
+  } else if (!salt) {
+    add('Light', 'Aquarium light', 'Any LED made for aquariums on a timer. Too much light feeds algae.');
+  }
+  if (salt) {
+    add('Light', corals ? 'Reef light' : 'Saltwater light', corals ? 'Corals need a reef-grade light with blue and white channels you can dim.' : 'A basic LED is fine for fish-only. Reef-grade if you add corals later.');
+    add('Pump or wavemaker', 'Powerhead or wavemaker', corals ? 'Corals like random, gentle flow across the whole tank. Aim for about ' + (gal ? Math.round(gal * 20) : 20 + ' times the tank volume') + ' gallons per hour in total.' : 'Moves water so waste does not settle.');
+    if (gal >= 20 || corals) add('Protein skimmer', 'Protein skimmer', 'Pulls waste out before it breaks down. Pick one rated above your tank size.');
+    add('Auto top-off', 'Auto top-off', 'Keeps salinity steady by replacing evaporated water with fresh RO/DI water.');
+    add('Fan or chiller', 'Cooling fan', 'Small clip-on fans stop summer heat spikes, which stress corals.');
+  }
+  if (brackish) add('Test kit', 'Hydrometer or refractometer', 'Brackish tanks need a salinity reading too.');
+  if (inverts && !salt) add('Air pump', 'Sponge filter or air pump', 'Shrimp and snails do best with gentle flow, and a sponge filter keeps babies from being sucked in.');
+  return out;
+}
+
+const gearState = { kind: 'Filter', name: '', note: '', skipOpen: false };
+
+function renderGear() {
+  const t = getTank(openTankId);
+  const body = $('tank-gear-body');
+  if (!t || !body) return;
+  $('tank-gear-count').textContent = t.gear.length ? String(t.gear.length) : '';
+
+  const mine = t.gear.map((g) => el('div', { class: 'gear-row' },
+    el('div', { class: 'gear-main' },
+      el('strong', { text: g.name }),
+      el('span', { class: 'sub', text: g.kind + (g.note ? ' · ' + g.note : '') + (g.added ? ' · added ' + g.added : '') })),
+    el('button', { type: 'button', class: 'btn link small-link', 'aria-label': 'Remove ' + g.name, text: 'Remove', onclick: () => { t.gear = t.gear.filter((x) => x.id !== g.id); saveState(); renderGear(); } })));
+
+  const kindSel = el('select', { id: 'gear-kind', 'aria-label': 'Kind of equipment' }, ...GEAR_KINDS.map((k) => el('option', { value: k, text: k })));
+  kindSel.value = gearState.kind;
+  kindSel.addEventListener('change', () => { gearState.kind = kindSel.value; });
+  const nameIn = el('input', { id: 'gear-name', type: 'text', maxlength: '60', placeholder: 'Name or model, e.g. AquaClear 50', autocomplete: 'off', 'aria-label': 'Equipment name', value: gearState.name });
+  nameIn.addEventListener('input', () => { gearState.name = nameIn.value; });
+  const noteIn = el('input', { id: 'gear-note', type: 'text', maxlength: '120', placeholder: 'Note (optional), e.g. 100W, replace media monthly', autocomplete: 'off', 'aria-label': 'Note', value: gearState.note });
+  noteIn.addEventListener('input', () => { gearState.note = noteIn.value; });
+  const addBtn = el('button', { type: 'button', class: 'btn primary', text: 'Add equipment', onclick: () => {
+    const name = gearState.name.trim();
+    if (!name) { toast('Type a name first.'); nameIn.focus(); return; }
+    if (t.gear.length >= 40) { toast('That is the most equipment one tank can list.'); return; }
+    t.gear.push({ id: uid(), kind: gearState.kind, name: name.slice(0, 60), note: gearState.note.trim().slice(0, 120), added: todayISO() });
+    gearState.name = ''; gearState.note = '';
+    saveState(); renderGear();
+  } });
+
+  const skipped = t.gearSkip;
+  const sugg = gearSuggestions(t).filter((s) => !t.gear.some((g) => g.kind === s.kind) && skipped.indexOf(s.title) === -1);
+  const hiddenCount = gearSuggestions(t).filter((s) => !t.gear.some((g) => g.kind === s.kind) && skipped.indexOf(s.title) !== -1).length;
+
+  const parts = [
+    mine.length ? el('div', { class: 'gear-list' }, ...mine) : el('p', { class: 'muted small', text: 'Nothing logged yet. Add the filter, heater, light and anything else on this tank.' }),
+    el('div', { class: 'gear-form' }, kindSel, nameIn, noteIn, addBtn),
+    el('h3', { class: 'gear-h', text: 'Ideas for this tank' }),
+    el('p', { class: 'muted small', text: 'Based on ' + t.type.toLowerCase() + (tankGallons(t) ? ', ' + Math.round(tankGallons(t)) + ' gallons' : '') + (t.fish.length ? ' and what you keep in it' : '') + '. General guidance, so check the label on any product you buy.' })
+  ];
+  if (!sugg.length) parts.push(el('p', { class: 'muted small', text: t.gear.length ? 'You have the basics covered.' : 'No ideas right now.' }));
+  sugg.forEach((s) => parts.push(el('div', { class: 'gear-idea' },
+    el('div', { class: 'gear-main' }, el('strong', { text: s.title }), el('span', { class: 'sub', text: s.why })),
+    el('div', { class: 'gear-idea-actions' },
+      el('button', { type: 'button', class: 'btn small', text: 'I have this', onclick: () => { gearState.kind = s.kind; gearState.name = ''; renderGear(); $('gear-name').focus(); } }),
+      el('button', { type: 'button', class: 'btn link small-link', 'aria-label': 'Hide the idea ' + s.title, text: 'Hide', onclick: () => { t.gearSkip.push(s.title); t.gearSkip = t.gearSkip.slice(-30); saveState(); renderGear(); } })))));
+  if (hiddenCount) parts.push(el('button', { type: 'button', class: 'btn link', text: 'Show ' + hiddenCount + ' hidden idea' + (hiddenCount === 1 ? '' : 's'), onclick: () => { t.gearSkip = []; saveState(); renderGear(); } }));
+  body.replaceChildren(...parts);
+}
+
+// Progress photos live in the browser's database (IndexedDB), not in the small saved-settings space.
+const PhotoDB = (() => {
+  let dbp = null;
+  function open() {
+    if (dbp) return dbp;
+    dbp = new Promise((resolve, reject) => {
+      if (typeof indexedDB === 'undefined' || !indexedDB) { reject(new Error('none')); return; }
+      const rq = indexedDB.open('schooled-photos', 1);
+      rq.onupgradeneeded = () => { const s = rq.result.createObjectStore('photos', { keyPath: 'id' }); s.createIndex('tank', 'tank'); };
+      rq.onsuccess = () => resolve(rq.result);
+      rq.onerror = () => reject(rq.error || new Error('open'));
+    });
+    dbp.catch(() => { dbp = null; });
+    return dbp;
+  }
+  async function run(mode, fn) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('photos', mode);
+      const req = fn(tx.objectStore('photos'));
+      tx.oncomplete = () => resolve(req ? req.result : undefined);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('abort'));
+    });
+  }
+  return {
+    add: (p) => run('readwrite', (s) => s.put(p)),
+    list: (tank) => run('readonly', (s) => s.index('tank').getAll(tank)),
+    del: (id) => run('readwrite', (s) => s.delete(id)),
+    async delTank(tank) { const all = await this.list(tank); for (const p of all) await this.del(p.id); }
+  };
+})();
+
+const photoState = { date: '', note: '', list: null, error: false, tank: '', viewing: '' };
+
+async function loadProgressPhotos() {
+  const t = getTank(openTankId);
+  if (!t) return;
+  photoState.tank = t.id;
+  try {
+    const list = await PhotoDB.list(t.id);
+    if (photoState.tank !== t.id) return;
+    photoState.list = list.sort((a, b) => (a.date === b.date ? b.id.localeCompare(a.id) : b.date.localeCompare(a.date)));
+    photoState.error = false;
+  } catch (err) {
+    photoState.list = [];
+    photoState.error = true;
+  }
+  renderProgress();
+}
+
+function renderProgress() {
+  const t = getTank(openTankId);
+  const body = $('tank-progress-body');
+  if (!t || !body) return;
+  const list = photoState.list;
+  $('tank-progress-count').textContent = list && list.length ? String(list.length) : '';
+  if (!photoState.date) photoState.date = todayISO();
+
+  const dateIn = el('input', { id: 'progress-date', type: 'date', max: todayISO(), value: photoState.date, 'aria-label': 'Date of the photo' });
+  dateIn.addEventListener('change', () => { photoState.date = /^\d{4}-\d{2}-\d{2}$/.test(dateIn.value) ? dateIn.value : todayISO(); });
+  const noteIn = el('input', { id: 'progress-note', type: 'text', maxlength: '80', placeholder: 'Caption (optional), e.g. Week 4, plants filling in', autocomplete: 'off', 'aria-label': 'Caption', value: photoState.note });
+  noteIn.addEventListener('input', () => { photoState.note = noteIn.value; });
+  const camIn = el('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: '' });
+  const galIn = el('input', { type: 'file', accept: 'image/*,.heic,.heif,.avif,.webp', hidden: '' });
+  [camIn, galIn].forEach((inp) => inp.addEventListener('change', async () => {
+    const file = inp.files && inp.files[0];
+    inp.value = '';
+    if (!file) return;
+    try {
+      const data = await photoFromFile(file, 1000);
+      await PhotoDB.add({ id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), tank: t.id, date: photoState.date, note: photoState.note.trim().slice(0, 80), data });
+      photoState.note = '';
+      await loadProgressPhotos();
+      toast('Photo saved.');
+    } catch (err) {
+      toast("Couldn't save that photo. This browser may not allow saved photos, or it is out of space.");
+    }
+  }));
+
+  const parts = [
+    el('p', { class: 'muted small', text: 'Add a photo every week or two and watch the tank grow in. Photos stay on this phone.' }),
+    el('div', { class: 'gear-form' },
+      el('label', { class: 'field' }, el('span', { class: 'label', text: 'Photo date' }), dateIn),
+      noteIn,
+      el('div', { class: 'row photo-actions' },
+        el('button', { type: 'button', class: 'btn small primary', text: 'Take photo', onclick: () => camIn.click() }),
+        el('button', { type: 'button', class: 'btn small', text: 'Choose photo', onclick: () => galIn.click() })),
+      camIn, galIn)
+  ];
+  if (photoState.error) parts.push(el('p', { class: 'error small', text: 'This browser does not allow saved photos right now (private mode can cause this).' }));
+  if (list === null) parts.push(el('p', { class: 'muted small', text: 'Loading photos...' }));
+  else if (list.length) {
+    parts.push(el('div', { class: 'progress-grid' }, ...list.map((p) => el('button', { type: 'button', class: 'progress-tile', 'aria-label': 'Open photo from ' + p.date, onclick: () => { photoState.viewing = p.id; renderProgress(); } },
+      el('img', { src: p.data, alt: 'Tank on ' + p.date }),
+      el('span', { class: 'progress-date', text: p.date })))));
+    if (list.length > 1) {
+      const a = list[list.length - 1], b = list[0];
+      parts.push(el('div', { class: 'progress-compare' },
+        el('h3', { class: 'gear-h', text: 'First and latest' }),
+        el('div', { class: 'progress-pair' },
+          el('figure', {}, el('img', { src: a.data, alt: 'First photo' }), el('figcaption', { text: a.date })),
+          el('figure', {}, el('img', { src: b.data, alt: 'Latest photo' }), el('figcaption', { text: b.date })))));
+    }
+  } else if (!photoState.error) parts.push(el('p', { class: 'muted small', text: 'No progress photos yet.' }));
+
+  const view = list && photoState.viewing ? list.find((p) => p.id === photoState.viewing) : null;
+  if (view) {
+    const close = () => { photoState.viewing = ''; renderProgress(); };
+    parts.push(el('div', { class: 'viewer', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Photo from ' + view.date },
+      el('img', { src: view.data, alt: 'Tank on ' + view.date }),
+      el('p', { class: 'viewer-cap', text: view.date + (view.note ? ' · ' + view.note : '') }),
+      el('div', { class: 'row' },
+        el('button', { type: 'button', class: 'btn', text: 'Close', onclick: close }),
+        el('button', { type: 'button', class: 'btn danger', text: 'Delete photo', onclick: async () => {
+          try { await PhotoDB.del(view.id); } catch (err) { toast("Couldn't delete that photo."); return; }
+          photoState.viewing = '';
+          await loadProgressPhotos();
+        } }))));
+  }
+  body.replaceChildren(...parts);
 }
 
 function changeCount(tank, fish, delta) {
@@ -1650,6 +1897,7 @@ $('tank-delete').addEventListener('click', () => {
     return;
   }
   resetDelete();
+  PhotoDB.delTank(t.id).catch(() => {});
   state.tanks = state.tanks.filter((x) => x !== t);
   if (state.activeId === t.id) state.activeId = state.tanks[0] ? state.tanks[0].id : '';
   saveState();
@@ -2354,22 +2602,28 @@ function stockBar(t) {
 
 let mateShowAll = false;
 function mateCheckCard(t) {
-  const r = tankCheck(t);
+  const all = tankCheck(t).issues;
+  const r = { issues: all.filter((i) => t.dismissed.indexOf(i.text) === -1), checked: tankCheck(t).checked, unknown: tankCheck(t).unknown };
+  const cleared = all.length - r.issues.length;
   const bad = r.issues.some((i) => i.level === 'bad');
   const chip = !r.issues.length
-    ? el('span', { class: 'pill ok', text: 'All clear' })
+    ? el('span', { class: 'pill ok', text: cleared ? 'Cleared' : 'All clear' })
     : el('span', { class: 'pill ' + (bad ? 'bad' : 'warn'), text: r.issues.length + (r.issues.length === 1 ? ' thing to look at' : ' things to look at') });
   const shown = mateShowAll ? r.issues : r.issues.slice(0, 5);
   const card = el('div', { class: 'card' },
     el('div', { class: 'card-head' }, el('h2', { text: 'Tank mate check' }), chip));
   if (!t.fish.length) card.append(el('p', { class: 'muted small', text: 'Add fish and I will check how they get along.' }));
-  else if (!r.issues.length) card.append(el('p', { class: 'muted small', text: r.checked ? 'No problems found between the ' + r.checked + ' kinds I could check.' : 'None of these names are in the species list yet, so nothing could be checked.' }));
+  else if (!r.issues.length) card.append(el('p', { class: 'muted small', text: cleared ? 'You cleared everything I flagged.' : (r.checked ? 'No problems found between the ' + r.checked + ' kinds I could check.' : 'None of these names are in the species list yet, so nothing could be checked.') }));
   shown.forEach((i) => card.append(
-    el('button', { type: 'button', class: 'issue ' + i.level, onclick: () => showSpecies(i.names[0], t.id) },
-      el('span', { class: 'dot', 'aria-hidden': 'true' }),
-      el('span', { class: 'issue-text', text: i.text }))
+    el('div', { class: 'issue-row' },
+      el('button', { type: 'button', class: 'issue ' + i.level, onclick: () => showSpecies(i.names[0], t.id) },
+        el('span', { class: 'dot', 'aria-hidden': 'true' }),
+        el('span', { class: 'issue-text', text: i.text })),
+      el('button', { type: 'button', class: 'issue-x', 'aria-label': 'Clear this suggestion', title: 'Clear', text: '\u00d7', onclick: () => { t.dismissed.push(i.text); t.dismissed = t.dismissed.slice(-60); saveState(); renderTank(); } }))
   ));
   if (r.issues.length > 5) card.append(el('button', { type: 'button', class: 'btn small', text: mateShowAll ? 'Show fewer' : 'Show all ' + r.issues.length, onclick: () => { mateShowAll = !mateShowAll; renderTank(); } }));
+  if (r.issues.length > 1) card.append(el('button', { type: 'button', class: 'btn link', text: 'Clear all', onclick: () => { r.issues.forEach((i) => t.dismissed.push(i.text)); t.dismissed = t.dismissed.slice(-60); saveState(); renderTank(); } }));
+  if (cleared) card.append(el('button', { type: 'button', class: 'btn link', text: 'Bring back ' + cleared + ' cleared', onclick: () => { t.dismissed = []; saveState(); renderTank(); } }));
   if (r.issues.length || r.unknown) {
     card.append(el('p', { class: 'muted small', text: 'General guidance, and every fish is different.' + (r.unknown ? ' ' + r.unknown + ' not in the species list, so not checked.' : '') }));
   }
