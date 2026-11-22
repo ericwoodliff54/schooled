@@ -1089,6 +1089,7 @@ async function askWorker(images, mode, timeoutMs, ctx) {
   const body = { images, mime: 'image/jpeg', mode, known: ctx.known || [] };
   if (ctx.tank_type) body.tank_type = ctx.tank_type;
   if (ctx.items) body.items = ctx.items;
+  if (ctx.deep) body.deep = true;
   const res = await fetch(WORKER_URL + '/scan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1913,39 +1914,76 @@ let fishCheckTankId = '';
 let fishCheck = null; // { photoUrl, loading, error, result, name, count, usage, model }
 
 function fishCheckCostLine(fc) {
-  if (!fc || !fc.usage) return null;
-  const p = SCAN_PRICES[fc.model];
+  if (!fc || !fc.runs || !fc.runs.length) return null;
   const n = (x) => Number(x || 0).toLocaleString();
-  const bits = [fc.model + ', ' + n(fc.usage.input) + ' tokens in, ' + n(fc.usage.output) + ' out'];
-  if (p) bits.push('about ' + centsText((fc.usage.input * p[0] + fc.usage.output * p[1]) / 1e6));
-  return bits.join(' · ');
+  return fc.runs.map((run) => {
+    const p = SCAN_PRICES[run.model];
+    const bits = [run.model + ', ' + n(run.usage.input) + ' tokens in, ' + n(run.usage.output) + ' out'];
+    if (p) bits.push('about ' + centsText((run.usage.input * p[0] + run.usage.output * p[1]) / 1e6));
+    return bits.join(' · ');
+  }).join(' | ');
 }
 
-async function startFishCheck(file) {
-  const t = activeTank();
-  fishCheck = { photoUrl: '', loading: true, error: '', result: null, name: '', count: 1, usage: null, model: '' };
+async function runFish(deep) {
+  const t = getTank(fishCheckTankId) || activeTank();
+  fishCheck.loading = true; fishCheck.error = '';
   renderFishCheck();
   try {
-    const image = await loadImage(file);
-    const single = makeSingle(image);
-    fishCheck.photoUrl = single.previewUrl;
-    renderFishCheck();
-    const data = await askWorker(single.images, 'fish', 45000, { tank_type: t && TYPES.includes(t.type) ? t.type : '' });
+    const data = await askWorker(fishCheck.images, 'fish', 45000, { tank_type: t && TYPES.includes(t.type) ? t.type : '', deep: !!deep });
     const r = data.fish;
-    fishCheck.usage = data.usage; fishCheck.model = data.model;
+    fishCheck.runs.push({ model: data.model, usage: data.usage });
     if (!r || !r.is_aquarium || !r.common_name) {
       fishCheck.error = 'I could not find a fish, plant or coral in that photo. Move closer to one animal, hold still, and try again.';
     } else {
       fishCheck.result = r;
+      fishCheck.deep = !!deep;
       const hit = lookupSpecies(r.common_name);
       fishCheck.name = hit ? hit.n : r.common_name;
-      fishCheck.count = hit && hit.c && hit.c.s > 1 ? hit.c.s : 1;
+      fishCheck.count = hit && hit.c && hit.c.s > 1 ? hit.c.s : (r.care_estimate && r.care_estimate.min_group > 1 ? r.care_estimate.min_group : 1);
     }
   } catch (err) {
     fishCheck.error = (err && err.message) || 'Something went wrong. Please try again.';
   }
   fishCheck.loading = false;
   renderFishCheck();
+}
+
+async function startFishCheck(file) {
+  fishCheck = { photoUrl: '', loading: true, error: '', result: null, name: '', count: 1, runs: [], images: null, deep: false };
+  renderFishCheck();
+  try {
+    const image = await loadImage(file);
+    const single = makeSingle(image);
+    fishCheck.photoUrl = single.previewUrl;
+    fishCheck.images = single.images;
+  } catch (err) {
+    fishCheck.error = (err && err.message) || 'I could not read that photo. Please try another.';
+    fishCheck.loading = false;
+    renderFishCheck();
+    return;
+  }
+  await runFish(false);
+}
+
+// For a species that is not in the app's list, the AI gives a rough care sheet. Shown clearly as an estimate.
+function estimateFacts(ce) {
+  const rows = [['Adult size', ce.adult_size_in + ' in'], ['Smallest tank', ce.min_tank_gal + ' gal']];
+  if (ce.temp_low_f !== null && ce.temp_high_f !== null) rows.push(['Temperature', Math.round(ce.temp_low_f) + '-' + Math.round(ce.temp_high_f) + '°F']);
+  if (ce.ph_low !== null && ce.ph_high !== null) rows.push(['pH', ce.ph_low + '-' + ce.ph_high]);
+  if (ce.temperament) rows.push(['Temperament', ce.temperament === 'peaceful' ? 'Peaceful' : ce.temperament === 'aggressive' ? 'Aggressive' : 'Semi-aggressive']);
+  if (ce.eats) rows.push(['Eats', ce.eats]);
+  rows.push(['Group size', ce.min_group > 1 ? ce.min_group + ' or more' : 'Fine on its own']);
+  return rows;
+}
+function estimateNotes(ce, t) {
+  const notes = [];
+  if (!t) return notes;
+  const typeWater = t.type === 'Saltwater' ? 'salt' : t.type === 'Brackish' ? 'brackish' : 'fresh';
+  if (ce.water && ce.water !== typeWater && !(t.type === 'Brackish')) notes.push({ level: 'bad', text: 'This looks like a ' + ce.water + ' water animal and your tank is ' + t.type.toLowerCase() + '.' });
+  const gal = tankGallons(t);
+  if (gal && ce.min_tank_gal > gal) notes.push({ level: 'bad', text: 'It likely needs about ' + ce.min_tank_gal + ' gallons or more. Your tank is ' + Math.round(gal) + '.' });
+  if (ce.temperament === 'aggressive' && t.fish.length) notes.push({ level: 'warn', text: 'It may be aggressive toward your current fish.' });
+  return notes;
 }
 
 function fishVerdict(t, name, count) {
@@ -2019,6 +2057,14 @@ function renderFishCheck() {
   if (care) {
     card.append(el('div', { class: 'facts' }, ...speciesFacts(care).slice(0, 8).map((row) => factRow(row[0], row[1]))));
     if (care.c.n) card.append(el('p', { class: 'muted small', text: care.c.n }));
+  } else if (r.care_estimate && canonKey(fc.name) === canonKey(r.common_name)) {
+    const ce = r.care_estimate;
+    card.append(el('p', { class: 'label', text: 'AI estimate' }),
+      el('div', { class: 'facts' }, ...estimateFacts(ce).map((row) => factRow(row[0], row[1]))),
+      el('p', { class: 'muted small', text: (ce.note ? ce.note + ' ' : '') + 'This is the AI\'s best guess, not from the app\'s care list. Double-check with the store.' }));
+    const en = estimateNotes(ce, t);
+    if (en.length) card.append(issueList(en));
+    else if (t) card.append(el('p', { class: 'muted small', text: 'Nothing obvious against your tank, based on that estimate.' }));
   } else {
     card.append(el('p', { class: 'muted', text: 'I do not have care details for this one yet. Before you buy, ask the store for its adult size, the smallest tank it needs and whether it gets along with other fish.' }));
   }
@@ -2054,6 +2100,7 @@ function renderFishCheck() {
     renderFishCheck();
   } }));
   if (entry) buttons.append(el('button', { type: 'button', class: 'btn', text: 'Full details', onclick: () => showSpecies(fc.name, t ? t.id : '') }));
+  if (!fc.deep && fc.images) buttons.append(el('button', { type: 'button', class: 'btn', text: 'Look closer', title: 'Runs the photo again with a stronger AI', onclick: () => runFish(true) }));
   card.append(buttons, el('p', { class: 'muted small', text: 'General guidance, and the AI can be wrong about which species it is. Confirm with the store before you buy.' }));
   const cl = fishCheckCostLine(fc);
   if (cl) card.append(el('p', { class: 'muted small cost-line', text: cl }));
