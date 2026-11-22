@@ -54,11 +54,11 @@ const ZOOM_NOTE =
   'Use the zoomed pieces to identify species and to count. Fish near the edges of a piece may also appear in the next piece, ' +
   'so count each real fish only once. Return ONE combined list for the whole tank, with counts for the whole tank, not per piece.';
 
-const SWEEP_NOTE =
-  'These images are frames from one short video sweeping across the same tank, so the same fish show up in several frames, ' +
-  'in different places, and some fish are hidden in most frames and only visible in a few. ' +
-  'Use all frames together. Return ONE combined list. For each kind, the count must be the largest number you can see together in any ONE frame; ' +
-  'do not add counts across frames, because the same fish appears repeatedly. Use the sharpest frames to decide the species.';
+const KNOWN_NOTE = (names) =>
+  'The person says this tank already contains: ' + names.join(', ') + '. ' +
+  'Most fish in the picture are probably from that list, so when a fish could be one of them, or a lookalike of one of them ' +
+  '(for example a neon tetra versus a cardinal tetra), use the name from the list unless you can clearly see it is a different species. ' +
+  'Never add a fish from the list that you cannot see. Still report any fish that is clearly NOT on the list.';
 
 const SCHEMA = {
   type: 'OBJECT',
@@ -171,19 +171,24 @@ async function scan(request, env, origin) {
   }
   if (total > MAX_TOTAL_CHARS) return json({ ok: false, error: 'too_large' }, 413, origin);
 
-  const mode = ['single', 'zoom', 'sweep'].includes(body.mode) ? body.mode : (list.length > 1 ? 'zoom' : 'single');
+  const mode = ['single', 'zoom'].includes(body.mode) ? body.mode : (list.length > 1 ? 'zoom' : 'single');
+  // Names of what the person already keeps in this tank. Cleaned hard, because it goes into the prompt.
+  const known = (Array.isArray(body.known) ? body.known : [])
+    .filter((s) => typeof s === 'string')
+    .map((s) => s.replace(/[^\p{L}\p{N} '.()\/-]/gu, '').trim().slice(0, 60))
+    .filter(Boolean)
+    .slice(0, 40);
   function buildParts(withRes) {
     const parts = [];
     list.forEach((data, i) => {
       if (mode === 'zoom' && list.length > 1) parts.push({ text: i === 0 ? 'Whole tank:' : 'Zoomed piece ' + i + ' of ' + (list.length - 1) + ':' });
-      if (mode === 'sweep') parts.push({ text: 'Frame ' + (i + 1) + ' of ' + list.length + ':' });
       const part = { inline_data: { mime_type: mime, data } };
       if (withRes && mode === 'single') part.media_resolution = { level: 'MEDIA_RESOLUTION_ULTRA_HIGH' };
       parts.push(part);
     });
     return parts;
   }
-  const promptText = mode === 'zoom' ? PROMPT + ' ' + ZOOM_NOTE : mode === 'sweep' ? PROMPT + ' ' + SWEEP_NOTE : PROMPT;
+  const promptText = (mode === 'zoom' ? PROMPT + ' ' + ZOOM_NOTE : PROMPT) + (known.length ? ' ' + KNOWN_NOTE(known) : '');
 
   const primary = env.GEMINI_MODEL || DEFAULT_MODEL;
   const models = [primary, FALLBACK_MODEL, LAST_RESORT_MODEL].filter((m, i, all) => all.indexOf(m) === i);
@@ -263,7 +268,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 12: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 13: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/scan') {
