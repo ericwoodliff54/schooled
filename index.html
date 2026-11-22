@@ -120,6 +120,7 @@
 
     <h2 class="home-h">Explore</h2>
     <div id="home-features" class="features"></div>
+    <div id="home-misses" class="home-misses"></div>
   </section>
 
   <!-- Scan -->
@@ -161,6 +162,7 @@
   <!-- Water -->
   <section id="view-water" class="view" hidden>
     <h1>Water</h1>
+    <div id="water-links" class="features"></div>
     <div class="card">
       <h2>Test strip reader</h2>
       <p class="muted">Coming in the next update. You'll photograph a dipped strip next to its color chart and get plain-English results.</p>
@@ -224,6 +226,26 @@
     <div id="fishcheck-body" class="dream-body"></div>
     <input id="fishcheck-camera" type="file" accept="image/*" capture="environment" hidden>
     <input id="fishcheck-gallery" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
+  </section>
+
+  <!-- Water log -->
+  <section id="view-log" class="view" hidden>
+    <button type="button" id="log-back" class="btn link back">&larr; Water</button>
+    <h1>Water log</h1>
+    <div id="log-body" class="log-body"></div>
+  </section>
+
+  <!-- Reminders -->
+  <section id="view-reminders" class="view" hidden>
+    <button type="button" id="reminders-back" class="btn link back">&larr; Water</button>
+    <h1>Reminders</h1>
+    <div id="reminders-body" class="log-body"></div>
+  </section>
+
+  <!-- Names the app could not match (tester's list) -->
+  <section id="view-misses" class="view" hidden>
+    <button type="button" id="misses-back" class="btn link back">&larr; Home</button>
+    <div id="misses-body" class="dream-body"></div>
   </section>
 
   <!-- Dream Tank -->

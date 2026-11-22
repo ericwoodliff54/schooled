@@ -98,14 +98,71 @@ function lookupSpecies(name) {
 }
 
 // Matches what the AI said to the species list on the phone: common name, then scientific name, then the genus.
-// This is why the AI never needs to be sent the list.
-function resolveSpecies(common, scientific) {
+// This is why the AI never needs to be sent the list. When `where` is given, names that did not match cleanly are
+// written to a small tester's list (see "Names I could not match" on Home) so the species list can be improved.
+function resolveSpecies(common, scientific, where, kind) {
   let hit = common ? lookupSpecies(common) : null;
+  let how = hit ? 'exact' : '';
   if (!hit && scientific) {
     hit = lookupSpecies(scientific);
-    if (!hit) hit = DB.byGenus.get(normKey(String(scientific).trim().split(/\s+/)[0])) || null;
+    how = hit ? 'alias' : '';
+    if (!hit) {
+      hit = DB.byGenus.get(normKey(String(scientific).trim().split(/\s+/)[0])) || null;
+      how = hit ? 'genus' : '';
+    }
   }
+  if (where && DB.ready && how !== 'exact') noteMiss(common, scientific, kind, how || 'miss', hit ? hit.n : '', where);
   return hit;
+}
+
+// ---------- Names the app could not match cleanly ----------
+const MISS_KEY = 'schooled.misses';
+function loadMisses() {
+  try { const v = JSON.parse(localStorage.getItem(MISS_KEY)); return Array.isArray(v) ? v : []; } catch (err) { return []; }
+}
+function saveMisses(list) {
+  try { localStorage.setItem(MISS_KEY, JSON.stringify(list.slice(0, 300))); } catch (err) { /* storage full or blocked */ }
+}
+// how: 'miss' = not in the list at all, 'genus' = only the genus matched, 'alias' = matched by scientific name but the common name was new
+function noteMiss(common, scientific, kind, how, matched, where) {
+  const name = String(common || '').trim().slice(0, 60);
+  if (!name || kind === 'other' || /^unidentified/i.test(name)) return;
+  const key = normKey(name) + '|' + how;
+  const list = loadMisses();
+  let m = list.find((x) => x.key === key);
+  if (!m) { m = { key, name, sci: '', kind: kind || '', how, matched: matched || '', where: where || '', n: 0 }; list.push(m); }
+  m.n += 1;
+  if (scientific && !m.sci) m.sci = String(scientific).slice(0, 80);
+  saveMisses(list);
+}
+function missesText(list) {
+  return list.map((m) => [m.name, m.sci || '-', m.kind || '-', m.how + (m.matched ? ' -> ' + m.matched : ''), m.where || '-', m.n + 'x'].join(' | ')).join('\n');
+}
+const MISS_WORDS = { miss: 'Not in my list', genus: 'Only the genus matched', alias: 'Matched by scientific name' };
+function renderMisses() {
+  const body = $('misses-body');
+  body.replaceChildren();
+  const list = loadMisses();
+  body.append(el('h1', { text: 'Names I could not match' }),
+    el('p', { class: 'muted', text: 'Names the AI used that were not in my species list, or matched only loosely. Send this list to Claude to grow the list.' }));
+  if (!list.length) { body.append(el('p', { class: 'muted', text: 'Nothing yet. Scan or check a few fish.' })); return; }
+  body.append(el('div', { class: 'row photo-actions' },
+    el('button', { type: 'button', class: 'btn primary', text: 'Copy list', onclick: () => {
+      const text = missesText(list);
+      const done = () => toast('Copied ' + list.length + ' names.');
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => { fallbackCopy(text); done(); });
+      else { fallbackCopy(text); done(); }
+    } }),
+    el('button', { type: 'button', class: 'btn', text: 'Clear list', onclick: () => { saveMisses([]); renderMisses(); } })));
+  body.append(el('div', { class: 'card' }, ...list.slice().sort((x, y) => y.n - x.n).map((m) => el('div', { class: 'miss-row' },
+    el('strong', { text: m.name + (m.n > 1 ? ' (' + m.n + 'x)' : '') }),
+    el('span', { class: 'muted small', text: [m.sci, MISS_WORDS[m.how] + (m.matched ? ': ' + m.matched : ''), m.where].filter(Boolean).join(' \u00b7 ') })))));
+}
+function fallbackCopy(text) {
+  const ta = el('textarea', { style: 'position:fixed;opacity:0' });
+  ta.value = text; document.body.append(ta); ta.select();
+  try { document.execCommand('copy'); } catch (err) { /* nothing more to try */ }
+  ta.remove();
 }
 
 // Same species whatever the spelling: "cardinals", "Cardinal Tetra" and its scientific name all match.
@@ -211,7 +268,7 @@ function uid() {
 function newTank(partial) {
   return Object.assign({
     id: uid(), name: '', size: '', unit: 'gallons', type: 'Freshwater', style: '',
-    water: 'city', zip: '', photo: '', started: '', notes: '', fish: []
+    water: 'city', zip: '', photo: '', started: '', notes: '', fish: [], log: [], tasks: []
   }, partial || {});
 }
 
@@ -243,8 +300,583 @@ function cleanTank(raw) {
   t.started = typeof raw.started === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.started) ? raw.started : '';
   t.notes = typeof raw.notes === 'string' ? raw.notes.slice(0, 400) : '';
   t.fish = cleanFish(raw.fish);
+  t.log = cleanLog(raw.log);
+  t.tasks = cleanTasks(raw.tasks);
   return t;
 }
+
+// ---------- Water log and reminders ----------
+const DAY_MS = 86400000;
+const LOG_FIELDS = {
+  temp: { label: 'Temperature', unit: '°F', min: 32, max: 110, hint: '78' },
+  ph: { label: 'pH', unit: '', min: 0, max: 14, hint: '7.2' },
+  nh3: { label: 'Ammonia', unit: 'ppm', min: 0, max: 20, hint: '0' },
+  no2: { label: 'Nitrite', unit: 'ppm', min: 0, max: 20, hint: '0' },
+  no3: { label: 'Nitrate', unit: 'ppm', min: 0, max: 500, hint: '10' },
+  sg: { label: 'Salinity', unit: 'SG', min: 1, max: 1.04, hint: '1.025' },
+  gh: { label: 'GH', unit: 'dGH', min: 0, max: 60, hint: '' },
+  kh: { label: 'KH', unit: 'dKH', min: 0, max: 40, hint: '' },
+  tds: { label: 'TDS', unit: 'ppm', min: 0, max: 3000, hint: '' },
+  po4: { label: 'Phosphate', unit: 'ppm', min: 0, max: 20, hint: '' },
+  ca: { label: 'Calcium', unit: 'ppm', min: 0, max: 800, hint: '420' },
+  alk: { label: 'Alkalinity', unit: 'dKH', min: 0, max: 20, hint: '8' },
+  mg: { label: 'Magnesium', unit: 'ppm', min: 0, max: 2000, hint: '1300' }
+};
+const LOG_SETS = {
+  Freshwater: ['temp', 'ph', 'nh3', 'no2', 'no3', 'gh', 'kh', 'tds', 'po4'],
+  Saltwater: ['temp', 'sg', 'ph', 'nh3', 'no2', 'no3', 'po4', 'ca', 'alk', 'mg'],
+  Brackish: ['temp', 'sg', 'ph', 'nh3', 'no2', 'no3', 'kh', 'gh']
+};
+const LOG_CORE = ['temp', 'sg', 'ph', 'nh3', 'no2', 'no3'];
+const MAX_LOG = 500;
+const MAX_TASKS = 20;
+const TASK_PRESETS = [
+  { kind: 'change', label: 'Water change', days: 7 },
+  { kind: 'test', label: 'Test the water', days: 7 },
+  { kind: 'filter', label: 'Clean the filter', days: 30 },
+  { kind: 'glass', label: 'Clean the glass', days: 7 },
+  { kind: 'media', label: 'Replace filter carbon or media', days: 60 },
+  { kind: 'plants', label: 'Trim plants and dose fertilizer', days: 7, only: 'Freshwater' },
+  { kind: 'skimmer', label: 'Empty the skimmer cup', days: 7, only: 'Saltwater' }
+];
+const TASK_STARTER = ['change', 'test', 'filter'];
+const TASK_EVERY = [1, 2, 3, 5, 7, 10, 14, 21, 30, 45, 60, 90, 180];
+
+function cleanLog(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  list.forEach((r) => {
+    if (!r || typeof r !== 'object') return;
+    const t = Number(r.t);
+    if (!isFinite(t) || t <= 0) return;
+    const e = { id: typeof r.id === 'string' && r.id ? r.id.slice(0, 40) : uid(), t: Math.round(t), k: r.k === 'change' ? 'change' : 'test', v: {}, note: typeof r.note === 'string' ? r.note.slice(0, 200) : '' };
+    if (r.v && typeof r.v === 'object') {
+      Object.keys(LOG_FIELDS).forEach((key) => {
+        const n = Number(r.v[key]);
+        const f = LOG_FIELDS[key];
+        if (r.v[key] != null && r.v[key] !== '' && isFinite(n) && n >= f.min && n <= f.max) e.v[key] = n;
+      });
+    }
+    if (e.k === 'change') {
+      const p = Number(r.pct);
+      e.pct = isFinite(p) && p > 0 && p <= 100 ? Math.round(p) : 0;
+    } else if (!Object.keys(e.v).length) return;
+    out.push(e);
+  });
+  return out.sort((a, b) => a.t - b.t).slice(-MAX_LOG);
+}
+
+function cleanTasks(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  list.slice(0, MAX_TASKS).forEach((r) => {
+    if (!r || typeof r !== 'object' || typeof r.label !== 'string' || !r.label.trim()) return;
+    const every = Math.round(Number(r.every));
+    const last = Number(r.last);
+    out.push({
+      id: typeof r.id === 'string' && r.id ? r.id.slice(0, 40) : uid(),
+      kind: typeof r.kind === 'string' ? r.kind.slice(0, 12) : 'custom',
+      label: r.label.trim().slice(0, 40),
+      every: isFinite(every) && every >= 1 && every <= 365 ? every : 7,
+      last: isFinite(last) && last > 0 ? Math.round(last) : Date.now(),
+      snooze: isFinite(Number(r.snooze)) && Number(r.snooze) > 0 ? Math.round(Number(r.snooze)) : 0
+    });
+  });
+  return out;
+}
+
+function fmtDay(ts) {
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function startOfDay(ts) {
+  const d = new Date(ts);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+function daysBetween(fromTs, toTs) {
+  return Math.round((startOfDay(toTs) - startOfDay(fromTs)) / DAY_MS);
+}
+function agoText(ts) {
+  const n = daysBetween(ts, Date.now());
+  if (n <= 0) return 'today';
+  if (n === 1) return 'yesterday';
+  return n + ' days ago';
+}
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function dateFromInput(str) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str || '');
+  if (!m) return Date.now();
+  const now = new Date();
+  const same = str === todayStr();
+  const d = new Date(+m[1], +m[2] - 1, +m[3], same ? now.getHours() : 12, same ? now.getMinutes() : 0);
+  return Math.min(d.getTime(), Date.now());
+}
+function fmtVal(key, v) {
+  return key === 'sg' ? v.toFixed(3) : String(Math.round(v * 100) / 100);
+}
+function fieldLabel(key) {
+  const f = LOG_FIELDS[key];
+  return f.label + (f.unit ? ' (' + f.unit + ')' : '');
+}
+function isYoung(t) {
+  if (!t.started) return false;
+  const d = Date.parse(t.started + 'T12:00:00');
+  return isFinite(d) && Date.now() - d < 60 * DAY_MS;
+}
+function isReef(t) {
+  return t.type === 'Saltwater' && /reef/i.test(t.style || '');
+}
+
+// The pH or temperature range that suits everything in the tank, when the species list knows them all.
+function wantRange(t, idx) {
+  let lo = -Infinity, hi = Infinity, n = 0;
+  t.fish.forEach((f) => {
+    const e = lookupSpecies(f.name);
+    const r = e && e.c && e.c[idx];
+    if (r && r.length === 2 && isFinite(r[0]) && isFinite(r[1])) { lo = Math.max(lo, r[0]); hi = Math.min(hi, r[1]); n++; }
+  });
+  return n && lo <= hi ? { lo, hi, roster: true } : null;
+}
+function defaultRange(t, idx) {
+  const D = {
+    p: { Freshwater: [6.5, 7.8], Saltwater: [8.0, 8.4], Brackish: [7.5, 8.5] },
+    t: { Freshwater: [72, 80], Saltwater: [75, 80], Brackish: [74, 82] }
+  };
+  const r = D[idx][t.type] || D[idx].Freshwater;
+  return { lo: r[0], hi: r[1], roster: false };
+}
+function rangeFor(t, idx) {
+  return wantRange(t, idx) || defaultRange(t, idx);
+}
+function rangeText(r, unit) {
+  return Math.round(r.lo * 10) / 10 + '-' + Math.round(r.hi * 10) / 10 + (unit || '');
+}
+
+// Plain-English check of one reading. Returns { level, text } or null when there is nothing useful to say.
+function judgeValue(t, key, v) {
+  const mk = (level, text) => ({ level, text });
+  const young = isYoung(t);
+  const cycle = young ? ' This is normal while a new tank is still cycling.' : '';
+  const salt = t.type === 'Saltwater';
+  if (key === 'nh3' || key === 'no2') {
+    const name = key === 'nh3' ? 'ammonia' : 'nitrite';
+    if (v < 0.05) return mk('ok', 'No ' + name + '. Good.');
+    if (v <= 0.25) return mk('warn', 'A trace of ' + name + '. Do a 25% water change and check the filter.' + cycle);
+    return mk('bad', name.charAt(0).toUpperCase() + name.slice(1) + ' is toxic. Do a 30-50% water change now, feed lightly and check the filter.' + cycle);
+  }
+  if (key === 'no3') {
+    const lim = isReef(t) ? [10, 20] : salt ? [20, 40] : [20, 40];
+    if (v <= lim[0]) return mk('ok', 'Nitrate is low. Good.');
+    if (v <= lim[1]) return mk('warn', 'Nitrate is climbing. Plan a water change.');
+    return mk('bad', 'Nitrate is high. Do a 30-50% water change and test again in a day or two.');
+  }
+  if (key === 'ph') {
+    const r = rangeFor(t, 'p');
+    const d = v < r.lo ? r.lo - v : v > r.hi ? v - r.hi : 0;
+    const who = r.roster ? 'your animals' : 'this kind of tank';
+    if (d <= 0.3) return mk('ok', 'pH suits ' + who + ' (' + rangeText(r) + ').');
+    if (d <= 0.8) return mk('warn', 'A little outside what ' + who + ' prefer (' + rangeText(r) + '). Change it slowly, never in one jump.');
+    return mk('bad', 'Far from what ' + who + ' want (' + rangeText(r) + '). Fix it gradually with water changes and test again.');
+  }
+  if (key === 'temp') {
+    const r = rangeFor(t, 't');
+    const d = v < r.lo ? r.lo - v : v > r.hi ? v - r.hi : 0;
+    const who = r.roster ? 'your animals' : 'this kind of tank';
+    if (d <= 1) return mk('ok', 'Temperature suits ' + who + ' (' + rangeText(r, '°F') + ').');
+    if (d <= 4) return mk('warn', 'A little outside what ' + who + ' prefer (' + rangeText(r, '°F') + '). Check the heater and thermometer.');
+    return mk('bad', 'Well outside what ' + who + ' want (' + rangeText(r, '°F') + '). Check the heater now and adjust slowly.');
+  }
+  if (key === 'sg') {
+    if (salt) {
+      if (v >= 1.023 && v <= 1.026) return mk('ok', 'Salinity is on target.');
+      if (v >= 1.020 && v <= 1.028) return mk('warn', 'A bit off. Aim for 1.024-1.026 and adjust slowly.');
+      return mk('bad', 'Far from the 1.024-1.026 target. Fix gradually with top-off water or mixed salt water.');
+    }
+    if (t.type === 'Brackish') {
+      if (v >= 1.002 && v <= 1.018) return mk('ok', 'In the normal brackish range. Match what your fish need.');
+      return mk('warn', 'Outside the usual brackish range (1.002-1.018). Check what your fish need.');
+    }
+    return null;
+  }
+  if (key === 'po4') {
+    const lim = salt ? [0.1, 0.3] : [1, 2.5];
+    if (v <= lim[0]) return mk('ok', 'Phosphate is low. Good.');
+    if (v <= lim[1]) return mk('warn', 'Phosphate is a little high and can feed algae.');
+    return mk('bad', 'Phosphate is high and will feed algae. Do water changes and check your food and filter media.');
+  }
+  if (key === 'kh' && !salt) {
+    if (v < 3) return mk('warn', 'KH is low, so pH can swing. Raise it gradually.');
+    return mk('ok', 'KH gives pH a stable buffer.');
+  }
+  if (key === 'alk') {
+    if (v >= 7 && v <= 11) return mk('ok', 'Alkalinity is in a good range.');
+    if (v >= 6 && v <= 12) return mk('warn', 'Alkalinity is a bit off (aim for 7-11 dKH). Adjust slowly.');
+    return mk('bad', 'Alkalinity is far off (aim for 7-11 dKH). Change it slowly, and no more than 1 dKH a day.');
+  }
+  if (key === 'ca') {
+    if (v >= 380 && v <= 450) return mk('ok', 'Calcium is in a good range.');
+    if (v >= 350 && v <= 480) return mk('warn', 'Calcium is a bit off (aim for 380-450 ppm).');
+    return mk('bad', 'Calcium is far off (aim for 380-450 ppm).');
+  }
+  if (key === 'mg') {
+    if (v >= 1200 && v <= 1450) return mk('ok', 'Magnesium is in a good range.');
+    if (v >= 1100 && v <= 1550) return mk('warn', 'Magnesium is a bit off (aim for 1200-1450 ppm).');
+    return mk('bad', 'Magnesium is far off (aim for 1200-1450 ppm).');
+  }
+  return null;
+}
+
+// The "good" band drawn behind a trend line, or null.
+function judgeBand(t, key) {
+  if (key === 'ph') { const r = rangeFor(t, 'p'); return [r.lo - 0.3, r.hi + 0.3]; }
+  if (key === 'temp') { const r = rangeFor(t, 't'); return [r.lo - 1, r.hi + 1]; }
+  if (key === 'nh3' || key === 'no2') return [0, 0.05];
+  if (key === 'no3') return [0, isReef(t) ? 10 : 20];
+  if (key === 'sg') return t.type === 'Saltwater' ? [1.023, 1.026] : t.type === 'Brackish' ? [1.002, 1.018] : null;
+  if (key === 'po4') return [0, t.type === 'Saltwater' ? 0.1 : 1];
+  if (key === 'alk') return [7, 11];
+  if (key === 'ca') return [380, 450];
+  if (key === 'mg') return [1200, 1450];
+  return null;
+}
+
+const LEVEL_RANK = { ok: 0, warn: 1, bad: 2 };
+function entryChecks(t, e) {
+  return logKeys(t).filter((k) => e.v[k] != null).map((k) => ({ key: k, val: e.v[k], j: judgeValue(t, k, e.v[k]) }));
+}
+function worstLevel(checks) {
+  let w = 'ok';
+  checks.forEach((c) => { if (c.j && LEVEL_RANK[c.j.level] > LEVEL_RANK[w]) w = c.j.level; });
+  return w;
+}
+function logKeys(t) {
+  return LOG_SETS[t.type] || LOG_SETS.Freshwater;
+}
+const LEVEL_WORDS = { ok: 'All good', warn: 'Keep an eye on it', bad: 'Needs action' };
+
+// ----- Water log screen -----
+let logTankId = '';
+let logForm = null; // { mode: 'test' | 'change', pct }
+let logParam = '';
+let logAll = false;
+let logDelete = '';
+
+function logTank() {
+  return getTank(logTankId) || activeTank();
+}
+
+function putAll(parent, ...nodes) {
+  parent.append(...nodes.filter(Boolean));
+}
+
+function tankChips(current, onPick) {
+  if (state.tanks.length < 2) return null;
+  return el('div', { class: 'chips tank-chips' }, ...state.tanks.map((x) => el('button', { type: 'button', class: 'chip-btn' + (x.id === current.id ? ' on' : ''), 'aria-pressed': x.id === current.id ? 'true' : 'false', text: tankLabel(x), onclick: () => onPick(x.id) })));
+}
+
+function svgEl(tag, attrs, ...kids) {
+  const n = document.createElementNS(SVG_NS, tag);
+  Object.entries(attrs || {}).forEach(([k, v]) => n.setAttribute(k, String(v)));
+  kids.flat().forEach((k) => { if (k != null) n.append(k); });
+  return n;
+}
+
+function logChart(t, key) {
+  const pts = t.log.filter((e) => e.k === 'test' && e.v[key] != null).slice(-30).map((e) => ({ t: e.t, v: e.v[key] }));
+  if (pts.length < 2) return null;
+  const W = 320, H = 150, L = 44, R = 10, T = 10, B = 26;
+  const band = judgeBand(t, key);
+  let lo = Math.min(...pts.map((p) => p.v)), hi = Math.max(...pts.map((p) => p.v));
+  if (band) { lo = Math.min(lo, band[0]); hi = Math.max(hi, band[1]); }
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const pad = (hi - lo) * 0.1;
+  lo = Math.max(LOG_FIELDS[key].min, lo - pad);
+  hi += pad;
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+  const sx = (x) => (t1 === t0 ? (L + W - R) / 2 : L + ((x - t0) / (t1 - t0)) * (W - L - R));
+  const sy = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B);
+  const svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'log-chart', role: 'img', 'aria-label': LOG_FIELDS[key].label + ' over time: ' + pts.map((p) => fmtVal(key, p.v)).join(', ') });
+  if (band) {
+    const y1 = sy(Math.min(band[1], hi)), y2 = sy(Math.max(band[0], lo));
+    svg.append(svgEl('rect', { x: L, y: y1, width: W - L - R, height: Math.max(2, y2 - y1), class: 'chart-band' }));
+  }
+  svg.append(svgEl('line', { x1: L, y1: T, x2: L, y2: H - B, class: 'chart-axis' }), svgEl('line', { x1: L, y1: H - B, x2: W - R, y2: H - B, class: 'chart-axis' }));
+  const txt = (x, y, anchor, s) => { const n = svgEl('text', { x, y, 'text-anchor': anchor, class: 'chart-t' }); n.textContent = s; return n; };
+  svg.append(txt(L - 5, T + 8, 'end', fmtVal(key, hi)), txt(L - 5, H - B, 'end', fmtVal(key, lo)), txt(L, H - 8, 'start', fmtDay(t0)), txt(W - R, H - 8, 'end', fmtDay(t1)));
+  svg.append(svgEl('polyline', { points: pts.map((p) => sx(p.t).toFixed(1) + ',' + sy(p.v).toFixed(1)).join(' '), class: 'chart-line', fill: 'none' }));
+  pts.forEach((p) => svg.append(svgEl('circle', { cx: sx(p.t).toFixed(1), cy: sy(p.v).toFixed(1), r: 3.5, class: 'chart-dot' })));
+  return svg;
+}
+
+function logSummaryCard(t) {
+  const tests = t.log.filter((e) => e.k === 'test');
+  const card = el('div', { class: 'card' });
+  if (!tests.length) {
+    card.append(el('h2', { text: 'No readings yet' }),
+      el('p', { class: 'muted', text: 'Log a test from your kit to see what your numbers mean for ' + tankLabel(t) + ' and watch them over time.' }));
+    return card;
+  }
+  const last = tests[tests.length - 1];
+  const checks = entryChecks(t, last);
+  const worst = worstLevel(checks);
+  card.append(el('div', { class: 'water-line' }, el('h2', { text: 'Latest test' }), el('span', { class: 'pill ' + worst, text: LEVEL_WORDS[worst] })),
+    el('p', { class: 'muted small', text: fmtDay(last.t) + ' · ' + agoText(last.t) }));
+  const list = el('div', { class: 'log-values' });
+  checks.forEach((c) => {
+    list.append(el('div', { class: 'log-val' },
+      el('div', { class: 'water-line' }, el('span', { text: LOG_FIELDS[c.key].label }), el('strong', { text: fmtVal(c.key, c.val) + (LOG_FIELDS[c.key].unit ? ' ' + LOG_FIELDS[c.key].unit : '') })),
+      c.j && c.j.level !== 'ok' ? el('div', { class: 'log-note ' + c.j.level, text: c.j.text }) : null));
+  });
+  card.append(list);
+  if (tests.length && daysBetween(last.t, Date.now()) >= 14) card.append(el('p', { class: 'muted small', text: 'It has been a while. Test again to see where the tank stands now.' }));
+  return card;
+}
+
+function submitTest(t, inputs, dateInput, noteInput) {
+  const v = {};
+  let bad = '';
+  Object.keys(inputs).forEach((key) => {
+    const raw = inputs[key].value.trim();
+    if (!raw) return;
+    const n = parseFloat(raw.replace(',', '.'));
+    const f = LOG_FIELDS[key];
+    if (!isFinite(n) || n < f.min || n > f.max) bad = bad || f.label + ' should be between ' + f.min + ' and ' + f.max + '.';
+    else v[key] = n;
+  });
+  if (bad) { toast(bad); return; }
+  if (!Object.keys(v).length) { toast('Enter at least one reading.'); return; }
+  addLogEntry(t, { id: uid(), t: dateFromInput(dateInput.value), k: 'test', v, note: noteInput.value.trim().slice(0, 200) });
+  logForm = null;
+  logParam = '';
+  renderLog();
+}
+
+function addLogEntry(t, e) {
+  t.log.push(e);
+  t.log.sort((a, b) => a.t - b.t);
+  if (t.log.length > MAX_LOG) t.log = t.log.slice(-MAX_LOG);
+  const kind = e.k === 'change' ? 'change' : 'test';
+  t.tasks.forEach((k) => { if (k.kind === kind && e.t > k.last) { k.last = e.t; k.snooze = 0; } });
+  if (!saveState()) toast('Could not save. Your phone storage may be full.');
+  updateBadge();
+}
+
+function logFormCard(t) {
+  const card = el('div', { class: 'card log-form' });
+  const dateInput = el('input', { type: 'date', class: 'date-input', value: todayStr(), max: todayStr(), 'aria-label': 'Date' });
+  const noteInput = el('input', { type: 'text', placeholder: 'Note (optional)', maxlength: '200', 'aria-label': 'Note' });
+  if (logForm.mode === 'change') {
+    card.append(el('h2', { text: 'Log a water change' }));
+    const chips = el('div', { class: 'chips' }, ...[10, 20, 25, 30, 50].map((p) => el('button', { type: 'button', class: 'chip-btn' + (logForm.pct === p ? ' on' : ''), 'aria-pressed': logForm.pct === p ? 'true' : 'false', text: p + '%', onclick: () => { logForm.pct = p; renderLog(); } })));
+    card.append(el('span', { class: 'label', text: 'How much did you change?' }), chips,
+      el('label', { class: 'log-field' }, el('span', { class: 'label', text: 'Date' }), dateInput), noteInput,
+      el('div', { class: 'row-actions' },
+        el('button', { type: 'button', class: 'btn primary small', text: 'Save', onclick: () => {
+          if (!logForm.pct) { toast('Pick how much you changed.'); return; }
+          addLogEntry(t, { id: uid(), t: dateFromInput(dateInput.value), k: 'change', v: {}, pct: logForm.pct, note: noteInput.value.trim().slice(0, 200) });
+          logForm = null; renderLog();
+        } }),
+        el('button', { type: 'button', class: 'btn link', text: 'Cancel', onclick: () => { logForm = null; renderLog(); } })));
+    return card;
+  }
+  const inputs = {};
+  const field = (key) => {
+    const f = LOG_FIELDS[key];
+    inputs[key] = el('input', { type: 'number', inputmode: 'decimal', step: 'any', placeholder: f.hint, 'aria-label': f.label });
+    return el('label', { class: 'log-field' }, el('span', { class: 'label', text: fieldLabel(key) }), inputs[key]);
+  };
+  const keys = logKeys(t);
+  const core = keys.filter((k) => LOG_CORE.includes(k));
+  const more = keys.filter((k) => !LOG_CORE.includes(k));
+  card.append(el('h2', { text: 'Log a test' }), el('p', { class: 'muted small', text: 'Fill in only what you tested.' }),
+    el('div', { class: 'log-grid' }, ...core.map(field)));
+  if (more.length) card.append(el('details', { class: 'log-more' }, el('summary', { text: 'More tests' }), el('div', { class: 'log-grid' }, ...more.map(field))));
+  card.append(el('label', { class: 'log-field' }, el('span', { class: 'label', text: 'Date' }), dateInput), noteInput,
+    el('div', { class: 'row-actions' },
+      el('button', { type: 'button', class: 'btn primary small', text: 'Save test', onclick: () => submitTest(t, inputs, dateInput, noteInput) }),
+      el('button', { type: 'button', class: 'btn link', text: 'Cancel', onclick: () => { logForm = null; renderLog(); } })));
+  return card;
+}
+
+function logTrendCard(t) {
+  const tests = t.log.filter((e) => e.k === 'test');
+  const keys = logKeys(t).filter((k) => tests.filter((e) => e.v[k] != null).length >= 2);
+  if (!keys.length) {
+    return tests.length ? el('div', { class: 'card' }, el('h2', { text: 'Trends' }), el('p', { class: 'muted', text: 'Log one more test and you will see how each number moves over time.' })) : null;
+  }
+  if (!keys.includes(logParam)) logParam = keys.includes('nh3') ? 'nh3' : keys[0];
+  const vals = tests.filter((e) => e.v[logParam] != null).map((e) => e.v[logParam]);
+  const diff = vals[vals.length - 1] - vals[0];
+  const card = el('div', { class: 'card' }, el('h2', { text: 'Trends' }),
+    el('div', { class: 'chips' }, ...keys.map((k) => el('button', { type: 'button', class: 'chip-btn' + (k === logParam ? ' on' : ''), 'aria-pressed': k === logParam ? 'true' : 'false', text: LOG_FIELDS[k].label, onclick: () => { logParam = k; renderLog(); } }))),
+    logChart(t, logParam),
+    el('p', { class: 'muted small', text: 'Latest ' + fmtVal(logParam, vals[vals.length - 1]) + (LOG_FIELDS[logParam].unit ? ' ' + LOG_FIELDS[logParam].unit : '') + (diff === 0 ? ', unchanged since your first reading.' : ', ' + (diff > 0 ? 'up' : 'down') + ' from ' + fmtVal(logParam, vals[0]) + ' at your first reading.') + (judgeBand(t, logParam) ? ' The shaded band is the good range.' : '') }));
+  return card;
+}
+
+function logHistoryCard(t) {
+  if (!t.log.length) return null;
+  const rows = t.log.slice().reverse();
+  const shown = logAll ? rows : rows.slice(0, 10);
+  const card = el('div', { class: 'card' }, el('h2', { text: 'History' }));
+  shown.forEach((e) => {
+    let line, pill = null;
+    if (e.k === 'change') line = 'Water change' + (e.pct ? ', ' + e.pct + '%' : '');
+    else {
+      const checks = entryChecks(t, e);
+      line = checks.map((c) => LOG_FIELDS[c.key].label + ' ' + fmtVal(c.key, c.val)).join(' · ');
+      const w = worstLevel(checks);
+      pill = el('span', { class: 'pill ' + w, text: w === 'ok' ? 'Good' : w === 'warn' ? 'Watch' : 'Act' });
+    }
+    const confirming = logDelete === e.id;
+    card.append(el('div', { class: 'log-row' },
+      el('div', { class: 'log-row-main' }, el('div', { class: 'water-line' }, el('strong', { text: fmtDay(e.t) }), pill), el('span', { class: 'muted small', text: line }), e.note ? el('span', { class: 'muted small', text: '“' + e.note + '”' }) : null),
+      el('button', { type: 'button', class: 'btn link small-link', text: confirming ? 'Tap to confirm' : 'Delete', 'aria-label': 'Delete the ' + fmtDay(e.t) + ' entry', onclick: () => {
+        if (!confirming) { logDelete = e.id; renderLog(); return; }
+        t.log = t.log.filter((x) => x.id !== e.id); logDelete = ''; saveState(); renderLog();
+      } })));
+  });
+  if (rows.length > 10) card.append(el('button', { type: 'button', class: 'btn link', text: logAll ? 'Show fewer' : 'Show all ' + rows.length, onclick: () => { logAll = !logAll; renderLog(); } }));
+  return card;
+}
+
+function renderLog() {
+  const body = $('log-body');
+  body.replaceChildren();
+  const t = logTank();
+  if (!t) {
+    putAll(body, el('div', { class: 'card' }, el('h2', { text: 'Add a tank first' }), el('p', { class: 'muted', text: 'The water log keeps readings for each tank.' }),
+      el('button', { type: 'button', class: 'btn primary small', text: 'Add a tank', onclick: startAddTank })));
+    return;
+  }
+  logTankId = t.id;
+  putAll(body, tankChips(t, (id) => { logTankId = id; logForm = null; logParam = ''; logAll = false; logDelete = ''; renderLog(); }));
+  putAll(body, logSummaryCard(t));
+  if (logForm) putAll(body, logFormCard(t));
+  else putAll(body, el('div', { class: 'row-actions wide' },
+    el('button', { type: 'button', class: 'btn primary small', text: 'Log a test', onclick: () => { logForm = { mode: 'test' }; renderLog(); } }),
+    el('button', { type: 'button', class: 'btn small', text: 'Log a water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } })));
+  putAll(body, logTrendCard(t), logHistoryCard(t));
+  putAll(body, el('p', { class: 'muted small', text: 'These checks are general guidance. Your own fish and your test kit come first.' }));
+}
+
+// ----- Reminders -----
+let remTankId = '';
+let remEdit = '';
+let remDelete = '';
+let remCustom = false;
+
+function remTank() {
+  return getTank(remTankId) || activeTank();
+}
+function everyLabel(n) {
+  if (n === 1) return 'every day';
+  if (n === 7) return 'every week';
+  if (n === 14) return 'every 2 weeks';
+  if (n === 30) return 'every month';
+  if (n === 60) return 'every 2 months';
+  if (n === 90) return 'every 3 months';
+  if (n === 180) return 'every 6 months';
+  return 'every ' + n + ' days';
+}
+function taskDue(k) {
+  return Math.max(k.last + k.every * DAY_MS, k.snooze || 0);
+}
+// diff: days until due (negative when overdue)
+function taskInfo(k) {
+  const diff = daysBetween(Date.now(), taskDue(k));
+  if (diff < 0) return { diff, level: 'bad', text: diff === -1 ? 'Overdue by 1 day' : 'Overdue by ' + -diff + ' days' };
+  if (diff === 0) return { diff, level: 'warn', text: 'Due today' };
+  if (diff === 1) return { diff, level: 'ok', text: 'Due tomorrow' };
+  return { diff, level: 'ok', text: 'Due in ' + diff + ' days' };
+}
+function dueTasks() {
+  const out = [];
+  state.tanks.forEach((t) => t.tasks.forEach((k) => { const i = taskInfo(k); if (i.diff <= 0) out.push({ tank: t, task: k, info: i }); }));
+  return out.sort((a, b) => a.info.diff - b.info.diff);
+}
+function updateBadge() {
+  try {
+    const n = dueTasks().length;
+    if (n && navigator.setAppBadge) navigator.setAppBadge(n);
+    else if (!n && navigator.clearAppBadge) navigator.clearAppBadge();
+  } catch (err) { /* badges are optional */ }
+}
+function addTask(t, label, days, kind) {
+  if (t.tasks.length >= MAX_TASKS) { toast('That is plenty of reminders for one tank.'); return null; }
+  const k = { id: uid(), kind: kind || 'custom', label: label.trim().slice(0, 40), every: days, last: Date.now(), snooze: 0 };
+  t.tasks.push(k);
+  if (!saveState()) toast('Could not save. Your phone storage may be full.');
+  updateBadge();
+  return k;
+}
+
+function taskCard(t, k) {
+  const info = taskInfo(k);
+  const card = el('div', { class: 'card task ' + info.level });
+  card.append(el('div', { class: 'water-line' }, el('h2', { text: k.label }), el('span', { class: 'pill ' + info.level, text: info.text })),
+    el('p', { class: 'muted small', text: capital(everyLabel(k.every)) + ' \u00b7 counting from ' + fmtDay(k.last) }));
+  const done = () => { k.last = Date.now(); k.snooze = 0; saveState(); updateBadge(); renderReminders(); };
+  card.append(el('div', { class: 'row-actions' },
+    el('button', { type: 'button', class: 'btn primary small', text: 'Done', onclick: done }),
+    info.diff <= 0 ? el('button', { type: 'button', class: 'btn small', text: 'Snooze a day', onclick: () => { k.snooze = startOfDay(Date.now()) + DAY_MS; saveState(); updateBadge(); renderReminders(); } }) : null,
+    el('button', { type: 'button', class: 'btn link', text: remEdit === k.id ? 'Close' : 'Edit', onclick: () => { remEdit = remEdit === k.id ? '' : k.id; remDelete = ''; renderReminders(); } })));
+  if (remEdit === k.id) {
+    const sel = el('select', { class: 'select', 'aria-label': 'How often' }, ...(TASK_EVERY.includes(k.every) ? TASK_EVERY : TASK_EVERY.concat(k.every).sort((a, b) => a - b)).map((n) => el('option', { value: n, text: capital(everyLabel(n)), selected: n === k.every })));
+    sel.addEventListener('change', () => { k.every = Number(sel.value); k.snooze = 0; saveState(); updateBadge(); renderReminders(); });
+    card.append(el('div', { class: 'task-edit' }, el('label', { class: 'log-field' }, el('span', { class: 'label', text: 'How often' }), sel),
+      el('button', { type: 'button', class: 'btn link', text: remDelete === k.id ? 'Tap again to remove' : 'Remove this reminder', onclick: () => {
+        if (remDelete !== k.id) { remDelete = k.id; renderReminders(); return; }
+        t.tasks = t.tasks.filter((x) => x.id !== k.id); remEdit = ''; remDelete = ''; saveState(); updateBadge(); renderReminders();
+      } })));
+  }
+  return card;
+}
+function capital(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function renderReminders() {
+  const body = $('reminders-body');
+  body.replaceChildren();
+  const t = remTank();
+  if (!t) {
+    putAll(body, el('div', { class: 'card' }, el('h2', { text: 'Add a tank first' }), el('p', { class: 'muted', text: 'Reminders are kept for each tank.' }),
+      el('button', { type: 'button', class: 'btn primary small', text: 'Add a tank', onclick: startAddTank })));
+    return;
+  }
+  remTankId = t.id;
+  putAll(body, tankChips(t, (id) => { remTankId = id; remEdit = ''; remDelete = ''; remCustom = false; renderReminders(); }));
+  if (!t.tasks.length) {
+    putAll(body, el('div', { class: 'card note' }, el('h2', { text: 'Keep up with ' + tankLabel(t) }),
+      el('p', { class: 'muted', text: 'Start with a weekly water change and water test and a monthly filter clean. You can change any of them.' }),
+      el('button', { type: 'button', class: 'btn primary small', text: 'Add the starter set', onclick: () => {
+        TASK_STARTER.forEach((kind) => { const p = TASK_PRESETS.find((x) => x.kind === kind); addTask(t, p.label, p.days, p.kind); });
+        renderReminders();
+      } })));
+  } else {
+    t.tasks.slice().sort((a, b) => taskDue(a) - taskDue(b)).forEach((k) => putAll(body, taskCard(t, k)));
+  }
+  const have = new Set(t.tasks.map((k) => k.kind));
+  const presets = TASK_PRESETS.filter((p) => !have.has(p.kind) && (!p.only || p.only === t.type));
+  const add = el('div', { class: 'card' }, el('h2', { text: 'Add a reminder' }),
+    el('div', { class: 'chips' }, ...presets.map((p) => el('button', { type: 'button', class: 'chip-btn', text: p.label, onclick: () => { const k = addTask(t, p.label, p.days, p.kind); if (k) remEdit = k.id; renderReminders(); } })),
+      el('button', { type: 'button', class: 'chip-btn' + (remCustom ? ' on' : ''), text: 'Something else', onclick: () => { remCustom = !remCustom; renderReminders(); } })));
+  if (remCustom) {
+    const name = el('input', { type: 'text', placeholder: 'What needs doing?', maxlength: '40', 'aria-label': 'Reminder name' });
+    const sel = el('select', { class: 'select', 'aria-label': 'How often' }, ...TASK_EVERY.map((n) => el('option', { value: n, text: capital(everyLabel(n)), selected: n === 7 })));
+    add.append(el('div', { class: 'task-edit' }, name, sel, el('button', { type: 'button', class: 'btn primary small', text: 'Add', onclick: () => {
+      if (!name.value.trim()) { toast('Give the reminder a name.'); return; }
+      addTask(t, name.value, Number(sel.value), 'custom'); remCustom = false; renderReminders();
+    } })));
+  }
+  putAll(body, add, el('p', { class: 'muted small', text: 'Reminders show up here and on Home when something is due. Tap Done when you have done it, and the clock restarts.' }));
+}
+
+$('log-back').addEventListener('click', () => showView('water'));
+$('reminders-back').addEventListener('click', () => showView('water'));
 
 function defaultState() {
   return { version: 2, setupDone: false, activeId: '', tanks: [] };
@@ -305,9 +937,9 @@ function toast(message) {
 }
 
 // ---------- Navigation ----------
-const VIEWS = ['setup', 'home', 'scan', 'results', 'water', 'tanks', 'tank', 'species', 'dream', 'fishcheck'];
+const VIEWS = ['setup', 'home', 'scan', 'results', 'water', 'tanks', 'tank', 'species', 'dream', 'fishcheck', 'misses', 'log', 'reminders'];
 let currentView = 'home';
-const NAV_FOR = { home: 'home', scan: 'scan', results: 'scan', water: 'water', tanks: 'tanks', tank: 'tanks', species: 'tanks', dream: 'home', fishcheck: 'home' };
+const NAV_FOR = { home: 'home', scan: 'scan', results: 'scan', water: 'water', tanks: 'tanks', tank: 'tanks', species: 'tanks', dream: 'home', fishcheck: 'home', misses: 'home', log: 'water', reminders: 'water' };
 let openTankId = '';
 let editingSize = false;
 
@@ -328,6 +960,9 @@ function showView(name) {
   if (name === 'species') renderSpecies();
   if (name === 'dream') renderDream();
   if (name === 'fishcheck') renderFishCheck();
+  if (name === 'misses') renderMisses();
+  if (name === 'log') renderLog();
+  if (name === 'reminders') renderReminders();
   window.scrollTo(0, 0);
 }
 
@@ -577,8 +1212,8 @@ const FEATURES = [
   { icon: 'drop', color: 'aqua', title: 'Water and tap info', text: 'Tap water and what it means for your tank', go: () => showView('water') },
   { icon: 'star', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you want, fish and plants included', go: () => showView('dream') },
   { icon: 'strip', color: 'orange', title: 'Test strip reader', text: 'Photograph a strip and read your water', soon: true },
-  { icon: 'chart', color: 'green', title: 'Water log', text: 'Track readings and spot trends', soon: true },
-  { icon: 'bell', color: 'pink', title: 'Reminders', text: 'Water changes, feedings and filter care', soon: true },
+  { icon: 'chart', color: 'green', title: 'Water log', text: 'Track readings and spot trends', go: () => showView('log') },
+  { icon: 'bell', color: 'pink', title: 'Reminders', text: 'Water changes, tests and filter care', go: () => showView('reminders'), badge: () => { const n = dueTasks().length; return n ? n + ' due' : ''; } },
   { icon: 'chat', color: 'blue', title: 'Ask the tank', text: 'Ask questions about your own tank', soon: true }
 ];
 const FEATURE_ICONS = {
@@ -602,6 +1237,14 @@ function featureIcon(name) {
   return svg;
 }
 
+function featureBtn(f) {
+  const n = f.badge ? f.badge() : '';
+  return el('button', { type: 'button', class: 'feature ' + f.color + (f.soon ? ' soon' : ''), onclick: () => (f.soon ? toast(f.title + ' is coming soon.') : f.go()) },
+    el('span', { class: 'feature-icon' }, featureIcon(f.icon)),
+    el('span', { class: 'feature-text' }, el('strong', { text: f.title }), el('span', { text: f.text })),
+    n ? el('span', { class: 'pill warn', text: n }) : f.soon ? el('span', { class: 'soon-badge', text: 'Soon' }) : chevron());
+}
+
 let lookupBox = null;
 function openLookup() {
   const input = document.querySelector('#home-lookup .search-input');
@@ -619,6 +1262,13 @@ function renderHome() {
       el('button', { type: 'button', class: 'btn primary small', text: 'Add a tank', onclick: startAddTank })));
   } else {
     const active = activeTank();
+    const due = dueTasks();
+    if (due.length) {
+      const names = due.slice(0, 2).map((d) => d.task.label + (state.tanks.length > 1 ? ' (' + tankLabel(d.tank) + ')' : '')).join(', ');
+      tanks.append(el('button', { type: 'button', class: 'due-card', onclick: () => { remTankId = due[0].tank.id; showView('reminders'); } },
+        el('span', { class: 'due-text' }, el('strong', { text: due.length === 1 ? '1 reminder due' : due.length + ' reminders due' }), el('span', { text: names + (due.length > 2 ? ' and ' + (due.length - 2) + ' more' : '') })),
+        chevron()));
+    }
     state.tanks.forEach((t) => {
       const sums = kindTotals(t);
       const count = sums.fish + sums.plant + sums.other;
@@ -633,10 +1283,7 @@ function renderHome() {
   }
 
   const box = $('home-features');
-  box.replaceChildren(...FEATURES.map((f) => el('button', { type: 'button', class: 'feature ' + f.color + (f.soon ? ' soon' : ''), onclick: () => (f.soon ? toast(f.title + ' is coming soon.') : f.go()) },
-    el('span', { class: 'feature-icon' }, featureIcon(f.icon)),
-    el('span', { class: 'feature-text' }, el('strong', { text: f.title }), el('span', { text: f.text })),
-    f.soon ? el('span', { class: 'soon-badge', text: 'Soon' }) : chevron())));
+  box.replaceChildren(...FEATURES.map(featureBtn));
 
   if (!lookupBox) {
     const lookup = createSearch({
@@ -647,12 +1294,19 @@ function renderHome() {
     lookupBox = el('div', { id: 'home-lookup', class: 'home-lookup' }, lookup.root);
   }
   if (lookupBox.parentNode !== box.parentNode) $('home-tanks').after(lookupBox);
+
+  updateBadge();
+  const missBox = $('home-misses');
+  const misses = loadMisses();
+  missBox.replaceChildren();
+  if (misses.length) missBox.append(el('button', { type: 'button', class: 'btn link', text: 'Names I could not match (' + misses.length + ')', onclick: () => showView('misses') }));
 }
 
 $('home-scan').addEventListener('click', () => showView('scan'));
 
 // ---------- Water ----------
 function renderWater() {
+  $('water-links').replaceChildren(...FEATURES.filter((f) => f.title === 'Water log' || f.title === 'Reminders').map(featureBtn));
   const text = $('water-tap-text');
   const t = activeTank();
   if (!t) {
@@ -1177,7 +1831,7 @@ function applyResult(data, mode) {
     pending.error = "Couldn't spot any fish, plants or corals. Try getting closer, with less glare.";
   }
   pending.species = (data.species || []).map((s) => {
-    const hit = resolveSpecies(s.common_name, s.scientific_name);
+    const hit = resolveSpecies(s.common_name, s.scientific_name, 'scan', s.kind);
     const kind = hit && KIND_LIST.includes(hit.k) ? hit.k : (s.kind || 'fish');
     return {
       name: hit ? hit.n : s.common_name,
@@ -1248,7 +1902,7 @@ function applyVerified(targets, data) {
     const sp = targets[it.index];
     if (!sp) return;
     if (it.confidence >= 0.45 && !/^unidentified/i.test(it.common_name)) {
-      const hit = resolveSpecies(it.common_name, it.scientific_name);
+      const hit = resolveSpecies(it.common_name, it.scientific_name, 'close-up', it.kind);
       sp.name = hit ? hit.n : it.common_name;
       sp.scientific = usableScientific(hit) || it.scientific_name || '';
       if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k;
@@ -1951,7 +2605,7 @@ async function runFish(deep) {
     } else {
       fishCheck.result = r;
       fishCheck.deep = !!deep;
-      const hit = resolveSpecies(r.common_name, r.scientific_name);
+      const hit = resolveSpecies(r.common_name, r.scientific_name, 'fish check', r.kind);
       fishCheck.name = hit ? hit.n : r.common_name;
       fishCheck.count = hit && hit.c && hit.c.s > 1 ? hit.c.s : (r.care_estimate && r.care_estimate.min_group > 1 ? r.care_estimate.min_group : 1);
     }
@@ -2163,6 +2817,7 @@ function renderFishCheck() {
   if (file) startFishCheck(file);
 }));
 $('fishcheck-back').addEventListener('click', () => showView('home'));
+$('misses-back').addEventListener('click', () => showView('home'));
 $('home-fishcheck').addEventListener('click', () => { fishCheck = null; fishCheckTankId = ''; showView('fishcheck'); });
 
 // ---------- Dream Tank ----------
