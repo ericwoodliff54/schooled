@@ -90,6 +90,7 @@
 
       <div class="actions col">
         <button type="submit" class="btn primary big" id="setup-submit">Continue</button>
+        <button type="submit" class="btn big outline" id="setup-scan">Save and scan this tank</button>
         <button type="button" id="setup-skip" class="btn link">Skip for now</button>
       </div>
     </form>
@@ -186,6 +187,7 @@
   <section id="view-tank" class="view" hidden>
     <button type="button" id="tank-back" class="btn link back">&larr; My Tanks</button>
     <div id="tank-hero" class="tank-hero"></div>
+    <button type="button" id="tank-scan" class="btn primary big">Scan this tank</button>
     <div class="row photo-actions">
       <button type="button" id="tank-photo-camera" class="btn small">Take photo</button>
       <button type="button" id="tank-photo-gallery" class="btn small">Choose photo</button>
@@ -212,6 +214,8 @@
     <div id="tank-active"></div>
 
     <div id="tank-insights" class="insights"></div>
+
+    <div id="tank-water"></div>
 
     <h2 class="section">Fish and plants</h2>
     <div id="tank-list" class="list"></div>

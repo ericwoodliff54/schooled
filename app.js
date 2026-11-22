@@ -562,6 +562,8 @@ let logForm = null; // { mode: 'test' | 'change', pct }
 let logParam = '';
 let logAll = false;
 let logDelete = '';
+let logReturn = ''; // tank id to go back to, when the log was opened from a tank page
+let remReturn = '';
 
 function logTank() {
   return getTank(logTankId) || activeTank();
@@ -875,8 +877,44 @@ function renderReminders() {
   putAll(body, add, el('p', { class: 'muted small', text: 'Reminders show up here and on Home when something is due. Tap Done when you have done it, and the clock restarts.' }));
 }
 
-$('log-back').addEventListener('click', () => showView('water'));
-$('reminders-back').addEventListener('click', () => showView('water'));
+$('log-back').addEventListener('click', () => { if (logReturn && getTank(logReturn)) showTank(logReturn); else showView('water'); logReturn = ''; });
+$('reminders-back').addEventListener('click', () => { if (remReturn && getTank(remReturn)) showTank(remReturn); else showView('water'); remReturn = ''; });
+
+// The tank page keeps its own water section, so each test and change shows up in the tank it was done in.
+function openLogFor(t, form) {
+  logTankId = t.id; logReturn = t.id; logForm = form || null; logParam = ''; logAll = false; logDelete = '';
+  showView('log');
+}
+function tankWaterCard(t) {
+  const tests = t.log.filter((e) => e.k === 'test');
+  const changes = t.log.filter((e) => e.k === 'change');
+  const card = el('div', { class: 'card' }, el('h2', { text: 'Water' }));
+  if (!t.log.length) {
+    card.append(el('p', { class: 'muted', text: 'No water tests or changes logged for this tank yet.' }));
+  } else {
+    if (tests.length) {
+      const last = tests[tests.length - 1];
+      const checks = entryChecks(t, last);
+      const worst = worstLevel(checks);
+      card.append(el('div', { class: 'water-line' }, el('strong', { text: 'Last test, ' + agoText(last.t) }), el('span', { class: 'pill ' + worst, text: LEVEL_WORDS[worst] })),
+        el('p', { class: 'muted small', text: checks.map((c) => LOG_FIELDS[c.key].label + ' ' + fmtVal(c.key, c.val)).join(' \u00b7 ') }));
+      checks.filter((c) => c.j && c.j.level !== 'ok').slice(0, 2).forEach((c) => card.append(el('div', { class: 'log-note ' + c.j.level, text: c.j.text })));
+    }
+    if (changes.length) {
+      const c = changes[changes.length - 1];
+      card.append(el('p', { class: 'muted small', text: 'Last water change ' + agoText(c.t) + (c.pct ? ', ' + c.pct + '%' : '') + '.' }));
+    }
+  }
+  const due = t.tasks.filter((k) => taskInfo(k).diff <= 0);
+  if (due.length) card.append(el('button', { type: 'button', class: 'due-card', onclick: () => { remTankId = t.id; remReturn = t.id; showView('reminders'); } },
+    el('span', { class: 'due-text' }, el('strong', { text: due.length === 1 ? '1 reminder due' : due.length + ' reminders due' }), el('span', { text: due.slice(0, 2).map((k) => k.label).join(', ') })), chevron()));
+  card.append(el('div', { class: 'row-actions' },
+    el('button', { type: 'button', class: 'btn primary small', text: 'Log a test', onclick: () => openLogFor(t, { mode: 'test' }) }),
+    el('button', { type: 'button', class: 'btn small', text: 'Log a water change', onclick: () => openLogFor(t, { mode: 'change', pct: 0 }) }),
+    t.log.length ? el('button', { type: 'button', class: 'btn link', text: 'Full log', onclick: () => openLogFor(t, null) }) : null,
+    el('button', { type: 'button', class: 'btn link', text: 'Reminders', onclick: () => { remTankId = t.id; remReturn = t.id; showView('reminders'); } })));
+  return card;
+}
 
 function defaultState() {
   return { version: 2, setupDone: false, activeId: '', tanks: [] };
@@ -1114,8 +1152,13 @@ function startAddTank() {
   showView('setup');
 }
 
+let setupThenScan = false;
+$('setup-scan').addEventListener('click', () => { setupThenScan = true; });
+$('setup-submit').addEventListener('click', () => { setupThenScan = false; });
 $('setup-form').addEventListener('submit', (event) => {
   event.preventDefault();
+  const scanNext = setupThenScan;
+  setupThenScan = false;
   const first = !state.setupDone;
   const name = $('tank-name').value.trim();
   const sizeRaw = $('tank-size').value.trim();
@@ -1158,8 +1201,16 @@ $('setup-form').addEventListener('submit', (event) => {
     saveState();
     toast('This phone is out of saved space, so the photo was left off.');
   }
-  if (first) showView('home');
+  if (scanNext) { state.activeId = tank.id; saveState(); showView('scan'); }
+  else if (first) showView('home');
   else showTank(tank.id);
+});
+
+$('tank-scan').addEventListener('click', () => {
+  if (!getTank(openTankId)) return;
+  state.activeId = openTankId;
+  saveState();
+  showView('scan');
 });
 
 $('setup-skip').addEventListener('click', () => {
@@ -1212,8 +1263,8 @@ const FEATURES = [
   { icon: 'drop', color: 'aqua', title: 'Water and tap info', text: 'Tap water and what it means for your tank', go: () => showView('water') },
   { icon: 'star', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you want, fish and plants included', go: () => showView('dream') },
   { icon: 'strip', color: 'orange', title: 'Test strip reader', text: 'Photograph a strip and read your water', soon: true },
-  { icon: 'chart', color: 'green', title: 'Water log', text: 'Track readings and spot trends', go: () => showView('log') },
-  { icon: 'bell', color: 'pink', title: 'Reminders', text: 'Water changes, tests and filter care', go: () => showView('reminders'), badge: () => { const n = dueTasks().length; return n ? n + ' due' : ''; } },
+  { icon: 'chart', color: 'green', title: 'Water log', text: 'Track readings and spot trends', go: () => { logReturn = ''; showView('log'); } },
+  { icon: 'bell', color: 'pink', title: 'Reminders', text: 'Water changes, tests and filter care', go: () => { remReturn = ''; showView('reminders'); }, badge: () => { const n = dueTasks().length; return n ? n + ' due' : ''; } },
   { icon: 'chat', color: 'blue', title: 'Ask the tank', text: 'Ask questions about your own tank', soon: true }
 ];
 const FEATURE_ICONS = {
@@ -1323,6 +1374,11 @@ function renderWater() {
 }
 
 // ---------- My Tanks (list) ----------
+function lastTestLine(t) {
+  const tests = t.log.filter((e) => e.k === 'test');
+  return tests.length ? 'Last water test ' + agoText(tests[tests.length - 1].t) : '';
+}
+
 function renderTanks() {
   const box = $('tanks-list');
   box.replaceChildren();
@@ -1347,7 +1403,8 @@ function renderTanks() {
           el('strong', { class: 'name', text: tankLabel(t) }),
           t === active ? el('span', { class: 'badge', text: 'Active' }) : null),
         el('span', { class: 'tank-tags' }, ...[sizeShort(t), t.type, t.style].filter(Boolean).map((x) => el('span', { class: 'tag', text: x }))),
-        el('span', { class: 'sub', text: kinds ? kinds + (kinds === 1 ? ' kind · ' : ' kinds · ') + totalFish(t) + ' in total' : 'No fish added yet' })
+        el('span', { class: 'sub', text: kinds ? kinds + (kinds === 1 ? ' kind · ' : ' kinds · ') + totalFish(t) + ' in total' : 'No fish added yet' }),
+        lastTestLine(t) ? el('span', { class: 'sub', text: lastTestLine(t) }) : null
       )));
   });
 }
@@ -1500,6 +1557,8 @@ function renderTank() {
   } else {
     act.append(el('button', { type: 'button', class: 'btn small', text: 'Make this my active tank', onclick: () => { state.activeId = t.id; saveState(); renderTank(); } }));
   }
+
+  $('tank-water').replaceChildren(tankWaterCard(t));
 
   const list = $('tank-list');
   list.replaceChildren();
