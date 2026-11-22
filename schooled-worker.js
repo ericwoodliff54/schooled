@@ -270,7 +270,9 @@ const FISH_PROMPT =
   'omit it when cannot_tell. List up to four short visible signs in health.signs (only real concerns, plain words, empty when healthy). ' +
   'Check the face and mouth on their own: white, grey or cottony patches or erosion around the lips or mouth ("cotton mouth", columnaris) are a real concern, as are white fuzzy edges on fins. ' +
   'Be strict about the photo: if it is blurry, small, taken head-on, or part of the body is hidden, you cannot rule problems out, so do not score above 80 and say what you could not see in health.signs ' +
-  '(for example "photo too blurry to check the mouth"). Use cannot_tell when you really cannot judge.';
+  '(for example "photo too blurry to check the mouth"). Use cannot_tell when you really cannot judge, and then put the one short reason in health.signs ' +
+  '(for example "heavy blue color tint", "fish is too small in the photo", "blurry", "seen head-on"). ' +
+  'Strong color tints from store lighting or photo filters change how a fish looks, so do not rely on color alone to tell look-alike species apart, and lower your confidence when the colors look unnatural.';
 
 const FISH_SCHEMA = {
   type: 'OBJECT',

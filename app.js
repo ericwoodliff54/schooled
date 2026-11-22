@@ -2052,7 +2052,7 @@ function healthCard(h) {
   const tip = hh.status === 'unwell'
     ? 'I would pass on this one. Fish from the same tank can carry the same problem.'
     : hh.status === 'cannot_tell'
-      ? 'Try a sharper, closer photo from the side. Watch it swim before you buy.'
+      ? 'Try a sharper, evenly lit photo with natural colors. Watch it swim before you buy.'
       : 'A photo cannot catch everything. Ask to see it eat, and keep new fish apart for a few weeks before adding them.';
   box.append(el('p', { class: 'muted small', text: tip }));
   return box;
@@ -2076,14 +2076,25 @@ function renderFishCheck() {
   const r = fc.result;
   if (!r) return;
   const entry = lookupSpecies(fc.name);
-  const sure = r.confidence >= 0.75 ? ['Confident', 'ok'] : r.confidence >= 0.45 ? ['Likely', 'warn'] : ['Not sure', 'bad'];
+  // A photo alone can't settle the look-alike groups (two rainbowfish, neon vs cardinal and so on), so never say "Confident" for those.
+  const group = entry && entry.g && DB.groups[entry.g] ? DB.groups[entry.g] : null;
+  const switched = canonKey(fc.name) !== canonKey(r.common_name);
+  const conf = group && group.h ? Math.min(r.confidence, 0.7) : r.confidence;
+  const sure = switched ? ['Your pick', 'ok'] : conf >= 0.75 ? ['Confident', 'ok'] : conf >= 0.45 ? ['Likely', 'warn'] : ['Not sure', 'bad'];
   const card = el('div', { class: 'card dream-result' });
   card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), el('span', { class: 'pill ' + sure[1], text: sure[0] })));
   if (entry && entry.s) card.append(el('p', { class: 'muted small', text: entry.s }));
   card.append(healthCard(r.health));
   if (r.label_text) card.append(el('p', { class: 'muted small', text: 'Read from the tag: ' + r.label_text }));
-  if (r.confidence < 0.6) card.append(el('p', { class: 'muted small', text: 'Try a closer photo of one fish, or include its name tag. Fish look different when they are stressed in store tanks.' }));
-  const alts = r.alternatives.map((x) => lookupSpecies(x) ? lookupSpecies(x).n : x).filter((x) => canonKey(x) !== canonKey(fc.name));
+  if (conf < 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Try a closer photo of one fish, or include its name tag. Fish look different when they are stressed in store tanks.' }));
+  if (group && group.h && group.tip) card.append(el('p', { class: 'muted small', text: 'Look-alikes: ' + group.tip }));
+  // Members of the look-alike group, in the order the tell-apart tip mentions them (the usual mix-ups come first).
+  const tipText = group && group.tip ? group.tip.toLowerCase() : '';
+  const tipPos = (n) => { const i = tipText.indexOf(n.toLowerCase().split(/[\s-]/)[0]); return i < 0 ? 9999 : i; };
+  const members = group && group.h ? DB.list.filter((e) => e.g === entry.g).map((e) => e.n).sort((x, y) => tipPos(x) - tipPos(y)) : [];
+  const seenAlt = new Set();
+  const alts = r.alternatives.concat(members).map((x) => lookupSpecies(x) ? lookupSpecies(x).n : x)
+    .filter((x) => { const k = canonKey(x); if (k === canonKey(fc.name) || seenAlt.has(k)) return false; seenAlt.add(k); return true; }).slice(0, 4);
   if (alts.length) {
     card.append(el('p', { class: 'label', text: 'Could also be' }),
       el('div', { class: 'chips ideas' }, ...alts.map((x) => el('button', { type: 'button', class: 'chip-btn', text: x, onclick: () => {
