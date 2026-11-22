@@ -810,3 +810,5 @@ body[data-view="home"] .brand { display: none; }
 .dream-list-h { margin: 6px 0 0; }
 .dream-roster { margin: 0 -18px; }
 button:disabled.btn { opacity: 0.55; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.dream-result a.btn.small { min-height: 46px; padding: 0 18px; }
