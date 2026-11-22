@@ -291,9 +291,9 @@ function toast(message) {
 }
 
 // ---------- Navigation ----------
-const VIEWS = ['setup', 'home', 'scan', 'results', 'water', 'tanks', 'tank', 'species'];
+const VIEWS = ['setup', 'home', 'scan', 'results', 'water', 'tanks', 'tank', 'species', 'dream'];
 let currentView = 'home';
-const NAV_FOR = { home: 'home', scan: 'scan', results: 'scan', water: 'water', tanks: 'tanks', tank: 'tanks', species: 'tanks' };
+const NAV_FOR = { home: 'home', scan: 'scan', results: 'scan', water: 'water', tanks: 'tanks', tank: 'tanks', species: 'tanks', dream: 'home' };
 let openTankId = '';
 let editingSize = false;
 
@@ -312,6 +312,7 @@ function showView(name) {
   if (name === 'tanks') renderTanks();
   if (name === 'tank') renderTank();
   if (name === 'species') renderSpecies();
+  if (name === 'dream') renderDream();
   window.scrollTo(0, 0);
 }
 
@@ -559,7 +560,7 @@ const FEATURES = [
   { icon: 'fish', color: 'teal', title: 'My Tanks', text: 'Fish, plants, stocking and tank mate checks', go: () => showView('tanks') },
   { icon: 'search', color: 'blue', title: 'Species guide', text: 'Look up care, size and good tank mates', go: () => openLookup() },
   { icon: 'drop', color: 'aqua', title: 'Water and tap info', text: 'Tap water and what it means for your tank', go: () => showView('water') },
-  { icon: 'star', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you want, fish and plants included', soon: true },
+  { icon: 'star', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you want, fish and plants included', go: () => showView('dream') },
   { icon: 'strip', color: 'orange', title: 'Test strip reader', text: 'Photograph a strip and read your water', soon: true },
   { icon: 'chart', color: 'green', title: 'Water log', text: 'Track readings and spot trends', soon: true },
   { icon: 'bell', color: 'pink', title: 'Reminders', text: 'Water changes, feedings and filter care', soon: true },
@@ -1670,13 +1671,14 @@ let speciesOriginTank = '';
 
 function showSpecies(name, tankId, fromChip) {
   if (fromChip && speciesView) speciesStack.push(speciesView);
-  else { speciesStack = []; speciesOrigin = currentView === 'home' ? 'home' : 'tank'; speciesOriginTank = tankId || openTankId || ''; }
+  else { speciesStack = []; speciesOrigin = currentView === 'home' ? 'home' : currentView === 'dream' ? 'dream' : 'tank'; speciesOriginTank = tankId || openTankId || ''; }
   speciesView = { name, tankId: tankId || '' };
   showView('species');
 }
 $('species-back').addEventListener('click', () => {
   if (speciesStack.length) { speciesView = speciesStack.pop(); showView('species'); return; }
   if (speciesOrigin === 'home') showView('home');
+  else if (speciesOrigin === 'dream') showView('dream');
   else if (getTank(speciesOriginTank)) showTank(speciesOriginTank);
   else showView('tanks');
 });
@@ -1901,6 +1903,225 @@ function renderSpecies() {
 function stockCard(t) {
   return el('div', { class: 'card' }, el('div', { class: 'card-head' }, el('h2', { text: 'Stocking' })), stockBar(t));
 }
+
+// ---------- Dream Tank ----------
+const DREAM_MONTHLY = 2;
+const DREAM_KEY = 'schooled.dream';
+const DEVICE_KEY = 'schooled.device';
+const DREAM_IDEAS = ['A heavily planted, peaceful community tank with lots of color', 'A reef with soft corals, clownfish and a mandarin', 'A rocky Malawi cichlid tank full of blue and yellow', 'A quiet blackwater tank with small schooling fish and driftwood'];
+const DREAM_ERRORS = {
+  limit_reached: 'You have used this month’s dream pictures. They come back next month.',
+  busy_today: 'Dream Tank has been very busy today. Please try again tomorrow.',
+  rate_limited: 'That was a few too many tries in a row. Wait a few minutes and try again.',
+  not_aquarium: 'That did not sound like an aquarium. Describe the fish, plants and style you want.',
+  ai_busy: 'The AI is busy right now. Nothing was used. Try again in a minute.',
+  too_large: 'That photo is too big. Try a different one.',
+  bad_image: 'That photo could not be used. Try a different one.'
+};
+
+function dreamMonth() { return new Date().toISOString().slice(0, 7); }
+function dreamLoad() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(DREAM_KEY) || 'null'); } catch (err) { s = null; }
+  if (!s || typeof s !== 'object') s = {};
+  if (s.month !== dreamMonth()) { s.month = dreamMonth(); s.used = 0; }
+  s.used = Math.max(0, Math.min(99, Math.round(Number(s.used)) || 0));
+  return s;
+}
+function dreamSave(s) {
+  try { localStorage.setItem(DREAM_KEY, JSON.stringify(s)); return true; } catch (err) { return false; }
+}
+function dreamLeft() { return Math.max(0, DREAM_MONTHLY - dreamLoad().used); }
+function deviceId() {
+  let id = '';
+  try { id = localStorage.getItem(DEVICE_KEY) || ''; } catch (err) { id = ''; }
+  if (!/^[A-Za-z0-9_-]{12,60}$/.test(id)) {
+    id = uid() + uid();
+    id = id.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40).padEnd(12, 'x');
+    try { localStorage.setItem(DEVICE_KEY, id); } catch (err) { /* the server then counts by address */ }
+  }
+  return id;
+}
+
+let dreamForm = null;
+let dreamPhoto = '';
+let dreamBusy = false;
+let dreamMessage = '';
+
+function shrinkDataUrl(src, side) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const k = Math.min(1, side / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/jpeg', 0.82));
+        } catch (err) { resolve(src.length < 900000 ? src : ''); }
+      };
+      img.onerror = () => resolve(src.length < 900000 ? src : '');
+      setTimeout(() => resolve(src.length < 900000 ? src : ''), 4000); // never leave the page waiting
+      img.src = src;
+    } catch (err) { resolve(''); }
+  });
+}
+
+function dreamTank(r) {
+  const fish = (r.species || []).map((s) => {
+    const item = { name: canonName(s.common_name), count: Math.max(1, Math.round(s.count) || 1) };
+    if (KIND_LIST.includes(s.kind)) item.kind = s.kind;
+    return item;
+  });
+  return newTank({ name: r.title || 'Dream tank', size: String(r.gallons || 55), unit: 'gallons', type: r.type || 'Freshwater', fish, photo: r.image || '' });
+}
+
+async function runDream() {
+  if (dreamBusy) return;
+  const f = dreamForm;
+  const text = f.text.trim();
+  const gal = Number(f.size);
+  if (text.length < 3) { toast('Describe the tank you want first.'); return; }
+  if (!(gal >= 5 && gal <= 2000)) { toast('Enter a tank size between 5 and 2000 gallons.'); return; }
+  if (!dreamLeft()) { dreamMessage = DREAM_ERRORS.limit_reached; renderDream(); return; }
+  dreamBusy = true; dreamMessage = '';
+  renderDream();
+  try {
+    const body = { prompt: text, tank_type: f.type, gallons: gal, device: deviceId() };
+    if (dreamPhoto) { body.image = dreamPhoto.split(',')[1] || ''; body.mime = 'image/jpeg'; }
+    const res = await fetch(WORKER_URL + '/dream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(95000) });
+    let j = null;
+    try { j = await res.json(); } catch (err) { j = null; }
+    if (!j || !j.ok) {
+      const code = j && j.error;
+      if (code === 'limit_reached') { const s = dreamLoad(); s.used = DREAM_MONTHLY; dreamSave(s); }
+      dreamMessage = DREAM_ERRORS[code] || 'Something went wrong. Nothing was used. Try again in a minute.';
+    } else {
+      let image = '';
+      if (j.image && j.image.data && /^image\/(png|jpeg|webp)$/.test(j.image.mime)) {
+        image = await shrinkDataUrl('data:' + j.image.mime + ';base64,' + j.image.data, 1024);
+      }
+      const s = dreamLoad();
+      if (image) s.used += 1;
+      s.last = { title: String(j.title || ''), summary: String(j.summary || ''), species: j.species, image, gallons: gal, type: f.type, at: Date.now() };
+      if (!dreamSave(s)) { s.last.image = ''; dreamSave(s); }
+      dreamMessage = image ? '' : 'The AI made your list but could not make the picture this time, and no picture was used. Try again.';
+    }
+  } catch (err) {
+    dreamMessage = 'Could not reach the server. Check your connection. Nothing was used.';
+  }
+  dreamBusy = false;
+  renderDream();
+  window.scrollTo(0, 0);
+}
+
+function dreamPhotoButtons(rerender) {
+  const cam = el('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true });
+  const gal = el('input', { type: 'file', accept: 'image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff', hidden: true });
+  const wire = (input) => input.addEventListener('change', async (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    try { dreamPhoto = await photoFromFile(file, 1024); rerender(); } catch (err) { toast("This device couldn't open that photo. Try another one."); }
+  });
+  wire(cam); wire(gal);
+  const t = activeTank();
+  return el('div', { class: 'row photo-actions' },
+    el('button', { type: 'button', class: 'btn small', text: 'Take photo', onclick: () => cam.click() }),
+    el('button', { type: 'button', class: 'btn small', text: 'Choose photo', onclick: () => gal.click() }),
+    t && t.photo && dreamPhoto !== t.photo ? el('button', { type: 'button', class: 'btn small', text: 'Use my tank', onclick: () => { dreamPhoto = t.photo; rerender(); } }) : null,
+    dreamPhoto ? el('button', { type: 'button', class: 'btn small', text: 'Remove', onclick: () => { dreamPhoto = ''; rerender(); } }) : null,
+    cam, gal);
+}
+
+function renderDream() {
+  const body = $('dream-body');
+  body.replaceChildren();
+  const t = activeTank();
+  if (!dreamForm) {
+    dreamForm = { text: '', type: t ? t.type : 'Freshwater', size: t && tankGallons(t) ? String(Math.round(tankGallons(t))) : '55' };
+  }
+  const s = dreamLoad();
+  const left = dreamLeft();
+
+  body.append(el('h1', { text: 'Dream Tank' }),
+    el('p', { class: 'muted', text: 'Describe the tank you want and the AI will picture it with fish and plants, then list what it would take. Add a photo of your tank to see the idea in your own space.' }));
+
+  if (dreamMessage) body.append(el('div', { class: 'notice', role: 'status', text: dreamMessage }));
+
+  // Photo
+  const photoCard = el('div', { class: 'card' }, el('h2', { text: 'Your tank photo' }), el('p', { class: 'muted small', text: 'Optional. The AI keeps your tank and room and redoes what is inside.' }));
+  const box = el('div', { class: 'photo-box dream-photo' });
+  if (dreamPhoto) box.append(el('img', { src: dreamPhoto, alt: 'Your tank photo' }));
+  else box.append(el('div', { class: 'tank-hero-empty' }, kindIcon('fish'), el('span', { text: 'No photo added' })));
+  photoCard.append(box, dreamPhotoButtons(renderDream));
+  body.append(photoCard);
+
+  // Wish
+  const area = el('textarea', { class: 'dream-text', rows: 4, maxlength: 400, placeholder: 'For example: a heavily planted tank with schooling fish, driftwood and a calm feel', 'aria-label': 'Describe your dream tank' });
+  area.value = dreamForm.text;
+  area.addEventListener('input', () => { dreamForm.text = area.value; });
+  const typeSel = el('select', { class: 'select', 'aria-label': 'Water type' }, ...['Freshwater', 'Saltwater', 'Brackish'].map((x) => el('option', { value: x, text: x })));
+  typeSel.value = dreamForm.type;
+  typeSel.addEventListener('change', () => { dreamForm.type = typeSel.value; });
+  const size = el('input', { type: 'number', inputmode: 'numeric', min: 5, max: 2000, class: 'dream-size', value: dreamForm.size, 'aria-label': 'Tank size in gallons' });
+  size.addEventListener('input', () => { dreamForm.size = size.value; });
+  const wishCard = el('div', { class: 'card' },
+    el('h2', { text: 'What do you want?' }), area,
+    el('div', { class: 'chips ideas' }, ...DREAM_IDEAS.map((i) => el('button', { type: 'button', class: 'chip-btn', text: i, onclick: () => { dreamForm.text = i; area.value = i; } }))),
+    el('div', { class: 'dream-row' }, el('label', {}, el('span', { class: 'label', text: 'Water' }), typeSel), el('label', {}, el('span', { class: 'label', text: 'Gallons' }), size)));
+  body.append(wishCard);
+
+  const go = el('button', { type: 'button', class: 'btn primary big', text: dreamBusy ? 'Dreaming…' : (s.last ? 'Dream another one' : 'Dream it'), onclick: runDream });
+  if (dreamBusy || !left) go.disabled = true;
+  body.append(go,
+    el('p', { class: 'muted small center', text: dreamBusy ? 'This can take up to a minute. Please keep the app open.' : left + ' of ' + DREAM_MONTHLY + ' dream pictures left this month. A picture only counts when it is made.' }));
+
+  if (s.last && !dreamBusy) body.append(dreamResultCard(s.last));
+}
+
+function dreamResultCard(r) {
+  const tmp = dreamTank(r);
+  const card = el('div', { class: 'card dream-result' });
+  if (r.image) {
+    card.append(el('img', { class: 'dream-image', src: r.image, alt: 'AI picture of ' + r.title }),
+      el('a', { class: 'btn small', href: r.image, download: 'dream-tank.jpg', text: 'Save picture' }),
+      el('p', { class: 'muted small', text: 'On an iPhone, press and hold the picture to save it. This is an AI picture, so real fish and plants will look a little different.' }));
+  }
+  card.append(el('h2', { text: r.title }), r.summary ? el('p', { text: r.summary }) : null);
+
+  const check = tankCheck(tmp);
+  const bad = check.issues.some((i) => i.level === 'bad');
+  card.append(el('div', { class: 'water-line' },
+    el('strong', { text: 'Would it work?' }),
+    !check.issues.length ? el('span', { class: 'pill ok', text: 'All clear' }) : el('span', { class: 'pill ' + (bad ? 'bad' : 'warn'), text: check.issues.length + (check.issues.length === 1 ? ' thing to look at' : ' things to look at') })),
+    stockBar(tmp));
+  if (check.issues.length) card.append(issueList(check.issues.slice(0, 4)));
+
+  card.append(el('h2', { class: 'dream-list-h', text: 'What it takes' }),
+    el('div', { class: 'roster dream-roster' }, ...tmp.fish.map((f, i) => {
+      const note = r.species[i] && r.species[i].note;
+      return el('div', { class: 'item' },
+        rowAvatar(f),
+        el('button', { type: 'button', class: 'row-main', 'aria-label': 'Details for ' + f.name, onclick: () => { const a = activeTank(); showSpecies(f.name, a ? a.id : ''); } },
+          el('span', { class: 'name', text: f.name }),
+          note ? el('span', { class: 'sub', text: note }) : null),
+        el('span', { class: 'count-chip', text: '× ' + f.count }));
+    })),
+    el('button', { type: 'button', class: 'btn primary big', text: 'Start this as a new tank', onclick: () => {
+      if (state.tanks.length >= MAX_TANKS) { toast('That is the most tanks the app can hold on this phone (' + MAX_TANKS + ').'); return; }
+      state.tanks.push(tmp);
+      state.activeId = tmp.id;
+      if (!saveState()) { tmp.photo = ''; saveState(); }
+      showTank(tmp.id);
+      toast('Created ' + tankLabel(tmp) + '. Add what you actually own as you go.');
+    } }),
+    el('p', { class: 'muted small', text: 'Stocking advice is general guidance, and the AI can be wrong. Check each species before you buy.' }));
+  return card;
+}
+
+$('dream-back').addEventListener('click', () => showView('home'));
 
 // ---------- Splash ----------
 (function () {
