@@ -17,9 +17,7 @@
 <main id="app">
 
   <header class="brand" aria-label="Schooled">
-    <span class="logo" aria-hidden="true">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c3-4.5 8-5.5 12-2.5l5-2.5v10l-5-2.5c-4 3-9 2-12-2.5z"/><circle cx="8" cy="11" r="0.8" fill="#fff"/></svg>
-    </span>
+    <img class="logo" src="logo-mark.png" alt="" width="40" height="40">
     <span class="wordmark">Schooled</span>
   </header>
 
@@ -104,8 +102,10 @@
     <button type="button" id="camera-btn" class="btn primary big">Take a photo</button>
     <button type="button" id="gallery-btn" class="btn big outline">Choose from gallery</button>
     <button type="button" id="sweep-btn" class="btn big soft">Hiding fish? Film a 10-second sweep</button>
+    <button type="button" id="video-gallery-btn" class="btn-link">or choose a video you already filmed</button>
     <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
-    <input id="sweep-input" type="file" accept="video/*" hidden>
+    <input id="sweep-input" type="file" accept="video/*" capture="environment" hidden>
+    <input id="video-gallery-input" type="file" accept="video/*,.mp4,.mov,.webm,.3gp,.m4v" hidden>
     <input id="gallery-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
     <p class="muted small center">Test strip reading arrives in the next update.</p>
   </section>

@@ -56,15 +56,7 @@ p { margin: 0; }
 
 /* Brand bar */
 .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
-.logo {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, var(--aqua), var(--teal) 70%);
-  box-shadow: 0 6px 14px -6px rgba(11, 107, 106, 0.7);
-}
+.logo { width: 40px; height: 40px; border-radius: 50%; display: block; box-shadow: 0 6px 14px -6px rgba(11, 107, 106, 0.7); }
 .wordmark { font-size: 20px; font-weight: 800; letter-spacing: -0.03em; color: var(--teal-dark); }
 
 .muted { color: var(--muted); }
@@ -455,3 +447,5 @@ input::placeholder { color: #8DA3A9; }
 .hint-new, .hint-have { font-size: 12px; font-weight: 700; margin-top: 1px; }
 .hint-new { color: var(--teal); }
 .hint-have { color: var(--muted); }
+
+.btn-link { display:block; margin:2px auto 10px; padding:8px 12px; background:none; border:0; color:var(--teal-dark); font:inherit; font-size:.9rem; font-weight:600; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }

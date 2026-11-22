@@ -293,12 +293,16 @@ function wirePhotoInput(buttonId, inputId) {
 }
 wirePhotoInput('camera-btn', 'camera-input');
 wirePhotoInput('gallery-btn', 'gallery-input');
-$('sweep-btn').addEventListener('click', () => $('sweep-input').click());
-$('sweep-input').addEventListener('change', (event) => {
-  const file = event.target.files && event.target.files[0];
-  event.target.value = '';
-  if (file) startSweep(file);
-});
+function wireSweepInput(buttonId, inputId) {
+  $(buttonId).addEventListener('click', () => $(inputId).click());
+  $(inputId).addEventListener('change', (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (file) startSweep(file);
+  });
+}
+wireSweepInput('sweep-btn', 'sweep-input');
+wireSweepInput('video-gallery-btn', 'video-gallery-input');
 
 $('rescan').addEventListener('click', () => showView('scan'));
 $('results-back').addEventListener('click', () => showView('scan'));
