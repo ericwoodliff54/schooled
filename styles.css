@@ -939,3 +939,20 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .store-card .chev, .store-card > svg { color: #fff; }
 .care-empty { text-align: left; font: inherit; width: 100%; cursor: pointer; border: 0; }
 .care-empty p { margin: 4px 0 0; }
+
+/* Home to match the mockup */
+.home-head { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px; row-gap: 2px; padding: 0 2px; }
+.home-logo { width: 100%; max-width: 330px; border-radius: 0; box-shadow: none; filter: drop-shadow(0 3px 6px rgba(10, 37, 64, 0.18)); }
+.home-head p { grid-column: 1 / -1; margin: 0 4px; font-size: 14px; color: var(--muted); font-weight: 600; }
+.home-add { width: 48px; height: 48px; border-radius: 50%; border: 1.5px solid #C5D7EE; background: rgba(255, 255, 255, 0.7); color: var(--ink); display: grid; place-items: center; cursor: pointer; }
+.home-add:active { background: #fff; }
+.home-tank { min-height: 96px; }
+.home-tank-pic { width: 72px; height: 72px; border-radius: 18px; }
+.add-pill { display: inline-flex; align-items: center; gap: 4px; background: var(--mist); border-color: transparent; font-weight: 700; }
+.add-pill svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.store-card .home-tank-text strong { letter-spacing: 0; font-size: 20px; }
+.store-card .home-tank-text span { letter-spacing: 0; font-weight: 500; font-size: 15px; }
+.misses-bar { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px 18px; border: 0; border-radius: 20px; background: #FDEBD6; color: #8A4A0C; font: inherit; text-align: left; cursor: pointer; }
+.misses-bar strong { flex: 1; font-size: 16px; font-weight: 800; }
+.misses-bar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; flex-shrink: 0; }
+.home-misses { margin-top: 12px; }

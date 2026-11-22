@@ -1224,7 +1224,8 @@ const FEATURE_ICONS = {
   bell: ['M6 16V11a6 6 0 1 1 12 0v5l2 2H4z', 'M10 21h4'],
   chat: ['M4 5h16v11H9l-5 4z'],
   scan: ['M4 8V5a1 1 0 0 1 1-1h3', 'M16 4h3a1 1 0 0 1 1 1v3', 'M20 16v3a1 1 0 0 1-1 1h-3', 'M8 20H5a1 1 0 0 1-1-1v-3', 'M8 12c1.5-2 4-2 6 0-2 2-4.5 2-6 0z', 'M14 12l2-1.2v2.4z'],
-  plus: ['M12 5v14', 'M5 12h14']
+  plus: ['M12 5v14', 'M5 12h14'],
+  info: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z', 'M12 11v5', 'M12 7.5v.5']
 };
 function featureIcon(name) {
   const svg = kindIcon('fish');
@@ -1279,9 +1280,11 @@ function renderHome() {
       chevron()));
   } else {
     putAll(body, ...state.tanks.map(homeTankCard));
+    const at = activeTank();
     const due = dueTasks();
+    const addBtn = el('button', { type: 'button', class: 'btn small add-pill', 'aria-label': 'Add a care reminder', onclick: () => showTank(at.id, 'care') }, featureIcon('plus'), 'Add');
     if (due.length) {
-      const card = el('div', { class: 'card' }, el('h2', { text: 'Due now' }));
+      const card = el('div', { class: 'card' }, el('div', { class: 'card-head' }, el('h2', { text: 'Due now' }), addBtn));
       due.slice(0, 5).forEach((d) => card.append(el('div', { class: 'due-row' },
         el('button', { type: 'button', class: 'due-main', onclick: () => showTank(d.tank.id, 'care') },
           el('strong', { text: d.task.label + (state.tanks.length > 1 ? ' \u00b7 ' + tankLabel(d.tank) : '') }),
@@ -1293,20 +1296,25 @@ function renderHome() {
       const next = [];
       state.tanks.forEach((x) => x.tasks.forEach((k) => next.push({ tank: x, task: k, info: taskInfo(k) })));
       next.sort((p, q) => p.info.diff - q.info.diff);
-      if (!next.length) putAll(body, el('button', { type: 'button', class: 'card note care-empty', onclick: () => showTank(activeTank().id, 'care') }, el('strong', { text: 'Care reminders' }), el('p', { class: 'muted small', text: 'No reminders yet. Tap to add water changes and other chores to your tank.' })));
-      if (next.length) putAll(body, el('div', { class: 'card note' }, el('strong', { text: 'Nothing due right now' }),
-        el('p', { class: 'muted small', text: 'Next up: ' + next[0].task.label + (state.tanks.length > 1 ? ' (' + tankLabel(next[0].tank) + ')' : '') + ', ' + next[0].info.text.toLowerCase() + '.' })));
+      const card = el('div', { class: 'card' }, el('div', { class: 'card-head' }, el('h2', { text: 'Care reminders' }), addBtn));
+      if (next.length) card.append(el('strong', { text: 'Nothing due right now' }),
+        el('p', { class: 'muted small', text: 'Next up: ' + next[0].task.label + (state.tanks.length > 1 ? ' (' + tankLabel(next[0].tank) + ')' : '') + ', ' + next[0].info.text.toLowerCase() + '.' }));
+      else card.append(el('p', { class: 'muted', text: 'No reminders yet. Tap Add to set up water changes and other chores for your tank.' }));
+      putAll(body, card);
     }
   }
-  putAll(body, el('button', { type: 'button', class: 'home-tank store-card', 'aria-label': 'At the fish store? Scan here to check a fish', onclick: () => { fishCheck = null; fishCheckTankId = ''; showView('fishcheck'); $('fishcheck-camera').click(); } },
+  putAll(body, el('button', { type: 'button', class: 'home-tank store-card', 'aria-label': 'At the fish store? Snap a photo to check tank compatibility', onclick: () => { fishCheck = null; fishCheckTankId = ''; showView('fishcheck'); $('fishcheck-camera').click(); } },
     el('span', { class: 'home-tank-pic empty' }, featureIcon('scan')),
     el('span', { class: 'home-tank-text' },
-      el('strong', { text: 'AT THE FISH STORE?' }),
-      el('span', { text: 'SCAN HERE' })),
+      el('strong', { text: 'At the fish store?' }),
+      el('span', { text: 'Snap a photo to check tank compatibility' })),
     chevron()));
   updateBadge();
   const misses = loadMisses();
-  if (misses.length) missBox.append(el('button', { type: 'button', class: 'btn link', text: 'Names I could not match (' + misses.length + ')', onclick: () => showView('misses') }));
+  if (misses.length) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
+    featureIcon('info'),
+    el('strong', { text: misses.length + (misses.length === 1 ? ' unmatched species to review' : ' unmatched species to review') }),
+    chevron()));
 }
 
 function heroBtn(title, sub, icon, alt, onclick) {
@@ -1827,6 +1835,7 @@ function changeCount(tank, fish, delta) {
 }
 
 $('tank-back').addEventListener('click', () => showView('tanks'));
+$('home-add').addEventListener('click', () => startAddTank());
 
 $('tank-title-input').addEventListener('change', () => {
   const t = getTank(openTankId);
