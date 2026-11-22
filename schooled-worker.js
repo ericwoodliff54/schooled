@@ -147,6 +147,7 @@ async function scan(request, env, origin) {
 
   let upstream = null;
   let failure = null;
+  let usedModel = '';
   for (const model of models) {
     try {
       upstream = await ask(model, true);
@@ -157,7 +158,7 @@ async function scan(request, env, origin) {
       upstream = null;
       continue;
     }
-    if (upstream.ok) { failure = null; break; }
+    if (upstream.ok) { failure = null; usedModel = model; break; }
     let detail = '';
     try { detail = String(((await upstream.json()).error || {}).message || '').slice(0, 140); } catch (e) {}
     const busy = upstream.status === 429 || upstream.status === 503;
@@ -171,7 +172,9 @@ async function scan(request, env, origin) {
     data = await upstream.json();
     const text = data.candidates[0].content.parts.map((p) => p.text || '').join('');
     const result = sanitize(JSON.parse(text));
-    return json(Object.assign({ ok: true }, result), 200, origin);
+    const u = data.usageMetadata || {};
+    const usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
+    return json(Object.assign({ ok: true, model: usedModel, usage }, result), 200, origin);
   } catch (err) {
     const why = data && ((data.promptFeedback && data.promptFeedback.blockReason) || (data.candidates && data.candidates[0] && data.candidates[0].finishReason)) || String(err && err.message || err);
     return json({ ok: false, error: 'ai_error', ai_status: 200, ai_detail: 'bad reply: ' + String(why).slice(0, 120) }, 502, origin);
@@ -186,7 +189,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 6: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 7: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/scan') {

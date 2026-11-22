@@ -328,6 +328,7 @@ async function startScan(file) {
       editing: false
     }));
     pending.tips = data.photo_tips || '';
+    pending.debug = data.model ? 'Read by ' + data.model + (data.usage ? ' (' + data.usage.input + ' in, ' + data.usage.output + ' out tokens)' : '') : '';
   } catch (err) {
     if (err && err.name === 'TimeoutError') pending.error = 'That took too long. Try again, or try a smaller or clearer photo.';
     else if (err instanceof TypeError) pending.error = "Couldn't reach the server. Check your connection and try again.";
@@ -373,6 +374,7 @@ function renderResults() {
 
   const n = pending.species.length;
   $('results-title').textContent = n === 1 ? 'Found 1 kind' : 'Found ' + n + ' kinds';
+  if (pending.debug) status.append(el('div', { class: 'status-card' }, el('small', { text: pending.debug })));
   if (pending.tips) status.append(el('div', { class: 'status-card' }, el('span', { text: 'Tip: ' + pending.tips })));
 
   pending.species.forEach((sp, index) => list.append(sp.editing ? editRow(sp, index) : resultRow(sp)));
