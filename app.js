@@ -801,26 +801,34 @@ function addTask(t, label, days, kind) {
   return k;
 }
 
-function taskCard(t, k) {
+// One compact row per reminder. Tap the name to open its settings; only one is open at a time.
+function taskRow(t, k) {
   const info = taskInfo(k);
-  const card = el('div', { class: 'card task ' + info.level });
-  card.append(el('div', { class: 'water-line' }, el('h2', { text: k.label }), el('span', { class: 'pill ' + info.level, text: info.text })),
-    el('p', { class: 'muted small', text: capital(everyLabel(k.every)) + ' \u00b7 counting from ' + fmtDay(k.last) }));
-  const done = () => { k.last = Date.now(); k.snooze = 0; saveState(); updateBadge(); renderReminders(); };
-  card.append(el('div', { class: 'row-actions' },
-    el('button', { type: 'button', class: 'btn primary small', text: 'Done', onclick: done }),
-    info.diff <= 0 ? el('button', { type: 'button', class: 'btn small', text: 'Snooze a day', onclick: () => { k.snooze = startOfDay(Date.now()) + DAY_MS; saveState(); updateBadge(); renderReminders(); } }) : null,
-    el('button', { type: 'button', class: 'btn link', text: remEdit === k.id ? 'Close' : 'Edit', onclick: () => { remEdit = remEdit === k.id ? '' : k.id; remDelete = ''; renderReminders(); } })));
-  if (remEdit === k.id) {
-    const sel = el('select', { class: 'select', 'aria-label': 'How often' }, ...(TASK_EVERY.includes(k.every) ? TASK_EVERY : TASK_EVERY.concat(k.every).sort((a, b) => a - b)).map((n) => el('option', { value: n, text: capital(everyLabel(n)), selected: n === k.every })));
+  const open = remEdit === k.id;
+  const done = () => {
+    k.last = Date.now(); k.snooze = 0; remEdit = ''; saveState(); updateBadge();
+    toast('Done. Next: ' + k.label.toLowerCase() + ' ' + taskInfo(k).text.toLowerCase() + '.');
+    renderReminders();
+  };
+  const row = el('div', { class: 'rem-row ' + info.level + (open ? ' open' : '') });
+  row.append(el('div', { class: 'rem-line' },
+    el('button', { type: 'button', class: 'rem-main', 'aria-expanded': open ? 'true' : 'false', onclick: () => { remEdit = open ? '' : k.id; remDelete = ''; renderReminders(); } },
+      el('strong', { text: k.label }),
+      el('span', { class: 'pill ' + info.level, text: info.text })),
+    el('button', { type: 'button', class: 'btn small' + (info.diff <= 0 ? ' primary' : ''), text: 'Done', 'aria-label': 'Mark ' + k.label + ' done', onclick: done })));
+  if (open) {
+    const sel = el('select', { class: 'select', 'aria-label': 'How often' }, ...(TASK_EVERY.includes(k.every) ? TASK_EVERY : TASK_EVERY.concat(k.every).sort((x, y) => x - y)).map((n) => el('option', { value: n, text: capital(everyLabel(n)), selected: n === k.every })));
     sel.addEventListener('change', () => { k.every = Number(sel.value); k.snooze = 0; saveState(); updateBadge(); renderReminders(); });
-    card.append(el('div', { class: 'task-edit' }, el('label', { class: 'log-field' }, el('span', { class: 'label', text: 'How often' }), sel),
+    row.append(el('div', { class: 'task-edit' },
+      el('p', { class: 'muted small', text: 'Last done ' + fmtDay(k.last) + '.' }),
+      el('label', { class: 'log-field' }, el('span', { class: 'label', text: 'How often' }), sel),
+      info.diff <= 0 ? el('button', { type: 'button', class: 'btn small', text: 'Snooze a day', onclick: () => { k.snooze = startOfDay(Date.now()) + DAY_MS; remEdit = ''; saveState(); updateBadge(); renderReminders(); } }) : null,
       el('button', { type: 'button', class: 'btn link', text: remDelete === k.id ? 'Tap again to remove' : 'Remove this reminder', onclick: () => {
         if (remDelete !== k.id) { remDelete = k.id; renderReminders(); return; }
         t.tasks = t.tasks.filter((x) => x.id !== k.id); remEdit = ''; remDelete = ''; saveState(); updateBadge(); renderReminders();
       } })));
   }
-  return card;
+  return row;
 }
 function capital(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -840,12 +848,17 @@ function renderReminders() {
         renderReminders();
       } })));
   } else {
-    t.tasks.slice().sort((a, b) => taskDue(a) - taskDue(b)).forEach((k) => putAll(body, taskCard(t, k)));
+    const sorted = t.tasks.slice().sort((a, b) => taskDue(a) - taskDue(b));
+    const dueNow = sorted.filter((k) => taskInfo(k).diff <= 0);
+    const later = sorted.filter((k) => taskInfo(k).diff > 0);
+    if (dueNow.length) putAll(body, el('div', { class: 'card rem-card' }, el('h2', { text: 'Due now' }), ...dueNow.map((k) => taskRow(t, k))));
+    else putAll(body, el('div', { class: 'card note' }, el('strong', { text: 'Nothing due right now' })));
+    if (later.length) putAll(body, el('div', { class: 'card rem-card' }, el('h2', { text: 'Coming up' }), ...later.map((k) => taskRow(t, k))));
   }
   const have = new Set(t.tasks.map((k) => k.kind));
   const presets = TASK_PRESETS.filter((p) => !have.has(p.kind) && (!p.only || p.only === t.type));
   const add = el('div', { class: 'card' }, el('h2', { text: 'Add a reminder' }),
-    el('div', { class: 'chips' }, ...presets.map((p) => el('button', { type: 'button', class: 'chip-btn', text: p.label, onclick: () => { const k = addTask(t, p.label, p.days, p.kind); if (k) remEdit = k.id; renderReminders(); } })),
+    el('div', { class: 'chips' }, ...presets.map((p) => el('button', { type: 'button', class: 'chip-btn', text: p.label, onclick: () => { const k = addTask(t, p.label, p.days, p.kind); if (k) toast('Added ' + p.label.toLowerCase() + '.'); renderReminders(); } })),
       el('button', { type: 'button', class: 'chip-btn' + (remCustom ? ' on' : ''), text: 'Something else', onclick: () => { remCustom = !remCustom; renderReminders(); } })));
   if (remCustom) {
     const name = el('input', { type: 'text', placeholder: 'What needs doing?', maxlength: '40', 'aria-label': 'Reminder name' });

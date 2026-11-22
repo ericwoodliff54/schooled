@@ -956,3 +956,12 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .misses-bar strong { flex: 1; font-size: 16px; font-weight: 800; }
 .misses-bar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; flex-shrink: 0; }
 .home-misses { margin-top: 12px; }
+
+/* Compact reminder rows */
+.rem-card h2 { margin-bottom: 4px; }
+.rem-row { border-top: 1px solid var(--line); padding: 4px 0; }
+.rem-row:first-of-type { border-top: 0; }
+.rem-line { display: flex; align-items: center; gap: 10px; }
+.rem-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.rem-main strong { font-size: 15.5px; }
+.rem-row .task-edit { margin: 0 0 8px; padding-top: 8px; }
