@@ -585,6 +585,7 @@ function renderHome() {
     $('home-health').hidden = true;
     water.hidden = true;
     $('home-add').hidden = true;
+    $('home-greet').textContent = 'Welcome to Schooled';
     $('home-title').textContent = 'Welcome';
     $('home-sub').textContent = 'No tank added yet.';
     box.append(
@@ -595,6 +596,8 @@ function renderHome() {
     return;
   }
 
+  const hr = new Date().getHours();
+  $('home-greet').textContent = hr < 5 ? 'Up late?' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
   $('home-title').textContent = tankLabel(t);
   $('home-sub').textContent = tankSummary(t) || 'Open My Tanks to add details.';
   if (t.photo) { photo.src = t.photo; photo.alt = 'Photo of ' + tankLabel(t); photo.hidden = false; }
@@ -612,11 +615,8 @@ function renderHome() {
   // At a glance
   const sums = kindTotals(t);
   const third = t.type === 'Saltwater' ? 'Corals & inverts' : 'Shrimp & snails';
-  stats.replaceChildren(
-    el('div', { class: 'stat' }, el('strong', { text: String(sums.fish) }), el('span', { text: 'Fish' })),
-    el('div', { class: 'stat' }, el('strong', { text: String(sums.plant) }), el('span', { text: 'Plants' })),
-    el('div', { class: 'stat' }, el('strong', { text: String(sums.other) }), el('span', { text: third }))
-  );
+  const chips = [[sums.fish, 'Fish'], [sums.plant, 'Plants'], [sums.other, third]].filter((c, i) => i === 0 || c[0] > 0);
+  stats.replaceChildren(...chips.map((c) => el('div', { class: 'stat' }, el('strong', { text: String(c[0]) }), el('span', { text: c[1] }))));
   stats.hidden = !t.fish.length;
 
   const health = $('home-health');
@@ -645,17 +645,15 @@ function renderHome() {
       el('p', { class: 'muted', text: 'Scan a photo and Schooled will name what it sees, or search below to add things by hand.' })
     );
   } else {
-    const top = t.fish.slice().sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 5);
+    const top = t.fish.slice().sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 14);
     box.append(
       el('div', { class: 'card-head' },
         el('h2', { text: 'In this tank' }),
         el('button', { type: 'button', class: 'btn small', text: t.fish.length > top.length ? 'See all ' + t.fish.length : 'Edit', onclick: () => showTank(t.id) })
       ),
-      el('div', { class: 'roster' }, ...top.map((f) => el('div', { class: 'item' },
-        rowAvatar(f),
-        el('button', { type: 'button', class: 'row-main', 'aria-label': 'Details for ' + f.name, onclick: () => showSpecies(f.name, t.id) },
-          el('span', { class: 'name', text: f.name })),
-        el('span', { class: 'count-chip', text: '\u00d7\u00a0' + f.count })
+      el('div', { class: 'strip' }, ...top.map((f) => el('button', { type: 'button', class: 'strip-item row-main', 'aria-label': 'Details for ' + f.name, onclick: () => showSpecies(f.name, t.id) },
+        el('span', { class: 'strip-pic' }, rowAvatar(f), el('span', { class: 'strip-count', text: '\u00d7' + f.count })),
+        el('span', { class: 'name', text: f.name })
       )))
     );
   }
@@ -1630,21 +1628,26 @@ function tankCheck(t) {
 
 function stocking(t) {
   const gal = tankGallons(t);
-  let load = 0, skipped = 0, known = 0, need = 0, needName = '';
+  let load = 0, skipped = 0, known = 0, need = 0, needName = '', needOwn = 0;
   t.fish.forEach((f) => {
     const e = careOf(f.name);
     if (!e) { skipped++; return; }
     known++;
-    if (e.k !== 'plant' && e.c.g > need) { need = e.c.g; needName = e.n; }
-    if (e.k === 'fish') load += f.count * e.c.z * (hasTag(e, 'heavy') ? 2 : 1);
-    else if (isMobile(e)) load += f.count * e.c.z * 0.25;
+    let mine = 0;
+    if (e.k === 'fish') mine = f.count * e.c.z * (hasTag(e, 'heavy') ? 2 : 1);
+    else if (isMobile(e)) mine = f.count * e.c.z * 0.25;
+    load += mine;
+    if (e.k !== 'plant' && e.c.g > 0 && e.c.g / (gal || 1) > need / (gal || 1)) { need = e.c.g; needName = e.n; needOwn = mine; }
   });
   const factor = t.type === 'Saltwater' ? 0.4 : t.type === 'Brackish' ? 0.7 : 1;
   const cap = gal * factor;
-  // A fish that needs a bigger tank than this one counts as over capacity, however few inches it adds up to.
-  const tooSmall = gal && need > gal ? { name: needName, gal: need } : null;
+  // The fish that needs the biggest tank takes at least its minimum tank's share; everything else adds on top.
   const byInches = cap ? load / cap : 0;
-  return { gal, load, cap, pct: tooSmall ? Math.max(byInches, need / gal) : byInches, skipped, known, tooSmall };
+  // Once a tank meets a fish's minimum it is workable, not full, so the minimum counts for three quarters of its share.
+  const needShare = gal && need ? (need > gal ? need / gal : (need / gal) * 0.75) : 0;
+  const pct = cap ? (load - needOwn) / cap + Math.max(needOwn / cap, needShare) : 0;
+  const tooSmall = gal && need > gal ? { name: needName, gal: need, big: true } : (need / gal >= 0.6 ? { name: needName, gal: need, big: false } : null);
+  return { gal, load, cap, pct: Math.max(pct, byInches), skipped, known, tooSmall };
 }
 function stockLevel(pct) {
   if (pct <= 0.55) return { label: 'Room to grow', tone: 'low', hint: 'Plenty of room to add more.' };
@@ -1671,7 +1674,7 @@ function stockBar(t) {
       el('div', { class: 'stock-fill ' + lvl.tone, style: 'width:' + fill.toFixed(1) + '%' }),
       el('div', { class: 'stock-mark' })),
     el('div', { class: 'stock-scale' }, el('span', { text: 'Empty' }), el('span', { class: 'stock-full', text: 'Full' })),
-    el('p', { class: 'muted small', text: (s.tooSmall ? s.tooSmall.name + ' needs at least ' + s.tooSmall.gal + ' gallons, which is more than this tank holds.' : lvl.hint) + ' An estimate from adult sizes.' + (s.skipped ? ' ' + s.skipped + ' not counted (no size data).' : '') })
+    el('p', { class: 'muted small', text: (s.tooSmall ? s.tooSmall.name + ' needs at least ' + s.tooSmall.gal + ' gallons' + (s.tooSmall.big ? ', which is more than this tank holds.' : ', so it takes up much of this tank.') : lvl.hint) + ' An estimate from adult sizes.' + (s.skipped ? ' ' + s.skipped + ' not counted (no size data).' : '') })
   );
   return box;
 }

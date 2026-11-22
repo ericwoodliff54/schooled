@@ -100,17 +100,21 @@
   <section id="view-home" class="view" hidden>
     <img class="home-banner" src="logo-banner.jpg" alt="Schooled" width="1100" height="463">
 
-    <div class="home-head">
-      <img id="home-photo" class="home-thumb" alt="" hidden>
-      <div class="home-head-text">
-        <h1 id="home-title">My tank</h1>
-        <p class="muted" id="home-sub"></p>
-      </div>
-    </div>
     <label id="home-switch-row" class="switch-row" hidden>
       <span class="label">Tank</span>
       <select id="home-switch" class="select" aria-label="Switch tank"></select>
     </label>
+
+    <div class="tank-cover" id="home-cover">
+      <img id="home-photo" alt="" hidden>
+      <div class="cover-shade"></div>
+      <div class="cover-text">
+        <p class="cover-kicker" id="home-greet"></p>
+        <h1 id="home-title">My tank</h1>
+        <p id="home-sub"></p>
+      </div>
+      <div id="home-stats" class="cover-stats" hidden></div>
+    </div>
 
     <button type="button" id="home-scan" class="hero">
       <span>
@@ -120,20 +124,22 @@
       <span class="hero-icon"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
     </button>
 
-    <div id="home-stats" class="stats" hidden></div>
-
     <div class="card" id="home-health" hidden></div>
 
     <div class="card" id="home-fish"></div>
 
     <div class="card" id="home-add" hidden>
-      <h2>Add something by hand</h2>
+      <h2>Quick add</h2>
       <div id="home-add-slot"></div>
     </div>
 
     <div class="card" id="home-water" hidden></div>
 
-    <p class="muted small center soon">Coming soon: test strip reading and tank mate warnings.</p>
+    <div class="dream-teaser" aria-label="Dream Tank, coming soon">
+      <span class="dream-badge">Coming soon</span>
+      <strong>Dream Tank</strong>
+      <span>Photograph your tank, describe the one you want, and see it pictured with fish and plants.</span>
+    </div>
   </section>
 
   <!-- Scan -->

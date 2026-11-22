@@ -638,7 +638,7 @@ body[data-view="home"] .brand { display: none; }
 .home-head-text { min-width: 0; flex: 1; }
 .home-head-text h1 { margin: 0; overflow-wrap: anywhere; }
 .home-head-text p { margin: 2px 0 0; }
-.home-thumb { width: 64px; height: 64px; border-radius: 18px; object-fit: cover; box-shadow: var(--shadow); flex-shrink: 0; }
+.home-thumb-old { width: 64px; height: 64px; border-radius: 18px; object-fit: cover; box-shadow: var(--shadow); flex-shrink: 0; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .stats[hidden] { display: none; }
 .stat { background: var(--card); border: 1px solid rgba(11, 107, 106, 0.08); border-radius: 18px; padding: 12px 10px; text-align: center; box-shadow: var(--shadow); }
@@ -737,3 +737,29 @@ body[data-view="home"] .brand { display: none; }
 }
 @keyframes splash-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { #splash, #splash img, #splash p { animation: none; transition: none; } }
+
+/* Home as a landing dashboard */
+.tank-cover { position: relative; border-radius: 26px; overflow: hidden; min-height: 190px; display: flex; flex-direction: column; justify-content: flex-end; padding: 16px; color: #fff; background: radial-gradient(ellipse at 20% 0%, #19B5AE 0%, #0B6B6A 55%, #064B4F 100%); box-shadow: var(--shadow); }
+.tank-cover > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.tank-cover > img[hidden] { display: none; }
+.cover-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(3, 30, 38, 0) 20%, rgba(3, 30, 38, 0.78) 100%); }
+.cover-text, .cover-stats { position: relative; z-index: 1; }
+.cover-kicker { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.85; }
+.cover-text h1 { margin: 2px 0 0; color: #fff; overflow-wrap: anywhere; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35); }
+.cover-text p:last-child { margin: 2px 0 0; font-size: 14px; font-weight: 600; opacity: 0.92; }
+.cover-stats { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.cover-stats[hidden] { display: none; }
+.cover-stats .stat { display: inline-flex; align-items: baseline; gap: 5px; padding: 5px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.18); border: 1px solid rgba(255, 255, 255, 0.25); box-shadow: none; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.cover-stats .stat strong { display: inline; font-size: 16px; color: #fff; }
+.cover-stats .stat span { display: inline; margin: 0; font-size: 13px; color: #fff; opacity: 0.92; }
+.strip { display: flex; gap: 14px; overflow-x: auto; margin: 0 -18px; padding: 4px 18px 8px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+.strip-item { flex: 0 0 76px; display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: 0; padding: 0; text-align: center; scroll-snap-align: start; cursor: pointer; min-height: 0; }
+.strip-item .name { font-size: 12px; font-weight: 700; line-height: 1.2; max-width: 76px; overflow-wrap: anywhere; }
+.strip-pic { position: relative; display: block; }
+.strip-pic .avatar { width: 68px; height: 68px; border-radius: 22px; }
+.strip-pic .avatar svg { width: 30px; height: 30px; }
+.strip-count { position: absolute; right: -4px; top: -4px; min-width: 24px; padding: 2px 7px; border-radius: 999px; background: var(--teal-dark); color: #fff; font-size: 12px; font-weight: 800; text-align: center; border: 2px solid #fff; }
+.dream-teaser { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 18px; border-radius: 22px; color: #fff; background: linear-gradient(135deg, #3B3A8C 0%, #7A4CC2 55%, #C75FA8 100%); box-shadow: var(--shadow); overflow: hidden; }
+.dream-teaser strong { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+.dream-teaser span:last-child { font-size: 14px; opacity: 0.92; max-width: 28em; }
+.dream-badge { align-self: flex-start; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.22); }
