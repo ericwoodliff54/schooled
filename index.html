@@ -155,13 +155,15 @@
     <img id="results-photo" alt="Your tank photo" hidden>
     <div id="results-status" role="status" aria-live="polite"></div>
     <div id="results-list" class="list"></div>
-    <p id="results-note" class="muted small" hidden>These are best guesses from a photo. Tap Edit on anything that looks wrong. Scans only add to a tank or raise a count, they never lower one. Open the tank in My Tanks to remove or reduce.</p>
+    <p id="results-note" class="muted small" hidden>These are best guesses from a photo. Tap Edit on anything that looks wrong. Add another photo to catch fish that hid in the first one; counts take the highest number seen in any photo, not the total. Scans only add to a tank or raise a count, they never lower one.</p>
     <label id="results-target" class="field" hidden>
       <span class="label">Add to tank</span>
       <select id="results-tank" class="select"></select>
     </label>
+    <button type="button" id="add-photo" class="btn" hidden>+ Add another photo</button>
+    <input id="more-photo-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
     <div id="results-actions" class="actions" hidden>
-      <button type="button" id="rescan" class="btn">Rescan</button>
+      <button type="button" id="rescan" class="btn">Start over</button>
       <button type="button" id="save-scan" class="btn primary">Add to My Tank</button>
     </div>
   </section>

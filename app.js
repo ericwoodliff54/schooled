@@ -981,6 +981,12 @@ wirePhotoInput('camera-btn', 'camera-input');
 wirePhotoInput('gallery-btn', 'gallery-input');
 
 $('rescan').addEventListener('click', () => showView('scan'));
+$('add-photo').addEventListener('click', () => $('more-photo-input').click());
+$('more-photo-input').addEventListener('change', (event) => {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (file) startScan(file, true);
+});
 $('results-back').addEventListener('click', () => showView('scan'));
 
 // Opens a photo from almost any format. Tries the browser first, then a converter for iPhone HEIC photos.
@@ -1273,10 +1279,32 @@ function showScanError(err) {
   else pending.error = err.message || friendlyError();
 }
 
-async function startScan(file) {
+// Several photos of one tank add up to one list: the same species keeps its highest count.
+function mergeSessions(prior, fresh) {
+  const out = prior.slice();
+  fresh.forEach((sp) => {
+    const same = out.find((o) => canonKey(o.name) === canonKey(sp.name) && o.kind === sp.kind);
+    if (!same) { out.push(sp); return; }
+    same.count = Math.max(same.count, sp.count);
+    if (sp.verified && !same.verified) { same.confidence = sp.confidence; same.verified = true; same.scientific = sp.scientific || same.scientific; }
+    else same.confidence = Math.max(same.confidence, sp.confidence);
+  });
+  return out;
+}
+
+async function startScan(file, append) {
   const target = activeTank();
-  pending = { photoUrl: '', species: [], tips: '', loading: true, error: '', note: '', tankId: target ? target.id : '' };
-  const known = target ? target.fish.map((f) => f.name) : []; // tells the AI what this tank already has
+  const more = !!(append && pending && pending.species && pending.species.length);
+  const priorSpecies = more ? pending.species : [];
+  const priorPhotos = more ? (pending.photos || 1) : 0;
+  const tankId = more && getTank(pending.tankId) ? pending.tankId : (target ? target.id : '');
+  const scanTank = getTank(tankId) || target;
+  pending = { photoUrl: more ? pending.photoUrl : '', species: [], tips: '', loading: true, error: '', note: '', tankId, photos: priorPhotos };
+  // Tell the AI what this tank already has, plus anything found in earlier photos of this session.
+  const known = [];
+  (scanTank ? scanTank.fish.map((f) => f.name) : []).concat(priorSpecies.filter((sp) => sp.kind !== 'plant').map((sp) => sp.name)).forEach((n) => {
+    if (n && known.indexOf(n) === -1 && known.length < 40) known.push(n);
+  });
   showView('results');
   renderResults();
 
@@ -1289,7 +1317,7 @@ async function startScan(file) {
     pending.photoUrl = single.previewUrl;
     renderResults();
 
-    const ctx = { known, tank_type: target && TYPES.includes(target.type) ? target.type : '' };
+    const ctx = { known, tank_type: scanTank && TYPES.includes(scanTank.type) ? scanTank.type : '' };
     const data = await askWorker(single.images, 'single', 60000, ctx);
     applyResult(data, 'single');
 
@@ -1312,6 +1340,20 @@ async function startScan(file) {
     showScanError(err);
   } finally {
     if (image) image.done();
+  }
+  if (more) {
+    if (pending.error) {
+      // The new photo failed or showed nothing: keep what the earlier photos found.
+      pending.tips = 'The last photo could not be added. ' + pending.error;
+      pending.error = '';
+      pending.species = priorSpecies;
+      pending.photos = priorPhotos;
+    } else {
+      pending.species = mergeSessions(priorSpecies, pending.species);
+      pending.photos = priorPhotos + 1;
+    }
+  } else {
+    pending.photos = pending.error ? 0 : 1;
   }
   pending.loading = false;
   renderResults();
@@ -1343,6 +1385,7 @@ function renderResults() {
   list.replaceChildren();
   $('results-note').hidden = true;
   $('results-actions').hidden = true;
+  $('add-photo').hidden = true;
   $('results-target').hidden = true;
 
   if (pending.loading) {
@@ -1374,7 +1417,8 @@ function renderResults() {
   }
 
   const n = pending.species.length;
-  $('results-title').textContent = n === 1 ? 'Found 1 kind' : 'Found ' + n + ' kinds';
+  $('results-title').textContent = (n === 1 ? 'Found 1 kind' : 'Found ' + n + ' kinds') + (pending.photos > 1 ? ' in ' + pending.photos + ' photos' : '');
+  $('add-photo').hidden = false;
   if (pending.debug) status.append(el('p', { class: 'debug', text: pending.debug }));
   if (pending.tips) status.append(el('div', { class: 'status-card tip' }, el('span', { text: 'Tip: ' + pending.tips })));
 
