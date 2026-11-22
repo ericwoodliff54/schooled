@@ -520,27 +520,43 @@ async function dream(request, env, origin) {
   if (photo) imageParts.push({ inline_data: { mime_type: body.mime, data: photo } });
   let image = null;
   let imageUsage = { input: 0, output: 0 };
-  const imageModel = env.GEMINI_IMAGE_MODEL || IMAGE_MODEL;
-  try {
-    let res = await geminiCall(env, imageModel, {
-      contents: [{ role: 'user', parts: imageParts }],
-      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
-    }, 50000);
-    if (res.status === 400) {
-      res = await geminiCall(env, imageModel, { contents: [{ role: 'user', parts: imageParts }] }, 50000);
-    }
-    if (res.ok) {
-      const data = await res.json();
-      const parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
-      const hit = parts.find((p) => (p.inlineData || p.inline_data) && String((p.inlineData || p.inline_data).data || '').length > 100);
-      if (hit) {
-        const d = hit.inlineData || hit.inline_data;
-        image = { mime: d.mimeType || d.mime_type || 'image/png', data: d.data };
+  const imageErrors = [];
+  const imageModels = [env.GEMINI_IMAGE_MODEL || IMAGE_MODEL, 'gemini-2.5-flash-image', 'gemini-3-pro-image'].filter((m, i, a) => a.indexOf(m) === i);
+  const imageStart = Date.now();
+  let imageModel = imageModels[0];
+  function pickImage(data) {
+    const parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+    const real = parts.filter((p) => (p.inlineData || p.inline_data) && String((p.inlineData || p.inline_data).data || '').length > 100);
+    const hit = real.find((p) => !p.thought) || real[0];
+    if (!hit) return null;
+    const d = hit.inlineData || hit.inline_data;
+    return { mime: d.mimeType || d.mime_type || 'image/png', data: d.data };
+  }
+  for (const model of imageModels) {
+    const left = 85000 - (Date.now() - imageStart);
+    if (left < 8000) break;
+    const ms = Math.min(model === imageModels[0] ? 55000 : 35000, left);
+    try {
+      let res = await geminiCall(env, model, { contents: [{ role: 'user', parts: imageParts }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } }, ms);
+      if (res.status === 400) res = await geminiCall(env, model, { contents: [{ role: 'user', parts: imageParts }] }, Math.max(6000, 85000 - (Date.now() - imageStart)));
+      if (!res.ok) {
+        let msg = '';
+        try { const j = await res.json(); msg = (j && j.error && j.error.message) || ''; } catch (err) { /* no body */ }
+        imageErrors.push(model + ': ' + res.status + (msg ? ' ' + msg.replace(/\s+/g, ' ').slice(0, 110) : ''));
+        continue;
       }
+      const data = await res.json();
+      const got = pickImage(data);
       const u = data.usageMetadata || {};
       imageUsage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
+      if (got) { image = got; imageModel = model; break; }
+      const why = (data.promptFeedback && data.promptFeedback.blockReason) || (data.candidates && data.candidates[0] && data.candidates[0].finishReason) || 'no image in reply';
+      const said = ((data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || []).map((p) => p.text || '').join(' ').replace(/\s+/g, ' ').trim().slice(0, 90);
+      imageErrors.push(model + ': ' + why + (said ? ' - ' + said : ''));
+    } catch (err) {
+      imageErrors.push(model + ': ' + ((err && (err.name === 'TimeoutError' || err.name === 'AbortError')) ? 'too slow' : 'could not reach Google'));
     }
-  } catch (err) { /* the list is still useful without the picture */ }
+  }
 
   // Only a finished picture counts against the monthly limit.
   if (kv && image) {
@@ -550,7 +566,7 @@ async function dream(request, env, origin) {
       kv.put(dayKeyName, String((Number(all) || 0) + 1), { expirationTtl: 172800 })
     ]);
   }
-  return json({ ok: true, title, summary, species, image, image_model: imageModel, usage: { plan: planUsage, image: imageUsage }, enforced: !!kv }, 200, origin);
+  return json({ ok: true, title, summary, species, image, image_model: imageModel, image_error: image ? '' : imageErrors.join('; ').slice(0, 300), usage: { plan: planUsage, image: imageUsage }, enforced: !!kv }, 200, origin);
 }
 
 export default {

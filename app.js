@@ -1990,7 +1990,7 @@ async function runDream() {
   try {
     const body = { prompt: text, tank_type: f.type, gallons: gal, device: deviceId() };
     if (dreamPhoto) { body.image = dreamPhoto.split(',')[1] || ''; body.mime = 'image/jpeg'; }
-    const res = await fetch(WORKER_URL + '/dream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(95000) });
+    const res = await fetch(WORKER_URL + '/dream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(130000) });
     let j = null;
     try { j = await res.json(); } catch (err) { j = null; }
     if (!j || !j.ok) {
@@ -2006,7 +2006,7 @@ async function runDream() {
       if (image) s.used += 1;
       s.last = { title: String(j.title || ''), summary: String(j.summary || ''), species: j.species, image, gallons: gal, type: f.type, at: Date.now() };
       if (!dreamSave(s)) { s.last.image = ''; dreamSave(s); }
-      dreamMessage = image ? '' : 'The AI made your list but could not make the picture this time, and no picture was used. Try again.';
+      dreamMessage = image ? '' : 'The AI made your list but could not make the picture this time, and no picture was used. Try again.' + (j.image_error ? ' (' + String(j.image_error).slice(0, 300) + ')' : '');
     }
   } catch (err) {
     dreamMessage = 'Could not reach the server. Check your connection. Nothing was used.';
