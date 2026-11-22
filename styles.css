@@ -800,6 +800,7 @@ body[data-view="home"] .brand { display: none; }
 .dream-text { width: 100%; min-height: 96px; padding: 12px 14px; border: 1.5px solid #B7D2CF; border-radius: 16px; font: inherit; font-size: 16px; color: var(--ink); background: #fff; resize: vertical; }
 .ideas { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 .chip-btn { padding: 7px 12px; border-radius: 999px; border: 1.5px solid #B7D2CF; background: var(--mist); color: var(--teal-dark); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; line-height: 1.25; }
+.chip-btn.on { background: var(--teal-dark); border-color: var(--teal-dark); color: #fff; }
 .dream-row { display: flex; gap: 12px; }
 .dream-row label { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .dream-row .select, .dream-size { min-height: 46px; font-size: 16px; width: 100%; padding: 0 12px; border: 1.5px solid #B7D2CF; border-radius: 14px; background: #fff; color: var(--ink); }

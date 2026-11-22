@@ -1337,7 +1337,7 @@ async function startScan(file, append) {
 }
 
 function confidenceLabel(c) {
-  if (c >= 0.85) return ['Sure', 'ok'];
+  if (c >= 0.85) return ['Confident', 'ok'];
   if (c >= 0.6) return ['Likely', 'warn'];
   return ['Unsure', 'bad'];
 }
@@ -1908,6 +1908,7 @@ function stockCard(t) {
 
 // ---------- Fish Check ----------
 const SCAN_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75] };
+let fishCheckTankId = '';
 let fishCheck = null; // { photoUrl, loading, error, result, name, count, usage, model }
 
 function fishCheckCostLine(fc) {
@@ -1959,7 +1960,7 @@ function fishVerdict(t, name, count) {
 function renderFishCheck() {
   const body = $('fishcheck-body');
   body.replaceChildren();
-  const t = activeTank();
+  const t = getTank(fishCheckTankId) || activeTank();
   body.append(el('h1', { text: 'Fish Check' }),
     el('p', { class: 'muted', text: 'Standing at the fish store? Photograph one fish, plant or coral. Get its name, what it needs, and whether it fits your tank. Including its name tag in the photo helps.' }));
   const fc = fishCheck;
@@ -1974,7 +1975,7 @@ function renderFishCheck() {
   const r = fc.result;
   if (!r) return;
   const entry = lookupSpecies(fc.name);
-  const sure = r.confidence >= 0.75 ? ['Sure', 'ok'] : r.confidence >= 0.45 ? ['Probably', 'warn'] : ['Not sure', 'bad'];
+  const sure = r.confidence >= 0.75 ? ['Confident', 'ok'] : r.confidence >= 0.45 ? ['Likely', 'warn'] : ['Not sure', 'bad'];
   const card = el('div', { class: 'card dream-result' });
   card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), el('span', { class: 'pill ' + sure[1], text: sure[0] })));
   if (entry && entry.s) card.append(el('p', { class: 'muted small', text: entry.s }));
@@ -2004,7 +2005,10 @@ function renderFishCheck() {
         el('button', { type: 'button', class: 'round', 'aria-label': 'One more', text: '+', onclick: () => { fc.count = Math.min(60, fc.count + 1); renderFishCheck(); } })));
     const v = fishVerdict(t, fc.name, fc.count);
     const bad = v.fresh.some((i) => i.level === 'bad');
-    card.append(el('h2', { class: 'dream-list-h', text: 'Will it work in ' + tankLabel(t) + '?' }), counter,
+    const picker = state.tanks.length > 1 ? el('div', { class: 'chips ideas', role: 'group', 'aria-label': 'Which tank' },
+      ...state.tanks.map((x) => el('button', { type: 'button', class: 'chip-btn' + (x.id === t.id ? ' on' : ''), 'aria-pressed': x.id === t.id ? 'true' : 'false', text: tankLabel(x),
+        onclick: () => { fishCheckTankId = x.id; renderFishCheck(); } }))) : null;
+    card.append(el('h2', { class: 'dream-list-h', text: 'Will it work in ' + tankLabel(t) + '?' }), ...(picker ? [el('p', { class: 'label', text: 'Which tank?' }), picker] : []), counter,
       el('div', { class: 'water-line' }, el('strong', { text: 'Verdict' }),
         !v.fresh.length ? el('span', { class: 'pill ok', text: 'Looks good' }) : el('span', { class: 'pill ' + (bad ? 'bad' : 'warn'), text: bad ? 'Not a good fit' : v.fresh.length + (v.fresh.length === 1 ? ' thing to know' : ' things to know') })),
       v.fresh.length ? issueList(v.fresh.slice(0, 5)) : el('p', { class: 'muted small', text: 'No new problems with what you keep now.' }),
@@ -2035,7 +2039,7 @@ function renderFishCheck() {
   if (file) startFishCheck(file);
 }));
 $('fishcheck-back').addEventListener('click', () => showView('home'));
-$('home-fishcheck').addEventListener('click', () => { fishCheck = null; showView('fishcheck'); });
+$('home-fishcheck').addEventListener('click', () => { fishCheck = null; fishCheckTankId = ''; showView('fishcheck'); });
 
 // ---------- Dream Tank ----------
 const DREAM_MONTHLY = 10;
