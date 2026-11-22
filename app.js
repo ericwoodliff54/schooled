@@ -955,11 +955,12 @@ function toast(message) {
 // ---------- Navigation ----------
 const VIEWS = ['setup', 'home', 'scanhub', 'scan', 'results', 'explore', 'water', 'tanks', 'tank', 'species', 'dream', 'fishcheck', 'misses'];
 let currentView = 'home';
-const NAV_FOR = { home: 'home', scanhub: 'scanhub', scan: 'scanhub', results: 'scanhub', fishcheck: 'scanhub', tanks: 'tanks', tank: 'tanks', explore: 'explore', species: 'explore', dream: 'explore', water: 'explore', misses: 'home' };
+const NAV_FOR = { home: 'home', scanhub: 'home', scan: 'home', results: 'home', fishcheck: 'home', tanks: 'home', tank: 'home', explore: 'explore', species: 'explore', dream: 'home', water: 'home', misses: 'home' };
 let openTankId = '';
 let editingSize = false;
 
 function showView(name) {
+  if (name === 'tanks' || name === 'scanhub' || name === 'scan') name = 'home';
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== name; });
   document.body.dataset.view = name;
   currentView = name;
@@ -1189,13 +1190,13 @@ $('setup-form').addEventListener('submit', (event) => {
     saveState();
     toast('This phone is out of saved space, so the photo was left off.');
   }
-  if (scanNext) { state.activeId = tank.id; saveState(); showView('scan'); }
+  if (scanNext) { state.activeId = tank.id; saveState(); showTank(tank.id); $('gallery-input').click(); }
   else if (first) showView('home');
   else showTank(tank.id);
 });
 
 let fishCheckFrom = 'home';
-let waterFrom = 'explore';
+let waterFrom = 'home';
 let menuTank = '';
 function closeAddMenu() {
   if (!$('tank-add-menu') || !$('tank-add-fish')) return;
@@ -1364,7 +1365,8 @@ function renderHome() {
       putAll(body, card);
     }
   }
-  putAll(body, heroBtn('At the fish store?', 'Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckFrom = 'home'; showView('fishcheck'); $('fishcheck-gallery').click(); }));
+  putAll(body, heroBtn('At the fish store?', 'Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckFrom = 'home'; showView('fishcheck'); }));
+  putAll(body, heroBtn('Dream a tank', 'Picture the tank you want, fish and plants included', 'star', true, () => showView('dream')));
   updateBadge();
   const misses = loadMisses();
   if (misses.length) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
@@ -1403,7 +1405,7 @@ function renderExplore() {
       onPick: (name) => { exploreSearch.clear(); const t = activeTank(); showSpecies(name, t ? t.id : ''); }
     });
   }
-  putAll(body, el('div', { class: 'home-lookup' }, exploreSearch.root), el('div', { class: 'features' }, ...FEATURES.map(featureBtn)));
+  putAll(body, el('div', { class: 'home-lookup' }, exploreSearch.root));
 }
 
 // ---------- Water ----------
@@ -1411,7 +1413,7 @@ function renderWater() {
   const text = $('water-tap-text');
   const t = activeTank();
   if (!t) {
-    text.textContent = 'Add a tank in My Tanks to get tap water info.';
+    text.textContent = 'Add a tank on Home to get tap water info.';
   } else if (t.water === 'well') {
     text.textContent = 'You use well water, so the best starting point is a test strip on your tap water. Tap water lookup is for city water.';
   } else if (t.water === 'ro') {
@@ -3438,8 +3440,8 @@ function dreamResultCard(r) {
   return card;
 }
 
-$('dream-back').addEventListener('click', () => showView('explore'));
-$('water-back').addEventListener('click', () => { if (waterFrom === 'tank' && getTank(openTankId)) showTank(openTankId); else showView('explore'); waterFrom = 'explore'; });
+$('dream-back').addEventListener('click', () => showView('home'));
+$('water-back').addEventListener('click', () => { if (waterFrom === 'tank' && getTank(openTankId)) showTank(openTankId); else showView('home'); waterFrom = 'home'; });
 $('scan-back').addEventListener('click', () => showView('scanhub'));
 
 // ---------- Splash ----------
