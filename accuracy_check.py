@@ -212,6 +212,8 @@ def main():
                 if hit and hit.get('g') and db.groups.get(hit['g'], {}).get('h'):
                     conf = min(conf, 0.85)  # the app never says Confident for look-alike groups
                 row.update(answer=f.get('common_name', ''), sci=f.get('scientific_name', ''), conf=conf, matched=hit['n'] if hit else '', how=how)
+                hl = f.get('health') or {}
+                row.update(health=hl.get('status') or 'none', health_score=hl.get('score'), health_signs=hl.get('signs') or [])
                 if not f.get('is_aquarium', True) or not f.get('common_name'):
                     row['verdict'] = 'no_answer'
                 elif hit and (hit['n'] == e['n'] or norm_key(hit.get('s', '')) == norm_key(e.get('s', ''))):
@@ -287,6 +289,24 @@ def write_report(a, db, results, sent, uin, uout, models):
     gaps = collections.Counter(r['answer'] for r in scored if r.get('not_in_list') and r.get('answer'))
     if gaps:
         lines += ['## Names the app said that are not in the species list', '', ', '.join('%s (%d)' % (k, v) for k, v in gaps.most_common(20)), '']
+
+    hs = collections.Counter(r.get('health', 'none') for r in scored)
+    nh = sum(hs.values())
+    labels = [('healthy', 'Healthy'), ('some_concerns', 'Some concerns'), ('unwell', 'Unwell'), ('cannot_tell', "Can't tell"), ('none', 'No health answer')]
+    lines += ['## Health check', '']
+    if nh:
+        lines += ['| Result | Photos | Share |', '|---|---|---|']
+    for key, label in labels:
+        if hs.get(key):
+            lines.append('| %s | %d | %s |' % (label, hs[key], pct(hs[key], nh)))
+    scores = [r['health_score'] for r in scored if isinstance(r.get('health_score'), (int, float))]
+    if scores:
+        lines += ['', 'Average health score where one was given: %d/100 (these are photos from Wikimedia Commons, mostly healthy fish, so most should score well).' % round(sum(scores) / len(scores))]
+    why = collections.Counter(x for r in scored if r.get('health') in ('cannot_tell', 'some_concerns', 'unwell') for x in r.get('health_signs', []))
+    if why:
+        lines += ['', 'Reasons given for concerns or "can\'t tell":', '']
+        lines += ['- %s (%d)' % (k, v) for k, v in why.most_common(10)]
+    lines.append('')
 
     lines += ['## Every species', '', '| Species | Photos | Correct | What the app said |', '|---|---|---|---|']
     for e in sorted({(r['kind'], r['expected']) for r in scored}):
