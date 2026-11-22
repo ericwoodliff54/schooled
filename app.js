@@ -6,7 +6,9 @@
 // ---------------------------------------------------------------
 const WORKER_URL = 'https://schooled-worker.ericwoodliff.workers.dev';
 const STORE_KEY = 'schooled.v1';
-const MAX_PHOTO_SIDE = 1024;
+const MAX_PHOTO_SIDE = 1280; // the whole-tank picture
+const MAX_ZOOM_SIDE = 1024; // each zoomed piece
+const MIN_SIDE_FOR_ZOOM = 1500; // smaller photos have no extra detail to zoom into
 
 // ---------- Small helpers ----------
 const $ = (id) => document.getElementById(id);
@@ -24,6 +26,37 @@ function el(tag, props, ...kids) {
     if (kid != null) node.append(kid);
   }
   return node;
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const KIND_ICONS = {
+  fish: ['M3 12c3-4.5 8-5.5 12-2.5l5-2.5v10l-5-2.5c-4 3-9 2-12-2.5z'],
+  plant: ['M12 21V9', 'M12 13c-4 0-6-2.5-6-6 4 0 6 2 6 6z', 'M12 16c4 0 6-2.5 6-6-4 0-6 2-6 6z'],
+  shrimp: ['M5 8c0-2.5 3-4 6-3 4 1.2 7 4.5 7 9 0 2-1 4-3 5', 'M5 8c0 2 1.5 3 3.5 3', 'M15 19l-3 1.5'],
+  snail: ['M5 19h14', 'M16 19c2.5 0 3-2.5 3-4a7 7 0 1 0-7 4', 'M12 15a2.5 2.5 0 1 1 2.5-2.5', 'M5 19c0-2 .5-4 2-5']
+};
+function kindIcon(kind) {
+  const paths = KIND_ICONS[kind] || KIND_ICONS.fish;
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '22');
+  svg.setAttribute('height', '22');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  paths.forEach((d) => {
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', d);
+    svg.append(path);
+  });
+  return svg;
+}
+function kindAvatar(kind) {
+  const safe = ['fish', 'plant', 'shrimp', 'snail'].includes(kind) ? kind : 'other';
+  return el('span', { class: 'avatar ' + safe }, kindIcon(safe));
 }
 
 // ---------- Saved data (stays on the phone) ----------
@@ -306,22 +339,46 @@ async function loadImage(file) {
   }
 }
 
-// Shrinks the photo so uploads are fast and cheap, and returns it as base64 JPEG.
-async function prepareImage(file) {
-  const image = await loadImage(file);
-  const scale = Math.min(1, MAX_PHOTO_SIDE / Math.max(image.width, image.height));
-  const w = Math.max(1, Math.round(image.width * scale));
-  const h = Math.max(1, Math.round(image.height * scale));
+function drawToJpeg(source, sx, sy, sw, sh, maxSide, quality) {
+  const scale = Math.min(1, maxSide / Math.max(sw, sh));
+  const w = Math.max(1, Math.round(sw * scale));
+  const h = Math.max(1, Math.round(sh * scale));
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff'; // transparent PNGs/GIFs become white instead of black
   ctx.fillRect(0, 0, w, h);
-  ctx.drawImage(image.source, 0, 0, w, h);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+  ctx.drawImage(source, sx, sy, sw, sh, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+// Makes the whole-tank picture plus overlapping zoomed pieces, so small and far fish keep their detail.
+async function prepareImage(file) {
+  const image = await loadImage(file);
+  const W = image.width;
+  const H = image.height;
+  const whole = drawToJpeg(image.source, 0, 0, W, H, MAX_PHOTO_SIDE, 0.82);
+  const images = [whole.split(',')[1]];
+
+  if (Math.max(W, H) >= MIN_SIDE_FOR_ZOOM) {
+    const landscape = W >= H * 1.3;
+    const cols = landscape ? 3 : 2;
+    const rows = landscape ? 2 : 2;
+    const overlap = 0.2;
+    const tileW = W / (cols - (cols - 1) * overlap);
+    const tileH = H / (rows - (rows - 1) * overlap);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const sx = Math.min(W - tileW, c * tileW * (1 - overlap));
+        const sy = Math.min(H - tileH, r * tileH * (1 - overlap));
+        const piece = drawToJpeg(image.source, Math.max(0, sx), Math.max(0, sy), tileW, tileH, MAX_ZOOM_SIDE, 0.85);
+        images.push(piece.split(',')[1]);
+      }
+    }
+  }
   image.done();
-  return { base64: dataUrl.split(',')[1], previewUrl: dataUrl };
+  return { images, previewUrl: whole };
 }
 
 function friendlyError(code, status) {
@@ -348,8 +405,8 @@ async function startScan(file) {
     const res = await fetch(WORKER_URL + '/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: prepared.base64, mime: 'image/jpeg' }),
-      signal: AbortSignal.timeout(50000)
+      body: JSON.stringify({ images: prepared.images, mime: 'image/jpeg' }),
+      signal: AbortSignal.timeout(60000)
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error((data.error === 'ai_error' || data.error === 'ai_busy') && data.ai_detail !== undefined ? 'Photo reader error ' + data.ai_status + ': ' + (data.ai_detail || 'no details') : friendlyError(data.error, res.status));
@@ -388,6 +445,14 @@ function confidenceLabel(c) {
   return ['Unsure', 'bad'];
 }
 
+const LOADING_STEPS = [
+  'Reading your photo…',
+  'Zooming in on small fish…',
+  'Counting what\'s in the tank…',
+  'Almost there…'
+];
+let loadingTimer = null;
+
 function renderResults() {
   if (!pending) return;
   const photo = $('results-photo');
@@ -403,7 +468,20 @@ function renderResults() {
 
   if (pending.loading) {
     $('results-title').textContent = 'Looking at your tank…';
-    status.append(el('div', { class: 'status-card' }, el('div', { class: 'spinner' }), el('span', { text: 'Reading your photo. This takes a few seconds.' })));
+    const msg = el('span', { text: LOADING_STEPS[0] });
+    status.append(el('div', { class: 'status-card' }, el('div', { class: 'spinner' }), msg));
+    for (let i = 0; i < 3; i++) {
+      list.append(el('div', { class: 'skeleton' },
+        el('div', { class: 'dot' }),
+        el('div', { class: 'lines' }, el('div', { class: 'bar' }), el('div', { class: 'bar short' }))));
+    }
+    clearInterval(loadingTimer);
+    let step = 0;
+    loadingTimer = setInterval(() => {
+      if (!msg.isConnected || !pending || !pending.loading) { clearInterval(loadingTimer); return; }
+      step = Math.min(step + 1, LOADING_STEPS.length - 1);
+      msg.textContent = LOADING_STEPS[step];
+    }, 2800);
     return;
   }
 
@@ -417,8 +495,8 @@ function renderResults() {
 
   const n = pending.species.length;
   $('results-title').textContent = n === 1 ? 'Found 1 kind' : 'Found ' + n + ' kinds';
-  if (pending.debug) status.append(el('div', { class: 'status-card' }, el('small', { text: pending.debug })));
-  if (pending.tips) status.append(el('div', { class: 'status-card' }, el('span', { text: 'Tip: ' + pending.tips })));
+  if (pending.debug) status.append(el('p', { class: 'debug', text: pending.debug }));
+  if (pending.tips) status.append(el('div', { class: 'status-card tip' }, el('span', { text: 'Tip: ' + pending.tips })));
 
   pending.species.forEach((sp, index) => list.append(sp.editing ? editRow(sp, index) : resultRow(sp)));
   $('results-note').hidden = false;
@@ -428,23 +506,25 @@ function renderResults() {
 
 function resultRow(sp) {
   const [label, tone] = confidenceLabel(sp.confidence);
-  const sub = [sp.scientific, sp.kind].filter(Boolean).join(' · ');
   const alts = (sp.alternatives || []).filter((n) => n && n.toLowerCase() !== sp.name.toLowerCase());
   const altRow = alts.length && sp.confidence < 0.9
     ? el('div', { class: 'alts' },
         el('span', { class: 'sub', text: 'Could also be:' }),
         ...alts.map((n) => el('button', {
-          type: 'button', class: 'chip', text: n,
+          type: 'button', class: 'alt-chip', text: n,
           onclick: () => { sp.name = n; sp.scientific = ''; sp.alternatives = []; sp.confidence = 1; renderResults(); }
         })))
     : null;
   return el('div', { class: 'item' },
+    kindAvatar(sp.kind),
     el('div', { class: 'grow' },
       el('span', { class: 'name', text: sp.name + (sp.count > 1 ? ' × ' + sp.count : '') }),
-      sub ? el('span', { class: 'sub', text: sub }) : null,
+      el('div', { class: 'meta' },
+        el('span', { class: 'pill ' + tone, text: label }),
+        sp.scientific ? el('span', { class: 'sub sci', text: sp.scientific }) : (sp.kind ? el('span', { class: 'sub', text: sp.kind }) : null)
+      ),
       altRow
     ),
-    el('span', { class: 'pill ' + tone, text: label }),
     el('button', { type: 'button', class: 'btn small', text: 'Edit', onclick: () => { sp.editing = true; renderResults(); } })
   );
 }

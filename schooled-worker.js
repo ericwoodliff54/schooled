@@ -6,7 +6,9 @@
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io'];
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL = 'gemini-4-hydrogen';
-const MAX_IMAGE_CHARS = 2800000; // about 2 MB of photo data
+const MAX_IMAGE_CHARS = 2800000; // about 2 MB per photo
+const MAX_IMAGES = 7; // the whole tank plus up to 6 zoomed pieces
+const MAX_TOTAL_CHARS = 14000000;
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
 // Best-effort limit per visitor while the Worker stays warm.
@@ -34,6 +36,12 @@ const PROMPT =
   'Set too_far to true if many fish are too small or far away to identify reliably. ' +
   'If the photo is not an aquarium, set is_aquarium to false and return no species. ' +
   'If photo quality limited your answer (glare, too far, dark), put one short tip in photo_tips, otherwise leave it empty.';
+
+const ZOOM_NOTE =
+  'The first image is the whole tank. The images after it are zoomed-in, overlapping pieces of that same photo, ' +
+  'in reading order (left to right, top to bottom), included so you can see small and distant fish clearly. ' +
+  'Use the zoomed pieces to identify species and to count. Fish near the edges of a piece may also appear in the next piece, ' +
+  'so count each real fish only once. Return ONE combined list for the whole tank, with counts for the whole tank, not per piece.';
 
 const SCHEMA = {
   type: 'OBJECT',
@@ -135,10 +143,23 @@ async function scan(request, env, origin) {
     return json({ ok: false, error: 'bad_image' }, 400, origin);
   }
 
-  const image = typeof body.image === 'string' ? body.image : '';
   const mime = ALLOWED_MIME.includes(body.mime) ? body.mime : '';
-  if (!image || !mime || !/^[A-Za-z0-9+/=]+$/.test(image)) return json({ ok: false, error: 'bad_image' }, 400, origin);
-  if (image.length > MAX_IMAGE_CHARS) return json({ ok: false, error: 'too_large' }, 413, origin);
+  const list = Array.isArray(body.images) ? body.images : (typeof body.image === 'string' ? [body.image] : []);
+  if (!mime || !list.length || list.length > MAX_IMAGES) return json({ ok: false, error: 'bad_image' }, 400, origin);
+  let total = 0;
+  for (const item of list) {
+    if (typeof item !== 'string' || !item || !/^[A-Za-z0-9+/=]+$/.test(item)) return json({ ok: false, error: 'bad_image' }, 400, origin);
+    if (item.length > MAX_IMAGE_CHARS) return json({ ok: false, error: 'too_large' }, 413, origin);
+    total += item.length;
+  }
+  if (total > MAX_TOTAL_CHARS) return json({ ok: false, error: 'too_large' }, 413, origin);
+
+  const imageParts = [];
+  list.forEach((data, i) => {
+    if (list.length > 1) imageParts.push({ text: i === 0 ? 'Whole tank:' : 'Zoomed piece ' + i + ' of ' + (list.length - 1) + ':' });
+    imageParts.push({ inline_data: { mime_type: mime, data } });
+  });
+  const promptText = list.length > 1 ? PROMPT + ' ' + ZOOM_NOTE : PROMPT;
 
   const primary = env.GEMINI_MODEL || DEFAULT_MODEL;
   const models = primary === FALLBACK_MODEL ? [primary] : [primary, FALLBACK_MODEL];
@@ -148,14 +169,14 @@ async function scan(request, env, origin) {
     if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
     const payload = {
       systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
-      contents: [{ role: 'user', parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data: image } }] }],
+      contents: [{ role: 'user', parts: [{ text: promptText }].concat(imageParts) }],
       generationConfig
     };
     return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(22000)
+      signal: AbortSignal.timeout(28000)
     });
   }
 
@@ -168,7 +189,7 @@ async function scan(request, env, origin) {
       if (upstream.status === 400) upstream = await ask(model, false); // model may not accept a thinking level
     } catch (err) {
       const timedOut = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
-      failure = { error: 'ai_busy', ai_status: 0, ai_detail: model + ': ' + (timedOut ? 'no answer after 22 seconds' : 'could not reach Google') };
+      failure = { error: 'ai_busy', ai_status: 0, ai_detail: model + ': ' + (timedOut ? 'no answer after 28 seconds' : 'could not reach Google') };
       upstream = null;
       continue;
     }
@@ -203,7 +224,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 8: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 9: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/scan') {
