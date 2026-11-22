@@ -1,57 +1,3 @@
-Yes, tank scans can be tested too, with one limit. I sent the tank scan test as update50.zip, and the new database batch as update51.zip.
-
-Tank scan check (update50.zip)
-
-How it works: it builds a test tank by tiling four known photos from Wikimedia Commons into one picture. It sends that picture through the app's real tank scan and checks which species came back. You get a report with:
-how many species were found
-how many answers were really in the tank
-whether the counts were right
-which species it missed most
-which names it invented
-The limit: these are tiled photos, not real tank photos. It tests naming and counting several species at once, but not reflections, overlapping fish or messy backgrounds. Photos of your own tanks are the only test for those, so a few real scans on your phone are still worth doing.
-Cost and setup: it costs about 0.55 cents per tank, so the default 10 tanks is a few cents. Add scan_check.py to the repo root, and create .github/workflows/scan-check.yml from the file, using the same steps as the first workflow. Run it from the Actions tab, under "Tank scan check". It uses the same TEST_KEY secret.
-Testing: I tested the script here against stand-in servers. It has not run against the real Worker.
-
-Database batch (update51.zip)
-
-New species: about 20, taking the list to 562. The new species are:
-Fish: Reedfish, Ornate Bichir, Horse Face Loach, GloFish, Peacock, Fire and Zig Zag Eels, Purple Firefish, Dragonface Pipefish, Possum Wrasse and Niger Triggerfish.
-Anemones: Sebae and Rock Flower.
-Plants: Willow Moss, Peacock Moss, Fissidens, Cardinal Flower and Ammannia.
-New aliases: Blue Hippo Tang, Mushroom Leather, Devil's Hand and Hygro Compact now match.
-Files: upload species.json, schooled-worker.js, service-worker.js and test_species.txt to the repo root. The refreshed schooled-db-source.zip is saved in the outputs folder.
-
-The list now covers nearly all the common freshwater and reef species I could think of. Any future gaps will most likely come from your own scans. The "unmatched species" bar on Home collects those, so send me that list when it grows and I'll add them.
-
-Update50
-ZIP
-Update51
-ZIP
-
-when clicking on a care suggestion the card opens, selecting done does not remove the card. every card that is open stays on the screen and fills up the page.
-
-Fixing the Care tab so reminders are compact one-line rows (Done actually clears them from "Due now") instead of big cards that pile up. I'm updating my tests to match and will send it shortly.
-
-Care reminders are now compact rows instead of big cards. The fix is in update52.zip; upload its three files (app.js, styles.css, service-worker.js) to the repo root. I tested it in a simulated browser, not on a phone.
-
-What was wrong: every reminder was a permanent full-size card. Tapping a suggestion also opened its settings, and tapping Done only restarted the timer, so the card never went away. Cards piled up.
-
-What changed:
-
-Due now: reminders that need doing are one-line rows with a name, a status and a Done button. The card is only shown when something is due.
-Done: tapping Done moves the row out of "Due now" into a "Coming up" list and shows a short message with when it's next due.
-Coming up: everything else sits in a second compact list.
-Settings: tapping a reminder's name opens its settings (how often, snooze, remove). Only one can be open at a time, so the page doesn't fill up.
-Suggestions: tapping one now just adds it and shows a short "Added" message. It no longer opens a card.
-
-Done restarts the timer, so the reminder comes back on its next due date. If you'd rather have one-off tasks that disappear for good after Done, I can add that option.
-
-Update52
-ZIP
-
-can you send last scan yml in code here so i can copy it
-
-yaml
 name: Tank scan check
 
 # Run it by hand: Actions tab, "Tank scan check", Run workflow.
@@ -98,7 +44,3 @@ jobs:
           name: scan-report
           path: scan-out/
           retention-days: 30
-
-Save it in your repo as .github/workflows/scan-check.yml. Use the copy button in the corner of the code block so the indentation stays intact. You also need scan_check.py in the repo root, from update50.zip.
-
-Keep going in Claude Code
