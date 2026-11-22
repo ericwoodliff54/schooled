@@ -483,6 +483,7 @@ async function dream(request, env, origin) {
   let plan = null;
   const planModels = [env.GEMINI_MODEL || DEFAULT_MODEL, FALLBACK_MODEL, LAST_RESORT_MODEL].filter((m, i, a) => a.indexOf(m) === i);
   let planUsage = { input: 0, output: 0 };
+  const planErrors = [];
   for (const model of planModels) {
     try {
       const res = await geminiCall(env, model, {
@@ -490,16 +491,21 @@ async function dream(request, env, origin) {
         contents: [{ role: 'user', parts: planParts }],
         generationConfig: { responseMimeType: 'application/json', responseSchema: DREAM_SCHEMA }
       }, 25000);
-      if (!res.ok) continue;
+      if (!res.ok) {
+        let msg = '';
+        try { const ej = await res.json(); msg = (ej && ej.error && ej.error.message) || ''; } catch (err) { /* no body */ }
+        planErrors.push(model + ': ' + res.status + (msg ? ' ' + msg.replace(/\s+/g, ' ').slice(0, 110) : ''));
+        continue;
+      }
       const data = await res.json();
       const text = data.candidates[0].content.parts.map((p) => p.text || '').join('');
       plan = JSON.parse(text);
       const u = data.usageMetadata || {};
       planUsage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
       break;
-    } catch (err) { /* try the next model */ }
+    } catch (err) { planErrors.push(model + ': ' + ((err && (err.name === 'TimeoutError' || err.name === 'AbortError')) ? 'too slow' : 'bad reply')); }
   }
-  if (!plan) return json({ ok: false, error: 'ai_busy' }, 502, origin);
+  if (!plan) return json({ ok: false, error: 'ai_busy', ai_detail: planErrors.join('; ').slice(0, 300) }, 502, origin);
   const species = (Array.isArray(plan.species) ? plan.species : []).slice(0, 14).map((s) => ({
     common_name: clean(s.common_name, 60),
     kind: KINDS.includes(s.kind) ? s.kind : 'fish',

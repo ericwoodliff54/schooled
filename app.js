@@ -1996,7 +1996,7 @@ async function runDream() {
     if (!j || !j.ok) {
       const code = j && j.error;
       if (code === 'limit_reached') { const s = dreamLoad(); s.used = DREAM_MONTHLY; dreamSave(s); }
-      dreamMessage = DREAM_ERRORS[code] || 'Something went wrong. Nothing was used. Try again in a minute.';
+      dreamMessage = (DREAM_ERRORS[code] || 'Something went wrong. Nothing was used. Try again in a minute.') + (j && j.ai_detail ? ' (' + String(j.ai_detail).slice(0, 300) + ')' : '');
     } else {
       let image = '';
       if (j.image && j.image.data && /^image\/(png|jpeg|webp)$/.test(j.image.mime)) {
