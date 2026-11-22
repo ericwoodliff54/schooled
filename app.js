@@ -61,44 +61,123 @@ function kindAvatar(kind) {
 }
 
 // ---------- Saved data (stays on the phone) ----------
-function defaultState() {
-  return {
-    setupDone: false,
-    tank: { name: '', size: '', unit: 'gallons', water: 'city', zip: '' },
-    fish: []
-  };
+const TYPES = ['Freshwater', 'Saltwater', 'Brackish'];
+const STYLES = {
+  Freshwater: ['Community', 'Planted', 'Cichlid', 'Nano / shrimp', 'Predator', 'Species only', 'Breeding', 'Biotope', 'Other'],
+  Saltwater: ['Reef', 'Fish only (FOWLR)', 'Nano reef', 'Predator', 'Seahorse', 'Other'],
+  Brackish: ['Community', 'Puffer', 'Other']
+};
+const WATER_SOURCES = ['city', 'well', 'ro'];
+const WATER_NAMES = { city: 'City water', well: 'Well water', ro: 'RO / filtered' };
+const WATER_SHORT = { city: 'City', well: 'Well', ro: 'RO / filtered' };
+const SIZE_PRESETS = {
+  gallons: [5, 10, 15, 20, 29, 40, 55, 75, 90, 125, 150, 180, 220, 300],
+  liters: [20, 40, 60, 100, 150, 200, 300, 400, 500, 700, 1000]
+};
+const TANK_PHOTO_SIDE = 800;
+const MAX_TANKS = 12;
+
+function uid() {
+  return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+function newTank(partial) {
+  return Object.assign({
+    id: uid(), name: '', size: '', unit: 'gallons', type: 'Freshwater', style: '',
+    water: 'city', zip: '', photo: '', started: '', notes: '', fish: []
+  }, partial || {});
+}
+
+function cleanFish(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((f) => f && typeof f.name === 'string' && f.name.trim())
+    .map((f) => ({ name: f.name.trim().slice(0, 60), count: Math.min(999, Math.max(1, Math.round(Number(f.count)) || 1)) }));
+}
+
+// Accepts anything from storage and returns a safe tank (or null).
+function cleanTank(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const t = newTank();
+  if (typeof raw.id === 'string' && raw.id) t.id = raw.id.slice(0, 40);
+  t.name = typeof raw.name === 'string' ? raw.name.slice(0, 40) : '';
+  const size = Number(raw.size);
+  t.size = isFinite(size) && size > 0 && size <= 5000 ? String(size) : '';
+  t.unit = raw.unit === 'liters' ? 'liters' : 'gallons';
+  t.type = TYPES.includes(raw.type) ? raw.type : 'Freshwater';
+  t.style = typeof raw.style === 'string' && STYLES[t.type].includes(raw.style) ? raw.style : '';
+  t.water = WATER_SOURCES.includes(raw.water) ? raw.water : 'city';
+  t.zip = typeof raw.zip === 'string' && /^\d{5}$/.test(raw.zip) ? raw.zip : '';
+  t.photo = typeof raw.photo === 'string' && raw.photo.startsWith('data:image/') ? raw.photo : '';
+  t.started = typeof raw.started === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.started) ? raw.started : '';
+  t.notes = typeof raw.notes === 'string' ? raw.notes.slice(0, 400) : '';
+  t.fish = cleanFish(raw.fish);
+  return t;
+}
+
+function defaultState() {
+  return { version: 2, setupDone: false, activeId: '', tanks: [] };
+}
+
+let migrated = false;
 function loadState() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return defaultState();
     const saved = JSON.parse(raw);
-    const base = defaultState();
-    return {
-      setupDone: !!saved.setupDone,
-      tank: Object.assign(base.tank, saved.tank || {}),
-      fish: Array.isArray(saved.fish) ? saved.fish.filter((f) => f && typeof f.name === 'string') : []
-    };
+    if (!saved || typeof saved !== 'object') return defaultState();
+    const next = defaultState();
+    next.setupDone = !!saved.setupDone;
+    if (Array.isArray(saved.tanks)) {
+      saved.tanks.slice(0, MAX_TANKS).forEach((r) => {
+        const t = cleanTank(r);
+        if (t && !next.tanks.some((x) => x.id === t.id)) next.tanks.push(t);
+      });
+    } else if (saved.tank || Array.isArray(saved.fish)) {
+      // Older version kept a single tank. Carry it over as the first tank.
+      const old = saved.tank && typeof saved.tank === 'object' ? saved.tank : {};
+      const fish = cleanFish(saved.fish);
+      if (saved.setupDone || fish.length || old.name || old.size) {
+        const t = cleanTank(Object.assign({}, old, { fish }));
+        if (t) next.tanks.push(t);
+      }
+      migrated = true;
+    }
+    next.activeId = next.tanks.some((t) => t.id === saved.activeId) ? saved.activeId : (next.tanks[0] ? next.tanks[0].id : '');
+    return next;
   } catch (err) {
     return defaultState();
   }
 }
 
+// Returns true when the save worked. Photos can fill a phone's browser storage.
 function saveState() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    return true;
   } catch (err) {
-    // Storage can be blocked (private mode); the app still works for this visit.
+    return false; // private mode or full storage; the app still works for this visit
   }
 }
 
 let state = loadState();
-let pending = null; // current scan: { photoUrl, species: [], tips, loading, error }
+if (migrated) saveState();
+let pending = null; // current scan: { photoUrl, species: [], tips, loading, error, tankId }
+
+let toastTimer = null;
+function toast(message) {
+  const box = $('toast');
+  box.textContent = message;
+  box.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { box.hidden = true; }, 4500);
+}
 
 // ---------- Navigation ----------
-const VIEWS = ['setup', 'home', 'scan', 'results', 'water', 'tank'];
-const NAV_FOR = { home: 'home', scan: 'scan', results: 'scan', water: 'water', tank: 'tank' };
+const VIEWS = ['setup', 'home', 'scan', 'results', 'water', 'tanks', 'tank'];
+const NAV_FOR = { home: 'home', scan: 'scan', results: 'scan', water: 'water', tanks: 'tanks', tank: 'tanks' };
+let openTankId = '';
+let editingSize = false;
 
 function showView(name) {
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== name; });
@@ -110,8 +189,16 @@ function showView(name) {
   if (name === 'setup') fillSetupForm();
   if (name === 'home') renderHome();
   if (name === 'water') renderWater();
+  if (name === 'tanks') renderTanks();
   if (name === 'tank') renderTank();
   window.scrollTo(0, 0);
+}
+
+function showTank(id) {
+  openTankId = id;
+  editingSize = false;
+  resetDelete();
+  showView('tank');
 }
 
 document.querySelectorAll('#nav button').forEach((b) => {
@@ -119,41 +206,115 @@ document.querySelectorAll('#nav button').forEach((b) => {
 });
 
 // ---------- Tank helpers ----------
-function tankName() {
-  return state.tank.name.trim() || 'My tank';
+function getTank(id) {
+  return state.tanks.find((t) => t.id === id) || null;
 }
 
-function sizeText() {
-  return state.tank.size ? state.tank.size + ' ' + state.tank.unit : '';
+function activeTank() {
+  return getTank(state.activeId) || state.tanks[0] || null;
 }
 
-function addToTank(name, count, mode) {
+function tankLabel(t) {
+  if (t.name.trim()) return t.name.trim();
+  return state.tanks.length > 1 ? 'Tank ' + (state.tanks.indexOf(t) + 1) : 'My tank';
+}
+
+function sizeShort(t) {
+  return t.size ? t.size + (t.unit === 'liters' ? ' L' : ' gal') : '';
+}
+
+function tankSummary(t) {
+  return [sizeShort(t), t.type, t.style].filter(Boolean).join(' · ');
+}
+
+function ensureTank() {
+  let t = activeTank();
+  if (!t) {
+    t = newTank();
+    state.tanks.push(t);
+    state.activeId = t.id;
+    state.setupDone = true;
+  }
+  return t;
+}
+
+function addToTank(tank, name, count, mode) {
   const clean = name.trim().slice(0, 60);
   if (!clean) return;
   const key = clean.toLowerCase();
-  const existing = state.fish.find((f) => f.name.toLowerCase() === key);
+  const existing = tank.fish.find((f) => f.name.toLowerCase() === key);
   if (existing) {
-    if (mode === 'add') existing.count += count;
+    if (mode === 'add') existing.count = Math.min(999, existing.count + count);
     else if (mode === 'scan') existing.count = Math.max(existing.count, count); // a scan can only add or confirm, never lower
     else existing.count = count;
   }
-  else state.fish.push({ name: clean, count });
+  else tank.fish.push({ name: clean, count });
 }
 
-function totalFish() {
-  return state.fish.reduce((sum, f) => sum + f.count, 0);
+function totalFish(tank) {
+  return tank.fish.reduce((sum, f) => sum + f.count, 0);
 }
 
-// ---------- Setup ----------
+// Reads a photo from almost any file type and shrinks it to fit in saved storage.
+async function photoFromFile(file) {
+  const image = await loadImage(file);
+  try {
+    return drawToJpeg(image.source, 0, 0, image.width, image.height, TANK_PHOTO_SIDE, 0.8);
+  } finally {
+    image.done();
+  }
+}
+
+function wireTankPhotoInput(buttonId, inputId, onPhoto) {
+  $(buttonId).addEventListener('click', () => $(inputId).click());
+  $(inputId).addEventListener('change', async (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      onPhoto(await photoFromFile(file));
+    } catch (err) {
+      toast("This device couldn't open that photo. Try another one.");
+    }
+  });
+}
+
+// ---------- Add a tank (also the first-run setup) ----------
+let setupPhoto = '';
+
+function fillStyleSelect(type, selected) {
+  const sel = $('tank-style');
+  sel.replaceChildren(el('option', { value: '', text: 'Not set' }), ...STYLES[type].map((s) => el('option', { value: s, text: s })));
+  sel.value = STYLES[type].includes(selected) ? selected : '';
+}
+
+function renderSetupPhoto() {
+  const box = $('setup-photo');
+  box.replaceChildren(setupPhoto
+    ? el('img', { src: setupPhoto, alt: 'Your tank photo' })
+    : el('div', { class: 'photo-empty' }, kindIcon('fish'), el('span', { text: 'Add a photo of your tank' })));
+  $('setup-photo-remove').hidden = !setupPhoto;
+}
+
 function fillSetupForm() {
-  $('tank-name').value = state.tank.name;
-  $('tank-size').value = state.tank.size;
-  $('tank-zip').value = state.tank.zip;
-  document.querySelector('input[name="unit"][value="' + state.tank.unit + '"]').checked = true;
-  document.querySelector('input[name="water"][value="' + state.tank.water + '"]').checked = true;
+  const first = !state.setupDone;
+  $('setup-title').textContent = first ? "Let's set up your tank" : 'Add a tank';
+  $('setup-sub').textContent = first
+    ? 'This helps size treatments and look up your tap water. It stays on your phone.'
+    : 'Give it a name, a photo and a few details. You can change any of it later.';
+  $('setup-submit').textContent = first ? 'Continue' : 'Add tank';
+  $('setup-skip').textContent = first ? 'Skip for now' : 'Cancel';
+  $('tank-name').value = '';
+  $('tank-size').value = '';
+  $('tank-zip').value = '';
+  document.querySelector('input[name="unit"][value="gallons"]').checked = true;
+  document.querySelector('input[name="type"][value="Freshwater"]').checked = true;
+  document.querySelector('input[name="water"][value="city"]').checked = true;
+  fillStyleSelect('Freshwater', '');
+  setupPhoto = '';
+  renderSetupPhoto();
   $('setup-error').hidden = true;
   syncZipField();
-  $('setup-skip').textContent = state.setupDone ? 'Cancel' : 'Skip for now';
 }
 
 function syncZipField() {
@@ -162,19 +323,37 @@ function syncZipField() {
 }
 
 document.querySelectorAll('input[name="water"]').forEach((r) => r.addEventListener('change', syncZipField));
+document.querySelectorAll('input[name="type"]').forEach((r) => r.addEventListener('change', () => {
+  fillStyleSelect(document.querySelector('input[name="type"]:checked').value, '');
+}));
+
+wireTankPhotoInput('setup-photo-camera', 'setup-photo-camera-input', (url) => { setupPhoto = url; renderSetupPhoto(); });
+wireTankPhotoInput('setup-photo-gallery', 'setup-photo-gallery-input', (url) => { setupPhoto = url; renderSetupPhoto(); });
+$('setup-photo-remove').addEventListener('click', () => { setupPhoto = ''; renderSetupPhoto(); });
+
+function startAddTank() {
+  if (state.tanks.length >= MAX_TANKS) {
+    toast('That is the most tanks the app can hold on this phone (' + MAX_TANKS + ').');
+    return;
+  }
+  showView('setup');
+}
 
 $('setup-form').addEventListener('submit', (event) => {
   event.preventDefault();
+  const first = !state.setupDone;
   const name = $('tank-name').value.trim();
   const sizeRaw = $('tank-size').value.trim();
   const unit = document.querySelector('input[name="unit"]:checked').value;
+  const type = document.querySelector('input[name="type"]:checked').value;
   const water = document.querySelector('input[name="water"]:checked').value;
+  const style = $('tank-style').value;
   const zip = $('tank-zip').value.trim();
   const err = $('setup-error');
 
   const size = Number(sizeRaw);
-  if (!sizeRaw || !isFinite(size) || size <= 0 || size > 5000) {
-    err.textContent = 'Enter your tank size as a number, like 29.';
+  if (sizeRaw && (!isFinite(size) || size <= 0 || size > 5000)) {
+    err.textContent = 'Enter your tank size as a number, like 29, or leave it blank.';
     err.hidden = false;
     $('tank-size').focus();
     return;
@@ -185,14 +364,31 @@ $('setup-form').addEventListener('submit', (event) => {
     $('tank-zip').focus();
     return;
   }
+  if (state.tanks.length >= MAX_TANKS) {
+    err.textContent = 'That is the most tanks the app can hold on this phone (' + MAX_TANKS + ').';
+    err.hidden = false;
+    return;
+  }
 
-  state.tank = { name, size: String(size), unit, water, zip: water === 'city' ? zip : '' };
+  const tank = newTank({
+    name, size: sizeRaw ? String(size) : '', unit, type,
+    style: STYLES[type].includes(style) ? style : '',
+    water, zip: water === 'city' ? zip : '', photo: setupPhoto
+  });
+  state.tanks.push(tank);
+  if (!state.activeId || first) state.activeId = tank.id;
   state.setupDone = true;
-  saveState();
-  showView('home');
+  if (!saveState() && tank.photo) {
+    tank.photo = '';
+    saveState();
+    toast('This phone is out of saved space, so the photo was left off.');
+  }
+  if (first) showView('home');
+  else showTank(tank.id);
 });
 
 $('setup-skip').addEventListener('click', () => {
+  if (state.setupDone) { showView('tanks'); return; }
   state.setupDone = true;
   saveState();
   showView('home');
@@ -200,86 +396,356 @@ $('setup-skip').addEventListener('click', () => {
 
 // ---------- Home ----------
 function renderHome() {
-  $('home-title').textContent = tankName();
-  const size = sizeText();
-  $('home-sub').textContent = size ? size + (state.tank.water === 'well' ? ' · well water' : '') : 'Set your tank size in the Tank tab.';
-
+  const t = activeTank();
+  const photo = $('home-photo');
+  const switchRow = $('home-switch-row');
   const box = $('home-fish');
   box.replaceChildren();
-  if (!state.fish.length) {
+
+  if (!t) {
+    photo.hidden = true;
+    switchRow.hidden = true;
+    $('home-title').textContent = 'Welcome';
+    $('home-sub').textContent = 'No tank added yet.';
+    box.append(
+      el('h2', { text: 'Add your first tank' }),
+      el('p', { class: 'muted', text: 'Give it a name and a photo, and keep its fish and plants in one place.' }),
+      el('button', { type: 'button', class: 'btn primary small', text: 'Add a tank', onclick: startAddTank })
+    );
+    return;
+  }
+
+  $('home-title').textContent = tankLabel(t);
+  $('home-sub').textContent = tankSummary(t) || 'Open My Tanks to add details.';
+  if (t.photo) { photo.src = t.photo; photo.alt = 'Photo of ' + tankLabel(t); photo.hidden = false; }
+  else { photo.removeAttribute('src'); photo.hidden = true; }
+
+  if (state.tanks.length > 1) {
+    const sel = $('home-switch');
+    sel.replaceChildren(...state.tanks.map((x) => el('option', { value: x.id, text: tankLabel(x) })));
+    sel.value = t.id;
+    switchRow.hidden = false;
+  } else {
+    switchRow.hidden = true;
+  }
+
+  if (!t.fish.length) {
     box.append(
       el('h2', { text: 'No fish yet' }),
       el('p', { class: 'muted', text: 'Scan your tank and Schooled will name what it sees.' })
     );
   } else {
     box.append(
-      el('h2', { text: state.fish.length + (state.fish.length === 1 ? ' kind' : ' kinds') + ' in your tank' }),
-      el('p', { class: 'muted', text: totalFish() + ' fish and plants in total' }),
-      el('button', { type: 'button', class: 'btn small', text: 'See My Tank', onclick: () => showView('tank') })
+      el('h2', { text: t.fish.length + (t.fish.length === 1 ? ' kind' : ' kinds') + ' in this tank' }),
+      el('p', { class: 'muted', text: totalFish(t) + ' fish and plants in total' }),
+      el('button', { type: 'button', class: 'btn small', text: 'See this tank', onclick: () => showTank(t.id) })
     );
   }
 }
+
+$('home-switch').addEventListener('change', () => {
+  const id = $('home-switch').value;
+  if (getTank(id)) { state.activeId = id; saveState(); renderHome(); }
+});
 
 $('home-scan').addEventListener('click', () => showView('scan'));
 
 // ---------- Water ----------
 function renderWater() {
   const text = $('water-tap-text');
-  if (state.tank.water === 'well') {
+  const t = activeTank();
+  if (!t) {
+    text.textContent = 'Add a tank in My Tanks to get tap water info.';
+  } else if (t.water === 'well') {
     text.textContent = 'You use well water, so the best starting point is a test strip on your tap water. Tap water lookup is for city water.';
-  } else if (state.tank.zip) {
-    text.textContent = 'ZIP ' + state.tank.zip + ': hardness lookup and conditioner advice are coming in a later update.';
+  } else if (t.water === 'ro') {
+    text.textContent = 'You use RO or filtered water, so a test strip after you add minerals back is the best starting point. Tap water lookup is for city water.';
+  } else if (t.zip) {
+    text.textContent = 'ZIP ' + t.zip + ': hardness lookup and conditioner advice are coming in a later update.';
   } else {
-    text.textContent = 'Add your ZIP code in the Tank tab to get tap water info in a later update.';
+    text.textContent = 'Add your ZIP code on your tank page to get tap water info in a later update.';
   }
 }
 
-// ---------- My Tank ----------
+// ---------- My Tanks (list) ----------
+function renderTanks() {
+  const box = $('tanks-list');
+  box.replaceChildren();
+  $('tanks-add').hidden = state.tanks.length >= MAX_TANKS;
+  if (!state.tanks.length) {
+    box.append(el('div', { class: 'card' },
+      el('h2', { text: 'No tanks yet' }),
+      el('p', { class: 'muted', text: 'Add a tank to keep its fish, plants, water and photos in one place.' }),
+      el('button', { type: 'button', class: 'btn primary', text: 'Add your first tank', onclick: startAddTank })));
+    return;
+  }
+  const active = activeTank();
+  state.tanks.forEach((t) => {
+    const photo = t.photo
+      ? el('img', { class: 'tank-card-img', src: t.photo, alt: '', loading: 'lazy' })
+      : el('span', { class: 'tank-card-img empty' }, kindIcon('fish'));
+    const kinds = t.fish.length;
+    box.append(el('button', { type: 'button', class: 'tank-card', onclick: () => showTank(t.id) },
+      photo,
+      el('span', { class: 'tank-card-body' },
+        el('span', { class: 'tank-card-top' },
+          el('strong', { class: 'name', text: tankLabel(t) }),
+          t === active ? el('span', { class: 'badge', text: 'Active' }) : null),
+        el('span', { class: 'tank-tags' }, ...[sizeShort(t), t.type, t.style].filter(Boolean).map((x) => el('span', { class: 'tag', text: x }))),
+        el('span', { class: 'sub', text: kinds ? kinds + (kinds === 1 ? ' kind · ' : ' kinds · ') + totalFish(t) + ' in total' : 'No fish added yet' })
+      )));
+  });
+}
+
+$('tanks-add').addEventListener('click', startAddTank);
+
+// ---------- One tank ----------
+function chevron() {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2.6');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'chev');
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', 'M6 9l6 6 6-6');
+  svg.append(path);
+  return svg;
+}
+
+// A pill you tap to open a dropdown. The real <select> sits invisibly on top, so phones show their own picker.
+function pillSelect(label, display, groups, current, onChange) {
+  const select = el('select', { 'aria-label': label });
+  groups.forEach((g) => {
+    const parent = g.label ? el('optgroup', { label: g.label }) : select;
+    g.options.forEach((o) => parent.append(el('option', { value: o.value, text: o.text })));
+    if (g.label) select.append(parent);
+  });
+  select.value = current;
+  select.addEventListener('change', () => onChange(select.value));
+  return el('label', { class: 'pill-edit' },
+    el('span', { class: 'k', text: label }),
+    el('span', { class: 'v', text: display }),
+    chevron(),
+    select);
+}
+
+function todayString() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function datePill(t) {
+  const input = el('input', { type: 'date', value: t.started, max: todayString(), 'aria-label': 'Running since' });
+  input.addEventListener('change', () => {
+    t.started = /^\d{4}-\d{2}-\d{2}$/.test(input.value) ? input.value : '';
+    saveState();
+    renderTank();
+  });
+  let shown = 'Not set';
+  if (t.started) {
+    const d = new Date(t.started + 'T00:00:00');
+    if (!isNaN(d)) shown = d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  }
+  return el('label', { class: 'pill-edit' },
+    el('span', { class: 'k', text: 'Running since' }),
+    el('span', { class: 'v', text: shown }),
+    chevron(),
+    input);
+}
+
+function sizePill(t) {
+  if (editingSize) {
+    const num = el('input', { type: 'number', class: 'pill-input', inputmode: 'decimal', min: 1, max: 5000, value: t.size, placeholder: '55', 'aria-label': 'Tank size' });
+    const unit = el('select', { class: 'pill-unit', 'aria-label': 'Units' },
+      el('option', { value: 'gallons', text: 'gal' }), el('option', { value: 'liters', text: 'L' }));
+    unit.value = t.unit;
+    const done = () => {
+      const n = Number(num.value);
+      if (!isFinite(n) || n <= 0 || n > 5000) { toast('Enter a size between 1 and 5000.'); return; }
+      t.size = String(n);
+      t.unit = unit.value;
+      editingSize = false;
+      saveState();
+      renderTank();
+    };
+    num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); done(); } });
+    return el('span', { class: 'pill-edit editing' },
+      el('span', { class: 'k', text: 'Size' }), num, unit,
+      el('button', { type: 'button', class: 'pill-ok', text: 'Set', onclick: done }),
+      el('button', { type: 'button', class: 'pill-cancel', 'aria-label': 'Cancel', text: '×', onclick: () => { editingSize = false; renderTank(); } }));
+  }
+  const cur = t.size ? (t.unit === 'liters' ? 'l:' : 'g:') + t.size : '';
+  const gal = SIZE_PRESETS.gallons.map((n) => ({ value: 'g:' + n, text: n + ' gal' }));
+  const lit = SIZE_PRESETS.liters.map((n) => ({ value: 'l:' + n, text: n + ' L' }));
+  const extra = cur && ![...gal, ...lit].some((o) => o.value === cur) ? [{ value: cur, text: sizeShort(t) }] : [];
+  const groups = [
+    { options: [{ value: '', text: 'Not set' }, ...extra] },
+    { label: 'Gallons', options: gal },
+    { label: 'Liters', options: lit },
+    { options: [{ value: 'custom', text: 'Custom size…' }] }
+  ];
+  return pillSelect('Size', sizeShort(t) || 'Not set', groups, cur, (v) => {
+    if (v === 'custom') { editingSize = true; renderTank(); return; }
+    if (!v) t.size = '';
+    else { t.unit = v.startsWith('l:') ? 'liters' : 'gallons'; t.size = v.slice(2); }
+    saveState();
+    renderTank();
+  });
+}
+
 function renderTank() {
-  $('tank-title').textContent = tankName();
-  const chips = $('tank-chips');
-  chips.replaceChildren(
-    chip('Size', sizeText() || 'Not set'),
-    chip('Type', 'Freshwater'),
-    chip('Water', state.tank.water === 'well' ? 'Well' : 'City')
+  const t = getTank(openTankId);
+  if (!t) { showView('tanks'); return; }
+
+  $('tank-hero').replaceChildren(t.photo
+    ? el('img', { src: t.photo, alt: 'Photo of ' + tankLabel(t) })
+    : el('div', { class: 'tank-hero-empty' }, kindIcon('fish'), el('span', { text: 'No photo yet' })));
+  $('tank-photo-remove').hidden = !t.photo;
+  $('tank-photo-camera').textContent = t.photo ? 'Retake' : 'Take photo';
+  $('tank-photo-gallery').textContent = t.photo ? 'Change' : 'Choose photo';
+
+  const nameInput = $('tank-title-input');
+  if (document.activeElement !== nameInput) nameInput.value = t.name;
+
+  const typeGroups = [{ options: TYPES.map((x) => ({ value: x, text: x })) }];
+  const styleGroups = [{ options: [{ value: '', text: 'Not set' }, ...STYLES[t.type].map((x) => ({ value: x, text: x }))] }];
+  const waterGroups = [{ options: WATER_SOURCES.map((x) => ({ value: x, text: WATER_NAMES[x] })) }];
+  $('tank-pills').replaceChildren(
+    sizePill(t),
+    pillSelect('Type', t.type, typeGroups, t.type, (v) => {
+      t.type = v;
+      if (!STYLES[v].includes(t.style)) t.style = '';
+      saveState();
+      renderTank();
+    }),
+    pillSelect('Style', t.style || 'Not set', styleGroups, t.style, (v) => { t.style = v; saveState(); renderTank(); }),
+    pillSelect('Water', WATER_SHORT[t.water], waterGroups, t.water, (v) => { t.water = v; saveState(); renderTank(); }),
+    datePill(t)
   );
+
+  $('tank-zip-row').hidden = t.water !== 'city';
+  const zipInput = $('tank-zip-edit');
+  if (document.activeElement !== zipInput) zipInput.value = t.zip;
+  $('tank-zip-error').hidden = true;
+
+  const notes = $('tank-notes');
+  if (document.activeElement !== notes) notes.value = t.notes;
+
+  const act = $('tank-active');
+  act.replaceChildren();
+  if (activeTank() === t) {
+    act.append(el('div', { class: 'badge-row' }, el('span', { class: 'badge', text: 'Active' }), el('span', { class: 'sub', text: 'Shown on Home and used first for scans' })));
+  } else {
+    act.append(el('button', { type: 'button', class: 'btn small', text: 'Make this my active tank', onclick: () => { state.activeId = t.id; saveState(); renderTank(); } }));
+  }
 
   const list = $('tank-list');
   list.replaceChildren();
-  state.fish.forEach((f) => {
+  t.fish.forEach((f) => {
     list.append(
       el('div', { class: 'item' },
         el('div', { class: 'grow' }, el('span', { class: 'name', text: f.name })),
-        el('button', { type: 'button', class: 'round', 'aria-label': 'One fewer ' + f.name, text: '−', onclick: () => changeCount(f, -1) }),
+        el('button', { type: 'button', class: 'round', 'aria-label': 'One fewer ' + f.name, text: '−', onclick: () => changeCount(t, f, -1) }),
         el('span', { class: 'count', text: String(f.count) }),
-        el('button', { type: 'button', class: 'round', 'aria-label': 'One more ' + f.name, text: '+', onclick: () => changeCount(f, 1) })
+        el('button', { type: 'button', class: 'round', 'aria-label': 'One more ' + f.name, text: '+', onclick: () => changeCount(t, f, 1) })
       )
     );
   });
 }
 
-function chip(label, value) {
-  return el('div', { class: 'chip' }, el('span', { text: label }), el('strong', { text: value }));
-}
-
-function changeCount(fish, delta) {
+function changeCount(tank, fish, delta) {
   fish.count += delta;
-  if (fish.count < 1) state.fish = state.fish.filter((f) => f !== fish);
+  if (fish.count < 1) tank.fish = tank.fish.filter((f) => f !== fish);
   if (fish.count > 999) fish.count = 999;
   saveState();
   renderTank();
 }
 
-$('edit-tank').addEventListener('click', () => showView('setup'));
+$('tank-back').addEventListener('click', () => showView('tanks'));
+
+$('tank-title-input').addEventListener('change', () => {
+  const t = getTank(openTankId);
+  if (!t) return;
+  t.name = $('tank-title-input').value.trim().slice(0, 40);
+  saveState();
+});
+
+$('tank-notes').addEventListener('change', () => {
+  const t = getTank(openTankId);
+  if (!t) return;
+  t.notes = $('tank-notes').value.slice(0, 400);
+  saveState();
+});
+
+$('tank-zip-edit').addEventListener('change', () => {
+  const t = getTank(openTankId);
+  if (!t) return;
+  const v = $('tank-zip-edit').value.trim();
+  if (v && !/^\d{5}$/.test(v)) { $('tank-zip-error').hidden = false; return; }
+  $('tank-zip-error').hidden = true;
+  t.zip = v;
+  saveState();
+});
+
+function setTankPhoto(url) {
+  const t = getTank(openTankId);
+  if (!t) return;
+  const old = t.photo;
+  t.photo = url;
+  if (!saveState()) {
+    t.photo = old;
+    toast('This phone is out of saved space for photos. Remove a photo from another tank and try again.');
+  }
+  renderTank();
+}
+wireTankPhotoInput('tank-photo-camera', 'tank-photo-camera-input', setTankPhoto);
+wireTankPhotoInput('tank-photo-gallery', 'tank-photo-gallery-input', setTankPhoto);
+$('tank-photo-remove').addEventListener('click', () => {
+  const t = getTank(openTankId);
+  if (!t) return;
+  t.photo = '';
+  saveState();
+  renderTank();
+});
 
 $('add-form').addEventListener('submit', (event) => {
   event.preventDefault();
+  const t = getTank(openTankId);
   const input = $('add-name');
-  if (!input.value.trim()) return;
-  addToTank(input.value, 1, 'add');
+  if (!t || !input.value.trim()) return;
+  addToTank(t, input.value, 1, 'add');
   input.value = '';
   saveState();
   renderTank();
+});
+
+let deleteArmed = false;
+let deleteTimer = null;
+function resetDelete() {
+  deleteArmed = false;
+  clearTimeout(deleteTimer);
+  $('tank-delete').textContent = 'Delete this tank';
+}
+$('tank-delete').addEventListener('click', () => {
+  const t = getTank(openTankId);
+  if (!t) return;
+  if (!deleteArmed) {
+    deleteArmed = true;
+    $('tank-delete').textContent = 'Tap again to delete this tank and its fish list';
+    deleteTimer = setTimeout(resetDelete, 4000);
+    return;
+  }
+  resetDelete();
+  state.tanks = state.tanks.filter((x) => x !== t);
+  if (state.activeId === t.id) state.activeId = state.tanks[0] ? state.tanks[0].id : '';
+  saveState();
+  showView('tanks');
 });
 
 // ---------- Scan ----------
@@ -640,6 +1106,7 @@ function renderResults() {
   list.replaceChildren();
   $('results-note').hidden = true;
   $('results-actions').hidden = true;
+  $('results-target').hidden = true;
 
   if (pending.loading) {
     $('results-title').textContent = 'Looking at your tank…';
@@ -674,14 +1141,30 @@ function renderResults() {
   if (pending.debug) status.append(el('p', { class: 'debug', text: pending.debug }));
   if (pending.tips) status.append(el('div', { class: 'status-card tip' }, el('span', { text: 'Tip: ' + pending.tips })));
 
+  if (!getTank(pending.tankId)) pending.tankId = activeTank() ? activeTank().id : '';
   pending.species.forEach((sp, index) => list.append(sp.editing ? editRow(sp, index) : resultRow(sp)));
   $('results-note').hidden = false;
   $('results-actions').hidden = false;
   $('save-scan').hidden = n === 0;
+
+  // With more than one tank, let the person choose where this scan goes.
+  if (state.tanks.length > 1) {
+    const sel = $('results-tank');
+    sel.replaceChildren(...state.tanks.map((x) => el('option', { value: x.id, text: tankLabel(x) })));
+    sel.value = pending.tankId;
+    $('results-target').hidden = false;
+  }
 }
 
+$('results-tank').addEventListener('change', () => {
+  if (!pending) return;
+  pending.tankId = $('results-tank').value;
+  renderResults();
+});
+
 function inTankHint(sp) {
-  const have = state.fish.find((f) => f.name.toLowerCase() === sp.name.trim().toLowerCase());
+  const target = getTank(pending && pending.tankId);
+  const have = target && target.fish.find((f) => f.name.toLowerCase() === sp.name.trim().toLowerCase());
   if (!have) return el('span', { class: 'hint-new', text: 'New to your tank' });
   return el('span', { class: 'hint-have', text: have.count >= sp.count ? 'Already in your tank (' + have.count + ')' : 'Raises your count from ' + have.count });
 }
@@ -739,10 +1222,11 @@ function editRow(sp, index) {
 
 $('save-scan').addEventListener('click', () => {
   if (!pending) return;
-  pending.species.forEach((sp) => addToTank(sp.name, sp.count, 'scan'));
+  const target = getTank(pending.tankId) || ensureTank();
+  pending.species.forEach((sp) => addToTank(target, sp.name, sp.count, 'scan'));
   saveState();
   pending = null;
-  showView('tank');
+  showTank(target.id);
 });
 
 // ---------- Start ----------

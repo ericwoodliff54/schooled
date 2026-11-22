@@ -1,6 +1,6 @@
 // Schooled service worker: keeps the app opening when offline.
 // Network first, so new uploads show up right away; falls back to the saved copy.
-const CACHE = 'schooled-shell-v14';
+const CACHE = 'schooled-shell-v15';
 const SHELL = [
   './',
   'index.html',
@@ -10,7 +10,8 @@ const SHELL = [
   'icon-192.png',
   'icon-512.png',
   'apple-touch-icon.png',
-  'logo-mark.png'
+  'logo-mark.png',
+  'example-tank.jpg'
 ];
 
 self.addEventListener('install', (event) => {
