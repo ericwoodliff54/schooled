@@ -99,11 +99,13 @@
     <ul class="tips">
       <li>Get close to the glass</li>
       <li>Turn off the tank light if it causes glare</li>
-      <li>Wait until your fish are out of hiding</li>
+      <li>Fish hiding in plants? Film a slow sweep of the tank instead</li>
     </ul>
     <button type="button" id="camera-btn" class="btn primary big">Take a photo</button>
     <button type="button" id="gallery-btn" class="btn big outline">Choose from gallery</button>
+    <button type="button" id="sweep-btn" class="btn big soft">Hiding fish? Film a 10-second sweep</button>
     <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
+    <input id="sweep-input" type="file" accept="video/*" hidden>
     <input id="gallery-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
     <p class="muted small center">Test strip reading arrives in the next update.</p>
   </section>
@@ -115,10 +117,10 @@
     <img id="results-photo" alt="Your tank photo" hidden>
     <div id="results-status" role="status" aria-live="polite"></div>
     <div id="results-list" class="list"></div>
-    <p id="results-note" class="muted small" hidden>These are best guesses from a photo. Tap Edit on anything that looks wrong. Saving updates the counts for fish already in My Tank.</p>
+    <p id="results-note" class="muted small" hidden>These are best guesses from a photo. Tap Edit on anything that looks wrong. Scans only add to My Tank or raise a count, they never lower one. Use the Tank tab to remove or reduce.</p>
     <div id="results-actions" class="actions" hidden>
       <button type="button" id="rescan" class="btn">Rescan</button>
-      <button type="button" id="save-scan" class="btn primary">Save to My Tank</button>
+      <button type="button" id="save-scan" class="btn primary">Add to My Tank</button>
     </div>
   </section>
 

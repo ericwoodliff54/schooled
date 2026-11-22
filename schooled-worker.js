@@ -54,6 +54,12 @@ const ZOOM_NOTE =
   'Use the zoomed pieces to identify species and to count. Fish near the edges of a piece may also appear in the next piece, ' +
   'so count each real fish only once. Return ONE combined list for the whole tank, with counts for the whole tank, not per piece.';
 
+const SWEEP_NOTE =
+  'These images are frames from one short video sweeping across the same tank, so the same fish show up in several frames, ' +
+  'in different places, and some fish are hidden in most frames and only visible in a few. ' +
+  'Use all frames together. Return ONE combined list. For each kind, the count must be the largest number you can see together in any ONE frame; ' +
+  'do not add counts across frames, because the same fish appears repeatedly. Use the sharpest frames to decide the species.';
+
 const SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -165,23 +171,30 @@ async function scan(request, env, origin) {
   }
   if (total > MAX_TOTAL_CHARS) return json({ ok: false, error: 'too_large' }, 413, origin);
 
-  const imageParts = [];
-  list.forEach((data, i) => {
-    if (list.length > 1) imageParts.push({ text: i === 0 ? 'Whole tank:' : 'Zoomed piece ' + i + ' of ' + (list.length - 1) + ':' });
-    imageParts.push({ inline_data: { mime_type: mime, data } });
-  });
-  const promptText = list.length > 1 ? PROMPT + ' ' + ZOOM_NOTE : PROMPT;
+  const mode = ['single', 'zoom', 'sweep'].includes(body.mode) ? body.mode : (list.length > 1 ? 'zoom' : 'single');
+  function buildParts(withRes) {
+    const parts = [];
+    list.forEach((data, i) => {
+      if (mode === 'zoom' && list.length > 1) parts.push({ text: i === 0 ? 'Whole tank:' : 'Zoomed piece ' + i + ' of ' + (list.length - 1) + ':' });
+      if (mode === 'sweep') parts.push({ text: 'Frame ' + (i + 1) + ' of ' + list.length + ':' });
+      const part = { inline_data: { mime_type: mime, data } };
+      if (withRes && mode === 'single') part.media_resolution = { level: 'MEDIA_RESOLUTION_ULTRA_HIGH' };
+      parts.push(part);
+    });
+    return parts;
+  }
+  const promptText = mode === 'zoom' ? PROMPT + ' ' + ZOOM_NOTE : mode === 'sweep' ? PROMPT + ' ' + SWEEP_NOTE : PROMPT;
 
   const primary = env.GEMINI_MODEL || DEFAULT_MODEL;
   const models = [primary, FALLBACK_MODEL, LAST_RESORT_MODEL].filter((m, i, all) => all.indexOf(m) === i);
   const started = Date.now();
 
-  async function ask(model, withThinking, ms) {
+  async function ask(model, withThinking, ms, withRes) {
     const generationConfig = { responseMimeType: 'application/json', responseSchema: SCHEMA };
     if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
     const payload = {
       systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
-      contents: [{ role: 'user', parts: [{ text: promptText }].concat(imageParts) }],
+      contents: [{ role: 'user', parts: [{ text: promptText }].concat(buildParts(withRes)) }],
       generationConfig
     };
     return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
@@ -203,11 +216,13 @@ async function scan(request, env, origin) {
     const ms = Math.min(24000, left);
     let res = null;
     try {
-      res = await ask(model, true, ms);
-      if (res.status === 400) res = await ask(model, false, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started))); // model may not accept a thinking level
+      res = await ask(model, true, ms, true);
+      // A model may not accept the per-image resolution or thinking settings: retry with fewer extras.
+      if (res.status === 400) res = await ask(model, true, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started)), false);
+      if (res.status === 400) res = await ask(model, false, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started)), false);
       if ((res.status === 503 || res.status === 429) && TOTAL_BUDGET_MS - (Date.now() - started) > 12000) {
         await new Promise((r) => setTimeout(r, 1200)); // one quick retry when Google says "busy"
-        res = await ask(model, true, Math.min(20000, TOTAL_BUDGET_MS - (Date.now() - started)));
+        res = await ask(model, true, Math.min(20000, TOTAL_BUDGET_MS - (Date.now() - started)), true);
       }
     } catch (err) {
       const timedOut = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
@@ -233,7 +248,7 @@ async function scan(request, env, origin) {
     const result = sanitize(JSON.parse(text));
     const u = data.usageMetadata || {};
     const usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
-    return json(Object.assign({ ok: true, model: usedModel, usage }, result), 200, origin);
+    return json(Object.assign({ ok: true, model: usedModel, usage, mode }, result), 200, origin);
   } catch (err) {
     const why = data && ((data.promptFeedback && data.promptFeedback.blockReason) || (data.candidates && data.candidates[0] && data.candidates[0].finishReason)) || String(err && err.message || err);
     return json({ ok: false, error: 'ai_error', ai_status: 200, ai_detail: 'bad reply: ' + String(why).slice(0, 120) }, 502, origin);
@@ -248,7 +263,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 11: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 12: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/scan') {

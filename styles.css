@@ -449,3 +449,9 @@ input::placeholder { color: #8DA3A9; }
 
 .item .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 3px; }
 .debug { font-size: 11.5px; color: #7A8F95; margin: -4px 2px 8px; }
+
+.btn.soft { background: var(--mist); border-color: transparent; color: var(--teal-dark); }
+.btn.soft:active { background: #D3ECE9; }
+.hint-new, .hint-have { font-size: 12px; font-weight: 700; margin-top: 1px; }
+.hint-new { color: var(--teal); }
+.hint-have { color: var(--muted); }

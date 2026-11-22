@@ -6,7 +6,8 @@
 // ---------------------------------------------------------------
 const WORKER_URL = 'https://schooled-worker.ericwoodliff.workers.dev';
 const STORE_KEY = 'schooled.v1';
-const MAX_PHOTO_SIDE = 1280; // the whole-tank picture
+const MAX_PHOTO_SIDE = 1280; // preview and zoom-set whole picture
+const SINGLE_SIDE = 2048; // the one sharp picture sent first
 const MAX_ZOOM_SIDE = 1024; // each zoomed piece
 const MIN_SIDE_FOR_ZOOM = 1500; // smaller photos have no extra detail to zoom into
 
@@ -131,7 +132,11 @@ function addToTank(name, count, mode) {
   if (!clean) return;
   const key = clean.toLowerCase();
   const existing = state.fish.find((f) => f.name.toLowerCase() === key);
-  if (existing) existing.count = mode === 'add' ? existing.count + count : count;
+  if (existing) {
+    if (mode === 'add') existing.count += count;
+    else if (mode === 'scan') existing.count = Math.max(existing.count, count); // a scan can only add or confirm, never lower
+    else existing.count = count;
+  }
   else state.fish.push({ name: clean, count });
 }
 
@@ -288,6 +293,12 @@ function wirePhotoInput(buttonId, inputId) {
 }
 wirePhotoInput('camera-btn', 'camera-input');
 wirePhotoInput('gallery-btn', 'gallery-input');
+$('sweep-btn').addEventListener('click', () => $('sweep-input').click());
+$('sweep-input').addEventListener('change', (event) => {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (file) startSweep(file);
+});
 
 $('rescan').addEventListener('click', () => showView('scan'));
 $('results-back').addEventListener('click', () => showView('scan'));
@@ -353,32 +364,130 @@ function drawToJpeg(source, sx, sy, sw, sh, maxSide, quality) {
   return canvas.toDataURL('image/jpeg', quality);
 }
 
-// Makes the whole-tank picture plus overlapping zoomed pieces, so small and far fish keep their detail.
-async function prepareImage(file) {
-  const image = await loadImage(file);
+// The first, cheap request: one sharp picture of the whole tank.
+function makeSingle(image) {
+  const sharp = drawToJpeg(image.source, 0, 0, image.width, image.height, SINGLE_SIDE, 0.8);
+  const preview = drawToJpeg(image.source, 0, 0, image.width, image.height, MAX_PHOTO_SIDE, 0.82);
+  return { images: [sharp.split(',')[1]], previewUrl: preview };
+}
+
+function canZoom(image) {
+  return Math.max(image.width, image.height) >= MIN_SIDE_FOR_ZOOM;
+}
+
+// The closer look: the whole tank plus overlapping zoomed pieces, so small and far fish keep their detail.
+function makeZoomSet(image) {
   const W = image.width;
   const H = image.height;
-  const whole = drawToJpeg(image.source, 0, 0, W, H, MAX_PHOTO_SIDE, 0.82);
-  const images = [whole.split(',')[1]];
-
-  if (Math.max(W, H) >= MIN_SIDE_FOR_ZOOM) {
-    const landscape = W >= H * 1.3;
-    const cols = landscape ? 3 : 2;
-    const rows = landscape ? 2 : 2;
-    const overlap = 0.2;
-    const tileW = W / (cols - (cols - 1) * overlap);
-    const tileH = H / (rows - (rows - 1) * overlap);
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const sx = Math.min(W - tileW, c * tileW * (1 - overlap));
-        const sy = Math.min(H - tileH, r * tileH * (1 - overlap));
-        const piece = drawToJpeg(image.source, Math.max(0, sx), Math.max(0, sy), tileW, tileH, MAX_ZOOM_SIDE, 0.85);
-        images.push(piece.split(',')[1]);
-      }
+  const images = [drawToJpeg(image.source, 0, 0, W, H, MAX_PHOTO_SIDE, 0.82).split(',')[1]];
+  const landscape = W >= H * 1.3;
+  const cols = landscape ? 3 : 2;
+  const rows = 2;
+  const overlap = 0.2;
+  const tileW = W / (cols - (cols - 1) * overlap);
+  const tileH = H / (rows - (rows - 1) * overlap);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const sx = Math.min(W - tileW, c * tileW * (1 - overlap));
+      const sy = Math.min(H - tileH, r * tileH * (1 - overlap));
+      const piece = drawToJpeg(image.source, Math.max(0, sx), Math.max(0, sy), tileW, tileH, MAX_ZOOM_SIDE, 0.85);
+      images.push(piece.split(',')[1]);
     }
   }
-  image.done();
-  return { images, previewUrl: whole };
+  return images;
+}
+
+// ---------- Sweep video: pick the sharpest frames ----------
+const SWEEP_SAMPLES = 12;
+const SWEEP_KEEP = 5;
+const SWEEP_MAX_SECONDS = 20;
+
+function waitFor(target, okEvent, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { cleanup(); reject(new Error('bad_video')); }, ms);
+    const onOk = () => { cleanup(); resolve(); };
+    const onErr = () => { cleanup(); reject(new Error('bad_video')); };
+    function cleanup() {
+      clearTimeout(timer);
+      target.removeEventListener(okEvent, onOk);
+      target.removeEventListener('error', onErr);
+    }
+    target.addEventListener(okEvent, onOk);
+    target.addEventListener('error', onErr);
+  });
+}
+
+// Higher number = sharper picture (variance of a simple edge filter on a small grayscale copy).
+function sharpness(canvas) {
+  const w = 160;
+  const h = Math.max(1, Math.round(160 * canvas.height / canvas.width));
+  const small = document.createElement('canvas');
+  small.width = w;
+  small.height = h;
+  const ctx = small.getContext('2d');
+  ctx.drawImage(canvas, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h).data;
+  const gray = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114;
+  let sum = 0;
+  let sumSq = 0;
+  let n = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const lap = 4 * gray[i] - gray[i - 1] - gray[i + 1] - gray[i - w] - gray[i + w];
+      sum += lap;
+      sumSq += lap * lap;
+      n++;
+    }
+  }
+  const mean = sum / (n || 1);
+  return sumSq / (n || 1) - mean * mean;
+}
+
+async function extractSweepFrames(file) {
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+  const url = URL.createObjectURL(file);
+  try {
+    video.src = url;
+    await waitFor(video, 'loadedmetadata', 12000);
+    const length = Math.min(video.duration, SWEEP_MAX_SECONDS);
+    if (!isFinite(length) || length < 1) throw new Error('bad_video');
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) throw new Error('bad_video');
+    const scale = Math.min(1, MAX_PHOTO_SIDE / Math.max(vw, vh));
+    const frames = [];
+    for (let i = 0; i < SWEEP_SAMPLES; i++) {
+      const t = 0.3 + (length - 0.6) * (i / (SWEEP_SAMPLES - 1));
+      video.currentTime = Math.max(0, Math.min(t, length - 0.05));
+      await waitFor(video, 'seeked', 6000);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(vw * scale);
+      canvas.height = Math.round(vh * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      frames.push({ index: i, score: sharpness(canvas), url: canvas.toDataURL('image/jpeg', 0.8) });
+    }
+    // Keep the sharpest frames, but not neighbours (different moments show different fish).
+    const picked = [];
+    const bySharpness = frames.slice().sort((a, b) => b.score - a.score);
+    bySharpness.forEach((f) => {
+      if (picked.length < SWEEP_KEEP && picked.every((p) => Math.abs(p.index - f.index) >= 2)) picked.push(f);
+    });
+    // Not enough spread-out sharp frames? Fill with the next sharpest, even if close together.
+    bySharpness.forEach((f) => {
+      if (picked.length < SWEEP_KEEP && !picked.includes(f)) picked.push(f);
+    });
+    picked.sort((a, b) => a.index - b.index);
+    if (!picked.length) throw new Error('bad_video');
+    return { images: picked.map((f) => f.url.split(',')[1]), previewUrl: picked[0].url };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 function friendlyError(code, status) {
@@ -392,48 +501,110 @@ function friendlyError(code, status) {
   }
 }
 
+async function askWorker(images, mode, timeoutMs) {
+  const res = await fetch(WORKER_URL + '/scan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ images, mime: 'image/jpeg', mode }),
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    throw new Error((data.error === 'ai_error' || data.error === 'ai_busy') && data.ai_detail !== undefined
+      ? 'The photo reader had trouble (' + (data.ai_detail || 'error ' + data.ai_status) + '). Please try again in a moment.'
+      : friendlyError(data.error, res.status));
+  }
+  return data;
+}
+
+// A cheap first look is not always enough: far-away or hard-to-read tanks get a closer look.
+function needsCloserLook(data) {
+  const unsure = (data.species || []).filter((s) => s.kind !== 'plant' && s.confidence < 0.6).length;
+  return data.is_aquarium !== false && (data.too_far === true || unsure >= 2);
+}
+
+function applyResult(data, mode, tokensSoFar) {
+  if (data.is_aquarium === false) {
+    pending.error = "That doesn't look like an aquarium. Try a photo of your tank.";
+  } else if (!data.species || !data.species.length) {
+    pending.error = "Couldn't spot any fish or plants. Try getting closer, with less glare.";
+  }
+  pending.species = (data.species || []).map((s) => ({
+    name: s.common_name,
+    scientific: s.scientific_name || '',
+    kind: s.kind || 'fish',
+    count: s.count,
+    confidence: s.confidence,
+    alternatives: Array.isArray(s.alternatives) ? s.alternatives : [],
+    editing: false
+  }));
+  pending.tips = data.photo_tips || '';
+  if (data.too_far && mode !== 'sweep' && !pending.tips) pending.tips = 'Some fish look small here, so names may be off. For better results, film a slow 10-second sweep of the tank.';
+  else if (data.too_far && mode !== 'sweep') pending.tips += ' A slow 10-second sweep video can catch more fish.';
+  const used = data.usage ? (data.usage.input + data.usage.output) : 0;
+  pending.debug = data.model ? 'Read by ' + data.model + ' (' + (mode || data.mode) + ' scan' + (data.usage ? ', ' + data.usage.input + ' in, ' + data.usage.output + ' out tokens' : '') + (tokensSoFar ? '; first look used ' + tokensSoFar + ' more' : '') + ')' : '';
+  return used;
+}
+
+function showScanError(err) {
+  if (err && err.name === 'TimeoutError') pending.error = 'That took too long. Try again, or try a smaller or clearer photo.';
+  else if (err instanceof TypeError) pending.error = "Couldn't reach the server. Check your connection and try again.";
+  else if (err.message === 'bad_image') pending.error = "This device couldn't open that photo. Try the Take a photo button, or pick a different picture.";
+  else if (err.message === 'bad_video') pending.error = "This device couldn't read that video. Try filming it again with the Sweep button, or use a photo instead.";
+  else pending.error = err.message || friendlyError();
+}
+
 async function startScan(file) {
-  pending = { photoUrl: '', species: [], tips: '', loading: true, error: '' };
+  pending = { photoUrl: '', species: [], tips: '', loading: true, error: '', note: '' };
   showView('results');
   renderResults();
 
+  let image = null;
   try {
-    const prepared = await prepareImage(file);
-    pending.photoUrl = prepared.previewUrl;
+    image = await loadImage(file);
+    const single = makeSingle(image);
+    pending.photoUrl = single.previewUrl;
     renderResults();
 
-    const res = await fetch(WORKER_URL + '/scan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ images: prepared.images, mime: 'image/jpeg' }),
-      signal: AbortSignal.timeout(75000)
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) throw new Error((data.error === 'ai_error' || data.error === 'ai_busy') && data.ai_detail !== undefined ? 'The photo reader had trouble (' + (data.ai_detail || 'error ' + data.ai_status) + '). Please try again in a moment.' : friendlyError(data.error, res.status));
+    let data = await askWorker(single.images, 'single', 60000);
+    let mode = 'single';
+    let firstTokens = 0;
 
-    if (data.is_aquarium === false) {
-      pending.error = "That doesn't look like an aquarium. Try a photo of your tank.";
-    } else if (!data.species || !data.species.length) {
-      pending.error = "Couldn't spot any fish or plants. Try getting closer, with less glare.";
+    if (needsCloserLook(data) && canZoom(image)) {
+      firstTokens = data.usage ? data.usage.input + data.usage.output : 0;
+      pending.loadingNote = 'Taking a closer look at the small fish…';
+      renderResults();
+      try {
+        data = await askWorker(makeZoomSet(image), 'zoom', 75000);
+        mode = 'zoom';
+      } catch (zoomError) {
+        // Keep the first look if the closer look fails.
+        firstTokens = 0;
+      }
     }
-    pending.species = (data.species || []).map((s) => ({
-      name: s.common_name,
-      scientific: s.scientific_name || '',
-      kind: s.kind || 'fish',
-      count: s.count,
-      confidence: s.confidence,
-      alternatives: Array.isArray(s.alternatives) ? s.alternatives : [],
-      editing: false
-    }));
-    pending.tips = data.photo_tips || '';
-    if (data.too_far && !pending.tips) pending.tips = 'Some fish look small here, so names may be off. For better results, take a closer photo of each part of the tank.';
-    else if (data.too_far) pending.tips += ' Closer photos of each part of the tank will give better names.';
-    pending.debug = data.model ? 'Read by ' + data.model + (data.usage ? ' (' + data.usage.input + ' in, ' + data.usage.output + ' out tokens)' : '') : '';
+    applyResult(data, mode, mode === 'zoom' ? firstTokens : 0);
   } catch (err) {
-    if (err && err.name === 'TimeoutError') pending.error = 'That took too long. Try again, or try a smaller or clearer photo.';
-    else if (err instanceof TypeError) pending.error = "Couldn't reach the server. Check your connection and try again.";
-    else if (err.message === 'bad_image') pending.error = "This device couldn't open that photo. Try the Take a photo button, or pick a different picture.";
-    else pending.error = err.message || friendlyError();
+    showScanError(err);
+  } finally {
+    if (image) image.done();
+  }
+  pending.loading = false;
+  renderResults();
+}
+
+async function startSweep(file) {
+  pending = { photoUrl: '', species: [], tips: '', loading: true, error: '', loadingNote: 'Picking the sharpest moments from your video…' };
+  showView('results');
+  renderResults();
+  try {
+    const sweep = await extractSweepFrames(file);
+    pending.photoUrl = sweep.previewUrl;
+    pending.loadingNote = 'Looking for fish that were hiding…';
+    renderResults();
+    const data = await askWorker(sweep.images, 'sweep', 75000);
+    applyResult(data, 'sweep', 0);
+  } catch (err) {
+    showScanError(err);
   }
   pending.loading = false;
   renderResults();
@@ -447,7 +618,7 @@ function confidenceLabel(c) {
 
 const LOADING_STEPS = [
   'Reading your photo…',
-  'Zooming in on small fish…',
+  'Identifying each species…',
   'Counting what\'s in the tank…',
   'Almost there…'
 ];
@@ -468,7 +639,7 @@ function renderResults() {
 
   if (pending.loading) {
     $('results-title').textContent = 'Looking at your tank…';
-    const msg = el('span', { text: LOADING_STEPS[0] });
+    const msg = el('span', { text: pending.loadingNote || LOADING_STEPS[0] });
     status.append(el('div', { class: 'status-card' }, el('div', { class: 'spinner' }), msg));
     for (let i = 0; i < 3; i++) {
       list.append(el('div', { class: 'skeleton' },
@@ -479,6 +650,7 @@ function renderResults() {
     let step = 0;
     loadingTimer = setInterval(() => {
       if (!msg.isConnected || !pending || !pending.loading) { clearInterval(loadingTimer); return; }
+      if (pending.loadingNote) { msg.textContent = pending.loadingNote; return; }
       step = Math.min(step + 1, LOADING_STEPS.length - 1);
       msg.textContent = LOADING_STEPS[step];
     }, 2800);
@@ -504,6 +676,12 @@ function renderResults() {
   $('save-scan').hidden = n === 0;
 }
 
+function inTankHint(sp) {
+  const have = state.fish.find((f) => f.name.toLowerCase() === sp.name.trim().toLowerCase());
+  if (!have) return el('span', { class: 'hint-new', text: 'New to your tank' });
+  return el('span', { class: 'hint-have', text: have.count >= sp.count ? 'Already in your tank (' + have.count + ')' : 'Raises your count from ' + have.count });
+}
+
 function resultRow(sp) {
   const [label, tone] = confidenceLabel(sp.confidence);
   const alts = (sp.alternatives || []).filter((n) => n && n.toLowerCase() !== sp.name.toLowerCase());
@@ -519,6 +697,7 @@ function resultRow(sp) {
     kindAvatar(sp.kind),
     el('div', { class: 'grow' },
       el('span', { class: 'name', text: sp.name + (sp.count > 1 ? '\u00a0×\u00a0' + sp.count : '') }),
+      inTankHint(sp),
       el('div', { class: 'meta' },
         el('span', { class: 'pill ' + tone, text: label }),
         sp.scientific ? el('span', { class: 'sub sci', text: sp.scientific }) : (sp.kind ? el('span', { class: 'sub', text: sp.kind }) : null)
@@ -556,7 +735,7 @@ function editRow(sp, index) {
 
 $('save-scan').addEventListener('click', () => {
   if (!pending) return;
-  pending.species.forEach((sp) => addToTank(sp.name, sp.count, 'set'));
+  pending.species.forEach((sp) => addToTank(sp.name, sp.count, 'scan'));
   saveState();
   pending = null;
   showView('tank');
