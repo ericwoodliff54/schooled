@@ -4,7 +4,8 @@
 // Optional plain variable: GEMINI_MODEL (to change models without editing code).
 
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io'];
-const DEFAULT_MODEL = 'gemini-3.8-flash';
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+const FALLBACK_MODEL = 'gemini-3.6-flash';
 const MAX_IMAGE_CHARS = 2800000; // about 2 MB of photo data
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
@@ -125,33 +126,45 @@ async function scan(request, env, origin) {
   if (!image || !mime || !/^[A-Za-z0-9+/=]+$/.test(image)) return json({ ok: false, error: 'bad_image' }, 400, origin);
   if (image.length > MAX_IMAGE_CHARS) return json({ ok: false, error: 'too_large' }, 413, origin);
 
-  const model = env.GEMINI_MODEL || DEFAULT_MODEL;
-  const payload = {
-    systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
-    contents: [{ role: 'user', parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data: image } }] }],
-    generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: SCHEMA, thinkingConfig: { thinkingLevel: 'low' } }
-  };
+  const primary = env.GEMINI_MODEL || DEFAULT_MODEL;
+  const models = primary === FALLBACK_MODEL ? [primary] : [primary, FALLBACK_MODEL];
 
-  let upstream;
-  try {
-    upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+  async function ask(model, withThinking) {
+    const generationConfig = { responseMimeType: 'application/json', responseSchema: SCHEMA };
+    if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+    const payload = {
+      systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
+      contents: [{ role: 'user', parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data: image } }] }],
+      generationConfig
+    };
+    return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(40000)
+      signal: AbortSignal.timeout(22000)
     });
-  } catch (err) {
-    const timedOut = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
-    return json({ ok: false, error: 'ai_busy', ai_status: 0, ai_detail: timedOut ? 'Google took longer than 40 seconds to answer' : 'could not reach Google: ' + String(err && err.message || err).slice(0, 100) }, 502, origin);
   }
 
-  if (!upstream.ok) {
-    // Status only. The key and the photo are never echoed back.
-    const busy = upstream.status === 429 || upstream.status === 503;
+  let upstream = null;
+  let failure = null;
+  for (const model of models) {
+    try {
+      upstream = await ask(model, true);
+      if (upstream.status === 400) upstream = await ask(model, false); // model may not accept a thinking level
+    } catch (err) {
+      const timedOut = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
+      failure = { error: 'ai_busy', ai_status: 0, ai_detail: model + ': ' + (timedOut ? 'no answer after 22 seconds' : 'could not reach Google') };
+      upstream = null;
+      continue;
+    }
+    if (upstream.ok) { failure = null; break; }
     let detail = '';
-    try { detail = String(((await upstream.json()).error || {}).message || '').slice(0, 160); } catch (e) {}
-    return json({ ok: false, error: busy ? 'ai_busy' : 'ai_error', ai_status: upstream.status, ai_detail: detail }, 502, origin);
+    try { detail = String(((await upstream.json()).error || {}).message || '').slice(0, 140); } catch (e) {}
+    const busy = upstream.status === 429 || upstream.status === 503;
+    failure = { error: busy ? 'ai_busy' : 'ai_error', ai_status: upstream.status, ai_detail: model + ': ' + detail };
+    upstream = null;
   }
+  if (!upstream) return json(Object.assign({ ok: false }, failure), 502, origin);
 
   let data = null;
   try {
