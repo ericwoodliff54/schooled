@@ -264,3 +264,10 @@ input[type="text"], input[type="number"] {
   cursor: pointer;
 }
 #nav button[aria-current="page"] { color: var(--teal); font-weight: 600; }
+
+.alts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.chip {
+  border: 1px solid #B9C8C5; background: #fff; color: var(--teal);
+  border-radius: 16px; min-height: 32px; padding: 0 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.chip:active { background: #E6F2F1; }

@@ -365,9 +365,12 @@ async function startScan(file) {
       kind: s.kind || 'fish',
       count: s.count,
       confidence: s.confidence,
+      alternatives: Array.isArray(s.alternatives) ? s.alternatives : [],
       editing: false
     }));
     pending.tips = data.photo_tips || '';
+    if (data.too_far && !pending.tips) pending.tips = 'Some fish look small here, so names may be off. For better results, take a closer photo of each part of the tank.';
+    else if (data.too_far) pending.tips += ' Closer photos of each part of the tank will give better names.';
     pending.debug = data.model ? 'Read by ' + data.model + (data.usage ? ' (' + data.usage.input + ' in, ' + data.usage.output + ' out tokens)' : '') : '';
   } catch (err) {
     if (err && err.name === 'TimeoutError') pending.error = 'That took too long. Try again, or try a smaller or clearer photo.';
@@ -426,10 +429,20 @@ function renderResults() {
 function resultRow(sp) {
   const [label, tone] = confidenceLabel(sp.confidence);
   const sub = [sp.scientific, sp.kind].filter(Boolean).join(' · ');
+  const alts = (sp.alternatives || []).filter((n) => n && n.toLowerCase() !== sp.name.toLowerCase());
+  const altRow = alts.length && sp.confidence < 0.9
+    ? el('div', { class: 'alts' },
+        el('span', { class: 'sub', text: 'Could also be:' }),
+        ...alts.map((n) => el('button', {
+          type: 'button', class: 'chip', text: n,
+          onclick: () => { sp.name = n; sp.scientific = ''; sp.alternatives = []; sp.confidence = 1; renderResults(); }
+        })))
+    : null;
   return el('div', { class: 'item' },
     el('div', { class: 'grow' },
       el('span', { class: 'name', text: sp.name + (sp.count > 1 ? ' × ' + sp.count : '') }),
-      sub ? el('span', { class: 'sub', text: sub }) : null
+      sub ? el('span', { class: 'sub', text: sub }) : null,
+      altRow
     ),
     el('span', { class: 'pill ' + tone, text: label }),
     el('button', { type: 'button', class: 'btn small', text: 'Edit', onclick: () => { sp.editing = true; renderResults(); } })

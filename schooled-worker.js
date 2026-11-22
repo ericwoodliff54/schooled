@@ -20,11 +20,18 @@ const INSTRUCTIONS =
   'Be honest about uncertainty. Never invent species that are not visible.';
 
 const PROMPT =
-  'Look at this aquarium photo. List each distinct kind of fish, shrimp, snail, or plant you can see. ' +
+  'Look at this aquarium photo. Check the whole picture, including the edges, the background, the substrate and hiding spots, ' +
+  'because small or distant fish are easy to miss. List each distinct kind of fish, shrimp, snail, or plant you can see. ' +
   'For each: give the common name hobbyists use, the scientific name only if you are reasonably sure, ' +
   'the kind (fish, shrimp, snail, plant, or other), how many individuals are visible (count only what you can see), ' +
-  'and a confidence from 0 to 1. Use lower confidence for look-alike species, blurry or partly hidden animals. ' +
-  'If you cannot tell, use a name like "Unidentified tetra" with low confidence. ' +
+  'and a confidence from 0 to 1. ' +
+  'Only use confidence 0.85 or higher when the features that tell the species apart are clearly visible. ' +
+  'Many species look alike: for example neon and cardinal tetras, different corydoras (skunk, julii, panda and others), ' +
+  'rasboras, rainbowfish, guppies versus endlers, and algae eaters. For look-alikes, or for fish that are small, blurry, ' +
+  'far away or partly hidden, use confidence 0.5 to 0.8 and put the other likely species in "alternatives" ' +
+  '(up to 3 common names, best guess first). Leave "alternatives" empty when you are sure. ' +
+  'Do not name a species just because it is common. If you cannot tell, use a name like "Unidentified tetra" with low confidence. ' +
+  'Set too_far to true if many fish are too small or far away to identify reliably. ' +
   'If the photo is not an aquarium, set is_aquarium to false and return no species. ' +
   'If photo quality limited your answer (glare, too far, dark), put one short tip in photo_tips, otherwise leave it empty.';
 
@@ -41,11 +48,13 @@ const SCHEMA = {
           scientific_name: { type: 'STRING' },
           kind: { type: 'STRING', enum: ['fish', 'shrimp', 'snail', 'plant', 'other'] },
           count: { type: 'INTEGER' },
-          confidence: { type: 'NUMBER' }
+          confidence: { type: 'NUMBER' },
+          alternatives: { type: 'ARRAY', items: { type: 'STRING' } }
         },
         required: ['common_name', 'kind', 'count', 'confidence']
       }
     },
+    too_far: { type: 'BOOLEAN' },
     photo_tips: { type: 'STRING' }
   },
   required: ['is_aquarium', 'species']
@@ -100,10 +109,15 @@ function sanitize(parsed) {
           scientific_name: clean(s.scientific_name, 80),
           kind,
           count,
-          confidence
+          confidence,
+          alternatives: (Array.isArray(s.alternatives) ? s.alternatives : [])
+            .map((x) => clean(x, 60))
+            .filter((x) => x && x.toLowerCase() !== clean(s.common_name, 60).toLowerCase())
+            .slice(0, 3)
         };
       })
       .filter((s) => s.common_name),
+    too_far: parsed.too_far === true,
     photo_tips: clean(parsed.photo_tips, 160)
   };
 }
@@ -189,7 +203,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 7: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 8: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/scan') {
