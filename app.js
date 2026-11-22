@@ -1198,6 +1198,7 @@ let fishCheckFrom = 'home';
 let waterFrom = 'explore';
 let menuTank = '';
 function closeAddMenu() {
+  if (!$('tank-add-menu') || !$('tank-add-fish')) return;
   $('tank-add-menu').hidden = true;
   $('tank-add-fish').setAttribute('aria-expanded', 'false');
 }
@@ -1214,7 +1215,7 @@ function renderTankAddMenu() {
     featureBtn({ icon: 'plus', color: 'orange', title: 'Add by name', text: 'Search the list and add it yourself',
       go: () => { closeAddMenu(); tankSection = 'fish'; renderTank(); const inp = addSearch.root.querySelector('input'); if (inp) { inp.scrollIntoView({ block: 'center' }); inp.focus(); } } }));
 }
-$('tank-add-fish').addEventListener('click', () => {
+if ($('tank-add-fish')) $('tank-add-fish').addEventListener('click', () => {
   const box = $('tank-add-menu');
   box.hidden = !box.hidden;
   $('tank-add-fish').setAttribute('aria-expanded', String(!box.hidden));
@@ -1573,7 +1574,7 @@ function renderTank() {
   $('tank-photo-gallery').textContent = t.photo ? 'Change' : 'Choose photo';
 
   if (menuTank !== t.id) { menuTank = t.id; closeAddMenu(); }
-  $('tank-tools').replaceChildren(...TANK_TOOLS.map(featureBtn));
+  if ($('tank-tools')) $('tank-tools').replaceChildren(...TANK_TOOLS.map(featureBtn));
   const nameInput = $('tank-title-input');
   if (document.activeElement !== nameInput) nameInput.value = t.name;
 
