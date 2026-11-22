@@ -1,0 +1,75 @@
+# Species used by the accuracy check (names must match the species list). One per line.
+Neon Tetra
+Cardinal Tetra
+Green Neon Tetra
+Ember Tetra
+Zebra Danio
+Guppy
+Platy
+Variatus Platy
+Swordtail
+Molly
+Betta
+Honey Gourami
+Dwarf Gourami
+Pearl Gourami
+Cherry Barb
+Rosy Barb
+Tiger Barb
+Harlequin Rasbora
+Chili Rasbora
+Kuhli Loach
+Clown Loach
+Bristlenose Pleco
+Siamese Algae Eater
+Pea Puffer
+Goldfish
+Lionhead Goldfish
+Panda Corydoras
+Bronze Corydoras
+Skunk Corydoras
+Boesemani Rainbowfish
+Turquoise Rainbowfish
+Rummy-Nose Tetra
+Brilliant Rummy-Nose Tetra
+Serpae Tetra
+Black Skirt Tetra
+Congo Tetra
+Hatchetfish
+Pencilfish
+Angelfish
+German Blue Ram
+Bolivian Ram
+Kribensis
+Discus
+Oscar
+Convict Cichlid
+Peacock Cichlid
+Red Peacock
+Zebra Mbuna
+Ocellaris Clownfish
+Percula Clownfish
+Yellow Tang
+Regal Blue Tang
+Powder Blue Tang
+Royal Gramma
+Banggai Cardinalfish
+Firefish Goby
+Mandarin Dragonet
+Bicolor Angelfish
+Hammer Coral
+Torch Coral
+Duncan Coral
+Zoanthids
+Mushroom Coral
+Montipora
+Acropora
+Amazon Sword
+Anubias
+Java Fern
+Vallisneria
+Cryptocoryne
+Hornwort
+Cherry Shrimp
+Amano Shrimp
+Zebra Nerite Snail

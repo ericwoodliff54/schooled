@@ -160,7 +160,7 @@ const SCHEMA = {
 function corsHeaders(origin) {
   const headers = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Test-Key',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin'
   };
@@ -173,6 +173,12 @@ function json(body, status, origin) {
     status,
     headers: Object.assign({ 'Content-Type': 'application/json' }, corsHeaders(origin))
   });
+}
+
+// Accuracy-check runs send a secret key so they skip the per-IP limit. Without the TEST_KEY secret this is always false.
+function isTester(request, env) {
+  const k = request.headers.get('X-Test-Key');
+  return !!(env.TEST_KEY && k && k === env.TEST_KEY);
 }
 
 function rateLimited(ip) {
@@ -357,7 +363,7 @@ async function scan(request, env, origin) {
   if (!env.GEMINI_API_KEY) return json({ ok: false, error: 'server_not_configured' }, 500, origin);
 
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  if (rateLimited(ip)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
+  if (!isTester(request, env) && rateLimited(ip)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
 
   let body;
   try {
@@ -739,7 +745,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 21: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 22: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {
