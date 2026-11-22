@@ -32,7 +32,12 @@ const PROMPT =
   'rasboras, rainbowfish, guppies versus endlers, and algae eaters. For look-alikes, or for fish that are small, blurry, ' +
   'far away or partly hidden, use confidence 0.5 to 0.8 and put the other likely species in "alternatives" ' +
   '(up to 3 common names, best guess first). Leave "alternatives" empty when you are sure. ' +
-  'Do not name a species just because it is common. If you cannot tell, use a name like "Unidentified tetra" with low confidence. ' +
+  'Always name a specific species, strain or color morph that hobbyists use as a trade name, never a broad group. ' +
+  'For example "Electric Yellow Lab" or "Red Zebra", not "African cichlid"; "Electric Blue Ram", not "dwarf cichlid"; "Cardinal Tetra", not "tetra". ' +
+  'Give your single best specific guess, with lower confidence if you are unsure, and put the next most likely specific names in "alternatives". ' +
+  'Fish that look clearly different from each other (different color, pattern or body shape) must be separate entries, even if each has only one or two individuals. ' +
+  'Never lump different-looking fish into one entry or one count. Some cichlids are hybrids or unusual color morphs; if so, say "likely hybrid" in the name. ' +
+  'Only as a last resort, when a fish is too small or blurry to guess a specific name, use "Unidentified" plus the group (for example "Unidentified tetra") with confidence below 0.4. ' +
   'Set too_far to true if many fish are too small or far away to identify reliably. ' +
   'If the photo is not an aquarium, set is_aquarium to false and return no species. ' +
   'If photo quality limited your answer (glare, too far, dark), put one short tip in photo_tips, otherwise leave it empty.';
@@ -224,7 +229,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 9: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 10: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/scan') {
