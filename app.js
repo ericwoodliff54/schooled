@@ -3026,6 +3026,44 @@ function parseTip(tip) {
   return out;
 }
 
+// Short "works with / avoid with" lists for one species, used on the Fish Check result.
+function compatLists(entry, t) {
+  if (!entry || !entry.c || entry.k === 'plant') return null;
+  const saltOnly = entry.w.indexOf('s') !== -1 && entry.w.indexOf('f') === -1 && entry.w.indexOf('b') === -1;
+  const type = t && TYPES.includes(t.type) ? t.type : saltOnly ? 'Saltwater' : 'Freshwater';
+  const codes = type === 'Saltwater' ? ['s'] : type === 'Brackish' ? ['b', 'f'] : ['f'];
+  const wantKinds = entry.k === 'coral' ? ['fish', 'coral', 'invert', 'shrimp', 'snail'] : ['fish', 'shrimp', 'snail', 'invert'];
+  const gal = t ? tankGallons(t) : 0;
+  const good = [], avoid = [];
+  DB.list.forEach((c) => {
+    if (c === entry || !c.c || wantKinds.indexOf(c.k) === -1 || !codes.some((x) => c.w.indexOf(x) !== -1)) return;
+    const issues = pairIssues(entry, c);
+    if (!issues.length) { if (!gal || c.c.g <= gal) good.push(c); }
+    else if (issues.some((i) => i.level === 'bad')) avoid.push(c);
+  });
+  const score = (c) => (c.c.m === 'p' ? 0 : 6) + Math.abs(c.c.z - entry.c.z) * 0.6 + (c.c.y === entry.c.y ? 2 : 0) + (c.c.l === 'h' ? 3 : 0);
+  good.sort((p, q) => score(p) - score(q));
+  avoid.sort((p, q) => (p.c.l === q.c.l ? p.n.localeCompare(q.n) : p.c.l < q.c.l ? -1 : 1));
+  const avoidNames = [];
+  let shrimpAdded = false;
+  avoid.forEach((c) => {
+    if (c.k === 'shrimp') { if (!shrimpAdded) { avoidNames.push('Shrimp'); shrimpAdded = true; } return; }
+    avoidNames.push(c.n);
+  });
+  return { good: good.slice(0, 8).map((c) => c.n), avoid: avoidNames.slice(0, 6) };
+}
+
+function compatBox(entry, t) {
+  const lists = compatLists(entry, t);
+  if (!lists) return null;
+  const col = (cls, title, names, empty) => el('div', { class: 'compat-col ' + cls },
+    el('h3', { text: title }),
+    names.length ? el('ul', {}, ...names.map((n) => el('li', { text: n }))) : el('p', { class: 'muted small', text: empty }));
+  return el('div', { class: 'compat' },
+    col('ok', 'Works with', lists.good, 'No clear matches in the list.'),
+    col('bad', 'Not with', lists.avoid, 'Nothing flagged.'));
+}
+
 function renderFishCheck() {
   const body = $('fishcheck-body');
   body.replaceChildren();
@@ -3115,6 +3153,8 @@ function renderFishCheck() {
     card.append(el('p', { class: 'muted small', text: 'Add a tank on the home screen to see whether this fish fits.' }));
   }
 
+  const box = compatBox(entry, t);
+  if (box) card.append(el('h2', { class: 'dream-list-h', text: 'Tank mates' }), box);
   const buttons = el('div', { class: 'row photo-actions' });
   if (t) buttons.append(el('button', { type: 'button', class: 'btn primary', text: 'Add to ' + tankLabel(t), onclick: () => {
     addToTank(t, fc.name, fc.count, 'add', r.kind);
@@ -3122,9 +3162,8 @@ function renderFishCheck() {
     toast('Added ' + fc.count + ' ' + fc.name + ' to ' + tankLabel(t) + '.');
     renderFishCheck();
   } }));
-  if (entry) buttons.append(el('button', { type: 'button', class: 'btn', text: 'Full details', onclick: () => showSpecies(fc.name, t ? t.id : '') }));
   if (!fc.deep && fc.images) buttons.append(el('button', { type: 'button', class: 'btn', text: 'Look closer', title: 'Runs the photo again with a stronger AI', onclick: () => runFish(true) }));
-  card.append(buttons, el('p', { class: 'muted small', text: 'General guidance, and the AI can be wrong about which species it is. Confirm with the store before you buy.' }));
+  card.append(buttons, el('a', { class: 'link-out', href: 'https://en.wikipedia.org/w/index.php?search=' + encodeURIComponent((entry && usableScientific(entry)) || fc.name), target: '_blank', rel: 'noopener noreferrer', text: 'See more photos and info on Wikipedia \u2197' }), el('p', { class: 'muted small', text: 'General guidance, and the AI can be wrong about which species it is. Confirm with the store before you buy.' }));
   const cl = fishCheckCostLine(fc);
   if (cl) card.append(el('p', { class: 'muted small cost-line', text: cl }));
   body.append(card);
