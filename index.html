@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Schooled</title>
-<meta name="theme-color" content="#0B6B6A">
+<meta name="theme-color" content="#1A63C7">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Schooled">
 <link rel="manifest" href="manifest.json">
@@ -99,33 +99,25 @@
   <!-- Home -->
   <section id="view-home" class="view" hidden>
     <img class="home-banner" src="logo-banner.jpg" alt="Schooled" width="1100" height="463">
-    <p class="tagline">Every fish, accounted for.</p>
-
-    <button type="button" id="home-scan" class="hero">
-      <span>
-        <strong>Scan my tank</strong>
-        <small>Name your fish, plants and corals from a photo</small>
-      </span>
-      <span class="hero-icon"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
-    </button>
-
-    <button type="button" id="home-fishcheck" class="hero alt">
-      <span>
-        <strong>Fish Check</strong>
-        <small>At the store? Photograph a fish and see if it fits your tank</small>
-      </span>
-      <span class="hero-icon"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12c3-5 9-6 13-2l3-2v8l-3-2c-4 4-10 3-13-2z"/><circle cx="15" cy="11" r="0.8"/></svg></span>
-    </button>
-
-    <div id="home-tanks" class="home-tanks"></div>
-
-    <h2 class="home-h">Explore</h2>
-    <div id="home-features" class="features"></div>
+    <div id="home-body" class="home-body"></div>
     <div id="home-misses" class="home-misses"></div>
+  </section>
+
+  <!-- Scan tab -->
+  <section id="view-scanhub" class="view" hidden>
+    <h1>Scan</h1>
+    <div id="scanhub-body" class="scanhub-body"></div>
+  </section>
+
+  <!-- Explore tab -->
+  <section id="view-explore" class="view" hidden>
+    <h1>Explore</h1>
+    <div id="explore-body" class="explore-body"></div>
   </section>
 
   <!-- Scan -->
   <section id="view-scan" class="view" hidden>
+    <button type="button" id="scan-back" class="btn link back">&larr; Scan</button>
     <h1>Scan your tank</h1>
     <p class="muted">Take a clear photo of the whole tank, or choose one from your phone.</p>
     <div class="viewfinder">
@@ -137,7 +129,6 @@
     <button type="button" id="gallery-btn" class="btn big outline">Choose from gallery</button>
     <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
     <input id="gallery-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
-    <p class="muted small center">Test strip reading arrives in the next update.</p>
   </section>
 
   <!-- Results -->
@@ -160,14 +151,10 @@
     </div>
   </section>
 
-  <!-- Water -->
+  <!-- Tap water -->
   <section id="view-water" class="view" hidden>
-    <h1>Water</h1>
-    <div id="water-links" class="features"></div>
-    <div class="card">
-      <h2>Test strip reader</h2>
-      <p class="muted">Coming in the next update. You'll photograph a dipped strip next to its color chart and get plain-English results.</p>
-    </div>
+    <button type="button" id="water-back" class="btn link back">&larr; Explore</button>
+    <h1>Tap water</h1>
     <div class="card" id="water-tap">
       <h2>Your tap water</h2>
       <p class="muted" id="water-tap-text"></p>
@@ -188,40 +175,46 @@
     <button type="button" id="tank-back" class="btn link back">&larr; My Tanks</button>
     <div id="tank-hero" class="tank-hero"></div>
     <button type="button" id="tank-scan" class="btn primary big">Scan this tank</button>
-    <div class="row photo-actions">
-      <button type="button" id="tank-photo-camera" class="btn small">Take photo</button>
-      <button type="button" id="tank-photo-gallery" class="btn small">Choose photo</button>
-      <button type="button" id="tank-photo-remove" class="btn small" hidden>Remove</button>
-    </div>
-    <input id="tank-photo-camera-input" type="file" accept="image/*" capture="environment" hidden>
-    <input id="tank-photo-gallery-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
 
     <input id="tank-title-input" class="title-input" type="text" maxlength="40" placeholder="Tank name" aria-label="Tank name" autocomplete="off">
     <p class="hint small" id="tank-pill-hint">Tap any pill to change it.</p>
     <div id="tank-pills" class="pills"></div>
 
-    <label class="field" id="tank-zip-row" hidden>
-      <span class="label">ZIP code for tap water</span>
-      <input id="tank-zip-edit" type="text" inputmode="numeric" maxlength="5" placeholder="32065" autocomplete="postal-code">
-      <span class="error small" id="tank-zip-error" role="alert" hidden>ZIP code should be 5 digits.</span>
-    </label>
+    <div id="tank-seg" class="seg" role="group" aria-label="Tank sections"></div>
 
-    <label class="field">
-      <span class="label">Notes</span>
-      <textarea id="tank-notes" class="textarea" maxlength="400" rows="3" placeholder="Filter, lights, fertilizer, anything you want to remember"></textarea>
-    </label>
+    <div id="tank-sec-fish">
+      <div id="tank-insights" class="insights"></div>
+      <h2 class="section">Fish and plants</h2>
+      <div id="tank-list" class="list"></div>
+      <div id="add-slot"></div>
+    </div>
+    <div id="tank-sec-water" class="log-body" hidden></div>
+    <div id="tank-sec-care" class="log-body" hidden></div>
 
-    <div id="tank-active"></div>
+    <details class="card tank-settings">
+      <summary>Tank settings</summary>
+      <div class="row photo-actions">
+        <button type="button" id="tank-photo-camera" class="btn small">Take photo</button>
+        <button type="button" id="tank-photo-gallery" class="btn small">Choose photo</button>
+        <button type="button" id="tank-photo-remove" class="btn small" hidden>Remove</button>
+      </div>
+      <input id="tank-photo-camera-input" type="file" accept="image/*" capture="environment" hidden>
+      <input id="tank-photo-gallery-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
 
-    <div id="tank-insights" class="insights"></div>
+      <label class="field" id="tank-zip-row" hidden>
+        <span class="label">ZIP code for tap water</span>
+        <input id="tank-zip-edit" type="text" inputmode="numeric" maxlength="5" placeholder="32065" autocomplete="postal-code">
+        <span class="error small" id="tank-zip-error" role="alert" hidden>ZIP code should be 5 digits.</span>
+      </label>
 
-    <div id="tank-water"></div>
+      <label class="field">
+        <span class="label">Notes</span>
+        <textarea id="tank-notes" class="textarea" maxlength="400" rows="3" placeholder="Filter, lights, fertilizer, anything you want to remember"></textarea>
+      </label>
 
-    <h2 class="section">Fish and plants</h2>
-    <div id="tank-list" class="list"></div>
-    <div id="add-slot"></div>
-
-    <button type="button" id="tank-delete" class="btn-link danger">Delete this tank</button>
+      <div id="tank-active"></div>
+      <button type="button" id="tank-delete" class="btn-link danger">Delete this tank</button>
+    </details>
   </section>
 
   <!-- Fish Check -->
@@ -230,20 +223,6 @@
     <div id="fishcheck-body" class="dream-body"></div>
     <input id="fishcheck-camera" type="file" accept="image/*" capture="environment" hidden>
     <input id="fishcheck-gallery" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
-  </section>
-
-  <!-- Water log -->
-  <section id="view-log" class="view" hidden>
-    <button type="button" id="log-back" class="btn link back">&larr; Water</button>
-    <h1>Water log</h1>
-    <div id="log-body" class="log-body"></div>
-  </section>
-
-  <!-- Reminders -->
-  <section id="view-reminders" class="view" hidden>
-    <button type="button" id="reminders-back" class="btn link back">&larr; Water</button>
-    <h1>Reminders</h1>
-    <div id="reminders-body" class="log-body"></div>
   </section>
 
   <!-- Names the app could not match (tester's list) -->
@@ -269,14 +248,10 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <nav id="nav" aria-label="Main" hidden>
-  <button type="button" data-view="home">
-    <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9H3z"/></svg>Home</button>
-  <button type="button" data-view="scan">
-    <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Scan</button>
-  <button type="button" data-view="water">
-    <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg>Water</button>
-  <button type="button" data-view="tanks">
-    <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 12c2-2 4-2 6 0-2 2-4 2-6 0z"/><path d="M14 12l2-1.5v3z"/></svg>My Tanks</button>
+  <button type="button" data-view="home"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9H3z"/></svg>Home</button>
+  <button type="button" data-view="tanks"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 12c2-2 4-2 6 0-2 2-4 2-6 0z"/><path d="M14 12l2-1.5v3z"/></svg>Tanks</button>
+  <button type="button" data-view="scanhub" class="scan-tab"><span class="scan-bubble"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>Scan</button>
+  <button type="button" data-view="explore"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>Explore</button>
 </nav>
 
 <script src="app.js"></script>
