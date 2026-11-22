@@ -192,6 +192,8 @@ def main():
                             f['matched'] = hit['n'] if hit else ''
                             f['conf'] = it.get('confidence')
             for f in found:
+                f['nbox'] = len(f.get('boxes') or [])
+                f['verify_target'] = any(f is t for t in targets)
                 f.pop('boxes', None)
         row['found'] = found
         row['too_far'] = bool(data.get('too_far'))
@@ -242,6 +244,9 @@ def write_report(a, results, sent, sent_verify, db):
     ex = collections.Counter(f['said'] or '(none)' for r in ok for f in r['extra'])
     if ex:
         lines += ['## Extra names it reported that were not in the tank', '', ', '.join('%s (%d)' % kv for kv in ex.most_common(15)), '']
+    nb = sum(1 for r in ok for f in r['found'] if f.get('nbox'))
+    nt = sum(1 for r in ok for f in r['found'] if f.get('verify_target'))
+    lines += ['Answers that came with a location box (needed for the zoom-in step): %d of %d. Chosen for a zoom-in check: %d.' % (nb, reported, nt), '']
     lines += ['## Every test tank', '', '| Tank | Water | In the picture | Found | Missed | Extras |', '|---|---|---|---|---|---|']
     for r in ok:
         lines.append('| %d | %s | %s | %d | %s | %s |' % (r['tank'], r['type'], ', '.join(r['truth']), len(r['hits']), ', '.join(r['missed']) or '-', ', '.join(f['said'] for f in r['extra']) or '-'))
