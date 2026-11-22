@@ -66,7 +66,7 @@ function kindAvatar(kind) {
 }
 
 // ---------- Species database (names, look-alike groups, autocomplete) ----------
-const DB = { ready: false, list: [], byKey: new Map(), groups: {} };
+const DB = { ready: false, list: [], byKey: new Map(), byGenus: new Map(), groups: {} };
 
 function normKey(text) {
   return String(text).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['\u2019]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -80,7 +80,10 @@ async function loadSpecies() {
     DB.list = data.species;
     DB.groups = data.groups || {};
     DB.byKey = new Map();
+    DB.byGenus = new Map();
     DB.list.forEach((e) => {
+      const g = /^([A-Z][a-z]+)( sp\.?)?$/.exec(e.s || '');
+      if (g) DB.byGenus.set(normKey(g[1]), e); // a genus-level entry, used when the exact species is not in the list
       [e.n, e.s].concat(e.a || []).forEach((key) => {
         const k = normKey(key);
         if (k && !DB.byKey.has(k)) DB.byKey.set(k, e);
@@ -92,6 +95,17 @@ async function loadSpecies() {
 
 function lookupSpecies(name) {
   return DB.byKey.get(normKey(name)) || null;
+}
+
+// Matches what the AI said to the species list on the phone: common name, then scientific name, then the genus.
+// This is why the AI never needs to be sent the list.
+function resolveSpecies(common, scientific) {
+  let hit = common ? lookupSpecies(common) : null;
+  if (!hit && scientific) {
+    hit = lookupSpecies(scientific);
+    if (!hit) hit = DB.byGenus.get(normKey(String(scientific).trim().split(/\s+/)[0])) || null;
+  }
+  return hit;
 }
 
 // Same species whatever the spelling: "cardinals", "Cardinal Tetra" and its scientific name all match.
@@ -1163,7 +1177,7 @@ function applyResult(data, mode) {
     pending.error = "Couldn't spot any fish, plants or corals. Try getting closer, with less glare.";
   }
   pending.species = (data.species || []).map((s) => {
-    const hit = lookupSpecies(s.common_name);
+    const hit = resolveSpecies(s.common_name, s.scientific_name);
     const kind = hit && KIND_LIST.includes(hit.k) ? hit.k : (s.kind || 'fish');
     return {
       name: hit ? hit.n : s.common_name,
@@ -1234,7 +1248,7 @@ function applyVerified(targets, data) {
     const sp = targets[it.index];
     if (!sp) return;
     if (it.confidence >= 0.45 && !/^unidentified/i.test(it.common_name)) {
-      const hit = lookupSpecies(it.common_name);
+      const hit = resolveSpecies(it.common_name, it.scientific_name);
       sp.name = hit ? hit.n : it.common_name;
       sp.scientific = usableScientific(hit) || it.scientific_name || '';
       if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k;
@@ -1937,7 +1951,7 @@ async function runFish(deep) {
     } else {
       fishCheck.result = r;
       fishCheck.deep = !!deep;
-      const hit = lookupSpecies(r.common_name);
+      const hit = resolveSpecies(r.common_name, r.scientific_name);
       fishCheck.name = hit ? hit.n : r.common_name;
       fishCheck.count = hit && hit.c && hit.c.s > 1 ? hit.c.s : (r.care_estimate && r.care_estimate.min_group > 1 ? r.care_estimate.min_group : 1);
     }
@@ -1946,6 +1960,29 @@ async function runFish(deep) {
   }
   fishCheck.loading = false;
   renderFishCheck();
+  const res = fishCheck.result;
+  if (res && !res.care_estimate && !(lookupSpecies(fishCheck.name) && lookupSpecies(fishCheck.name).c)) fetchCare(fishCheck, res);
+}
+
+// A species that is not in the app's list: ask the AI for a rough care sheet, a separate tiny call that only runs when needed.
+async function fetchCare(fc, r) {
+  fc.careLoading = true;
+  renderFishCheck();
+  try {
+    const res = await fetch(WORKER_URL + '/care', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: r.common_name, scientific: r.scientific_name || '' }),
+      signal: AbortSignal.timeout(20000)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      if (data.care_estimate) r.care_estimate = data.care_estimate;
+      if (data.usage) fc.runs.push({ model: data.model, usage: data.usage });
+    }
+  } catch (err) { /* the estimate is a bonus; the plain "ask the store" text shows instead */ }
+  fc.careLoading = false;
+  if (fishCheck === fc) renderFishCheck();
 }
 
 async function startFishCheck(file) {
@@ -2057,6 +2094,8 @@ function renderFishCheck() {
   if (care) {
     card.append(el('div', { class: 'facts' }, ...speciesFacts(care).slice(0, 8).map((row) => factRow(row[0], row[1]))));
     if (care.c.n) card.append(el('p', { class: 'muted small', text: care.c.n }));
+  } else if (fc.careLoading && canonKey(fc.name) === canonKey(r.common_name)) {
+    card.append(el('p', { class: 'muted small', role: 'status', text: 'Looking up care details…' }));
   } else if (r.care_estimate && canonKey(fc.name) === canonKey(r.common_name)) {
     const ce = r.care_estimate;
     card.append(el('p', { class: 'label', text: 'AI estimate' }),
