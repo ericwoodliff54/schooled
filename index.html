@@ -92,8 +92,10 @@
       <li>Turn off the tank light if it causes glare</li>
       <li>Wait until your fish are out of hiding</li>
     </ul>
-    <button type="button" id="photo-btn" class="btn primary big">Take or choose a photo</button>
-    <input id="photo-input" type="file" accept="image/*" hidden>
+    <button type="button" id="camera-btn" class="btn primary big">Take a photo</button>
+    <button type="button" id="gallery-btn" class="btn big outline">Choose from gallery</button>
+    <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
+    <input id="gallery-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
     <p class="muted small">Test strip reading arrives in the next update.</p>
   </section>
 

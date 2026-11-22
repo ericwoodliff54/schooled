@@ -245,42 +245,82 @@ $('add-form').addEventListener('submit', (event) => {
 });
 
 // ---------- Scan ----------
-$('photo-btn').addEventListener('click', () => $('photo-input').click());
-
-$('photo-input').addEventListener('change', (event) => {
-  const file = event.target.files && event.target.files[0];
-  event.target.value = ''; // lets the same photo be picked again
-  if (file) startScan(file);
-});
+function wirePhotoInput(buttonId, inputId) {
+  $(buttonId).addEventListener('click', () => $(inputId).click());
+  $(inputId).addEventListener('change', (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = ''; // lets the same photo be picked again
+    if (file) startScan(file);
+  });
+}
+wirePhotoInput('camera-btn', 'camera-input');
+wirePhotoInput('gallery-btn', 'gallery-input');
 
 $('rescan').addEventListener('click', () => showView('scan'));
 $('results-back').addEventListener('click', () => showView('scan'));
 
-function loadImage(file) {
+// Opens a photo from almost any format. Tries the browser first, then a converter for iPhone HEIC photos.
+async function decodeWithBrowser(blob) {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(blob);
+      return { source: bitmap, width: bitmap.width, height: bitmap.height, done: () => { if (bitmap.close) bitmap.close(); } };
+    } catch (err) { /* fall through to the older method */ }
+  }
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(blob);
     const img = new Image();
-    img.onload = () => resolve({ img, url });
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('bad_image'));
-    };
+    img.onload = () => resolve({ source: img, width: img.naturalWidth, height: img.naturalHeight, done: () => URL.revokeObjectURL(url) });
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad_image')); };
     img.src = url;
   });
 }
 
+let heicLoader = null;
+function loadHeicConverter() {
+  if (window.HeicTo) return Promise.resolve(window.HeicTo);
+  if (!heicLoader) {
+    heicLoader = new Promise((resolve, reject) => {
+      const tag = document.createElement('script');
+      tag.src = 'heic-to.js';
+      tag.onload = () => (window.HeicTo ? resolve(window.HeicTo) : reject(new Error('bad_image')));
+      tag.onerror = () => { heicLoader = null; reject(new Error('bad_image')); };
+      document.head.appendChild(tag);
+    });
+  }
+  return heicLoader;
+}
+
+async function loadImage(file) {
+  try {
+    return await decodeWithBrowser(file);
+  } catch (firstError) {
+    // The browser could not open it. Try converting (HEIC/HEIF from iPhones and some Android phones).
+    try {
+      const HeicTo = await loadHeicConverter();
+      const jpeg = await HeicTo({ blob: file, type: 'image/jpeg', quality: 0.9 });
+      return await decodeWithBrowser(jpeg);
+    } catch (secondError) {
+      throw new Error('bad_image');
+    }
+  }
+}
+
 // Shrinks the photo so uploads are fast and cheap, and returns it as base64 JPEG.
 async function prepareImage(file) {
-  const { img, url } = await loadImage(file);
-  const scale = Math.min(1, MAX_PHOTO_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
-  const w = Math.max(1, Math.round(img.naturalWidth * scale));
-  const h = Math.max(1, Math.round(img.naturalHeight * scale));
+  const image = await loadImage(file);
+  const scale = Math.min(1, MAX_PHOTO_SIDE / Math.max(image.width, image.height));
+  const w = Math.max(1, Math.round(image.width * scale));
+  const h = Math.max(1, Math.round(image.height * scale));
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
-  canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; // transparent PNGs/GIFs become white instead of black
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(image.source, 0, 0, w, h);
   const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-  URL.revokeObjectURL(url);
+  image.done();
   return { base64: dataUrl.split(',')[1], previewUrl: dataUrl };
 }
 
@@ -332,7 +372,7 @@ async function startScan(file) {
   } catch (err) {
     if (err && err.name === 'TimeoutError') pending.error = 'That took too long. Try again, or try a smaller or clearer photo.';
     else if (err instanceof TypeError) pending.error = "Couldn't reach the server. Check your connection and try again.";
-    else if (err.message === 'bad_image') pending.error = "This device couldn't open that photo. If it's an iPhone HEIC file, use the camera button or a JPG instead.";
+    else if (err.message === 'bad_image') pending.error = "This device couldn't open that photo. Try the Take a photo button, or pick a different picture.";
     else pending.error = err.message || friendlyError();
   }
   pending.loading = false;
