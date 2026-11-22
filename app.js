@@ -570,10 +570,11 @@ function putAll(parent, ...nodes) {
 
 
 // A labelled drop-down for choosing which tank a check or scan is for. Works for any number of tanks.
-function tankSwitcher(current, label, onPick) {
-  if (!current || state.tanks.length < 2) return null;
+function tankSwitcher(current, label, onPick, noneLabel) {
+  if (!state.tanks.length || (!noneLabel && (!current || state.tanks.length < 2))) return null;
   const sel = el('select', { class: 'select', 'aria-label': label },
-    ...state.tanks.map((x) => el('option', { value: x.id, text: tankLabel(x), selected: x.id === current.id })));
+    ...state.tanks.map((x) => el('option', { value: x.id, text: tankLabel(x), selected: !!current && x.id === current.id })),
+    noneLabel ? el('option', { value: '', text: noneLabel, selected: !current }) : null);
   sel.addEventListener('change', () => onPick(sel.value));
   return el('div', { class: 'tank-switch' }, el('span', { class: 'label small', text: label }), sel);
 }
@@ -764,6 +765,7 @@ function renderLog() {
     el('button', { type: 'button', class: 'btn primary small', text: 'Log a test', onclick: () => { logForm = { mode: 'test' }; renderLog(); } }),
     el('button', { type: 'button', class: 'btn small', text: 'Log a water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } })));
   putAll(body, logTrendCard(t), logHistoryCard(t));
+  putAll(body, el('h2', { class: 'section', text: 'Water tools' }), el('div', { class: 'features' }, ...WATER_TOOLS.map(featureBtn)));
   putAll(body, el('p', { class: 'muted small', text: 'These checks are general guidance. Your own fish and your test kit come first.' }));
 }
 
@@ -943,9 +945,9 @@ function toast(message) {
 }
 
 // ---------- Navigation ----------
-const VIEWS = ['setup', 'home', 'results', 'explore', 'water', 'tank', 'species', 'dream', 'fishcheck', 'misses'];
+const VIEWS = ['setup', 'home', 'results', 'water', 'tank', 'species', 'dream', 'fishcheck', 'misses'];
 let currentView = 'home';
-const NAV_FOR = { home: 'home', results: 'home', fishcheck: 'home', tank: 'home', explore: 'explore', species: 'explore', dream: 'home', water: 'home', misses: 'home' };
+const NAV_FOR = { home: 'home', results: 'home', fishcheck: 'home', tank: 'home', species: 'home', dream: 'home', water: 'home', misses: 'home' };
 let openTankId = '';
 let editingSize = false;
 
@@ -966,7 +968,6 @@ function showView(name) {
   if (name === 'dream') renderDream();
   if (name === 'fishcheck') renderFishCheck();
   if (name === 'misses') renderMisses();
-  if (name === 'explore') renderExplore();
   window.scrollTo(0, 0);
 }
 
@@ -1198,7 +1199,7 @@ function renderTankAddMenu() {
     featureBtn({ icon: 'scan', color: 'blue', title: 'Scan the whole tank', text: 'Photograph the tank and name every fish, plant and coral',
       go: () => { state.activeId = t.id; saveState(); closeAddMenu(); $('gallery-input').click(); } }),
     featureBtn({ icon: 'fish', color: 'aqua', title: 'Check one fish', text: 'Photograph a fish and see if it fits ' + tankLabel(t),
-      go: () => { fishCheck = null; fishCheckTankId = t.id; fishCheckFrom = 'tank'; closeAddMenu(); showView('fishcheck'); $('fishcheck-gallery').click(); } }),
+      go: () => { fishCheck = null; fishCheckTankId = t.id; fishCheckNone = false; fishCheckFrom = 'tank'; closeAddMenu(); showView('fishcheck'); } }),
     featureBtn({ icon: 'plus', color: 'orange', title: 'Add by name', text: 'Search the list and add it yourself',
       go: () => { closeAddMenu(); tankSection = 'fish'; renderTank(); const inp = addSearch.root.querySelector('input'); if (inp) { inp.scrollIntoView({ block: 'center' }); inp.focus(); } } }));
 }
@@ -1253,9 +1254,11 @@ function kindTotals(t) {
 
 
 
-const TANK_TOOLS = [
+const WATER_TOOLS = [
   { icon: 'drop', color: 'aqua', title: 'Tap water', text: 'What your tap water means for this tank', go: () => { state.activeId = openTankId; saveState(); waterFrom = 'tank'; showView('water'); } },
-  { icon: 'strip', color: 'orange', title: 'Test strip reader', text: 'Photograph a strip and read your water', soon: true },
+  { icon: 'strip', color: 'orange', title: 'Test strip reader', text: 'Photograph a strip and read your water', soon: true }
+];
+const TANK_TOOLS = [
   { icon: 'chat', color: 'blue', title: 'Ask the tank', text: 'Ask questions about this tank', soon: true }
 ];
 const FEATURES = [
@@ -1351,7 +1354,7 @@ function renderHome() {
       putAll(body, card);
     }
   }
-  putAll(body, heroBtn('At the fish store?', 'Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckFrom = 'home'; showView('fishcheck'); }));
+  putAll(body, heroBtn('At the fish store?', 'Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
   putAll(body, heroBtn('Dream a tank', 'Picture the tank you want, fish and plants included', 'star', true, () => showView('dream')));
   updateBadge();
   const misses = loadMisses();
@@ -1370,20 +1373,6 @@ function heroBtn(title, sub, icon, alt, onclick) {
     el('span', { class: 'hero-icon' }, ic));
 }
 
-
-let exploreSearch = null;
-function renderExplore() {
-  const body = $('explore-body');
-  body.replaceChildren();
-  if (!exploreSearch) {
-    exploreSearch = createSearch({
-      placeholder: 'Look up any fish, plant or coral', label: 'Look up a species',
-      type: () => { const t = activeTank(); return t ? t.type : 'Freshwater'; },
-      onPick: (name) => { exploreSearch.clear(); const t = activeTank(); showSpecies(name, t ? t.id : ''); }
-    });
-  }
-  putAll(body, el('div', { class: 'home-lookup' }, exploreSearch.root));
-}
 
 // ---------- Water ----------
 function renderWater() {
@@ -2653,14 +2642,13 @@ let speciesOriginTank = '';
 
 function showSpecies(name, tankId, fromChip) {
   if (fromChip && speciesView) speciesStack.push(speciesView);
-  else { speciesStack = []; speciesOrigin = currentView === 'home' ? 'home' : currentView === 'explore' ? 'explore' : currentView === 'dream' ? 'dream' : currentView === 'fishcheck' ? 'fishcheck' : 'tank'; speciesOriginTank = tankId || openTankId || ''; }
+  else { speciesStack = []; speciesOrigin = currentView === 'home' ? 'home' : currentView === 'dream' ? 'dream' : currentView === 'fishcheck' ? 'fishcheck' : 'tank'; speciesOriginTank = tankId || openTankId || ''; }
   speciesView = { name, tankId: tankId || '' };
   showView('species');
 }
 $('species-back').addEventListener('click', () => {
   if (speciesStack.length) { speciesView = speciesStack.pop(); showView('species'); return; }
   if (speciesOrigin === 'home') showView('home');
-  else if (speciesOrigin === 'explore') showView('explore');
   else if (speciesOrigin === 'dream') showView('dream');
   else if (speciesOrigin === 'fishcheck') showView('fishcheck');
   else if (getTank(speciesOriginTank)) showTank(speciesOriginTank);
@@ -2892,6 +2880,8 @@ function stockCard(t) {
 // ---------- Fish Check ----------
 const SCAN_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75] };
 let fishCheckTankId = '';
+let fishCheckNone = false;
+function fishCheckTank() { return fishCheckNone ? null : (getTank(fishCheckTankId) || activeTank()); }
 let fishCheck = null; // { photoUrl, loading, error, result, name, count, usage, model }
 
 function fishCheckCostLine(fc) {
@@ -2906,7 +2896,7 @@ function fishCheckCostLine(fc) {
 }
 
 async function runFish(deep) {
-  const t = getTank(fishCheckTankId) || activeTank();
+  const t = fishCheckTank();
   fishCheck.loading = true; fishCheck.error = '';
   renderFishCheck();
   try {
@@ -3025,16 +3015,27 @@ function healthCard(h) {
   return box;
 }
 
+// Splits a tell-apart tip such as "Cardinal: ... Neon: ..." into one entry per fish.
+function parseTip(tip) {
+  const out = [];
+  if (!tip) return out;
+  tip.split(/\.\s+/).forEach((sentence) => {
+    const m = sentence.match(/^([A-Z][^:]{0,40}):\s*(.*)$/);
+    if (m) out.push({ label: m[1].trim(), text: m[2].replace(/\.*$/, '') + '.' });
+  });
+  return out;
+}
+
 function renderFishCheck() {
   const body = $('fishcheck-body');
   body.replaceChildren();
-  const t = getTank(fishCheckTankId) || activeTank();
+  const t = fishCheckTank();
   body.append(el('h1', { text: 'Fish Check' }),
     el('p', { class: 'muted', text: 'Standing at the fish store? Photograph one fish, plant or coral. Get its name, what it needs, and whether it fits your tank. Including its name tag in the photo helps.' }));
-  putAll(body, tankSwitcher(t, 'Checking for', (id) => { fishCheckTankId = ''; setActiveTank(id); renderFishCheck(); }));
+  putAll(body, tankSwitcher(t, 'Checking for', (id) => { fishCheckNone = !id; if (id) setActiveTank(id); else fishCheckTankId = ''; renderFishCheck(); }, 'No tank yet'));
   const fc = fishCheck;
   const actions = el('div', { class: 'row photo-actions' },
-    el('button', { type: 'button', class: 'btn primary', text: fc ? 'Check another' : 'Take photo', onclick: () => $('fishcheck-camera').click() }),
+    el('button', { type: 'button', class: 'btn primary', text: 'Take photo', onclick: () => $('fishcheck-camera').click() }),
     el('button', { type: 'button', class: 'btn', text: 'Choose photo', onclick: () => $('fishcheck-gallery').click() }));
   body.append(actions);
   if (!fc) return;
@@ -3056,19 +3057,25 @@ function renderFishCheck() {
   if (r.label_text) card.append(el('p', { class: 'muted small', text: 'Read from the tag: ' + r.label_text }));
   if (conf < 0.95 && conf >= 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Worth a second look. Check the other names below, or try a closer side-on photo.' }));
   if (conf < 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Try a closer photo of one fish, or include its name tag. Fish look different when they are stressed in store tanks.' }));
-  if (group && group.h && group.tip) card.append(el('p', { class: 'muted small', text: 'Look-alikes: ' + group.tip }));
   // Members of the look-alike group, in the order the tell-apart tip mentions them (the usual mix-ups come first).
   const tipText = group && group.tip ? group.tip.toLowerCase() : '';
-  const tipPos = (n) => { const i = tipText.indexOf(n.toLowerCase().split(/[\s-]/)[0]); return i < 0 ? 9999 : i; };
+  const tipPos = (n) => { const k = tipText.indexOf(n.toLowerCase().split(/[\s-]/)[0]); return k < 0 ? 9999 : k; };
   const members = group && group.h ? DB.list.filter((e) => e.g === entry.g).map((e) => e.n).sort((x, y) => tipPos(x) - tipPos(y)) : [];
   const seenAlt = new Set();
   const alts = r.alternatives.concat(members).map((x) => lookupSpecies(x) ? lookupSpecies(x).n : x)
-    .filter((x) => { const k = canonKey(x); if (k === canonKey(fc.name) || seenAlt.has(k)) return false; seenAlt.add(k); return true; }).slice(0, 4);
+    .filter((x) => { const k = canonKey(x); if (k === canonKey(fc.name) || seenAlt.has(k)) return false; seenAlt.add(k); return true; }).slice(0, 5);
   if (alts.length) {
+    const chunks = parseTip(group && group.tip);
     card.append(el('p', { class: 'label', text: 'Could also be' }),
-      el('div', { class: 'chips ideas' }, ...alts.map((x) => el('button', { type: 'button', class: 'chip-btn', text: x, onclick: () => {
-        fc.name = x; const h = lookupSpecies(x); fc.count = h && h.c && h.c.s > 1 ? h.c.s : 1; renderFishCheck();
-      } }))));
+      el('div', { class: 'lookalikes' }, ...alts.map((x) => {
+        const hit = lookupSpecies(x);
+        const fw = x.toLowerCase().split(/[\s-]/)[0];
+        const chunk = chunks.find((ch) => ch.label.toLowerCase().split(/[\s\/(]/)[0] === fw) || chunks.find((ch) => ch.label.toLowerCase().indexOf(fw) >= 0);
+        const desc = chunk ? chunk.text : (hit && hit.s ? hit.s : '');
+        return el('button', { type: 'button', class: 'lookalike', 'aria-label': 'Switch to ' + x, onclick: () => {
+          fc.name = x; const h2 = lookupSpecies(x); fc.count = h2 && h2.c && h2.c.s > 1 ? h2.c.s : 1; renderFishCheck();
+        } }, el('strong', { text: x }), desc ? el('span', { text: desc }) : null);
+      })));
   }
   const care = entry && entry.c ? entry : null;
   if (care) {

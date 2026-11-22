@@ -973,3 +973,12 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .home-body .home-tank-pills .pill, .home-tank-pills .pill { margin-top: 0; }
 .add-menu { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 14px; }
 #tank-tools { margin-bottom: 14px; }
+
+.lookalikes { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 12px; }
+.lookalike { display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 14px; font: inherit; color: var(--ink); cursor: pointer; }
+.lookalike:active { background: var(--mist); }
+.lookalike strong { font-size: 15px; font-weight: 800; }
+.lookalike span { font-size: 13px; color: var(--muted); font-weight: 500; line-height: 1.35; }
+#nav { left: 0; right: 0; bottom: calc(10px + env(safe-area-inset-bottom)); max-width: none; display: flex; justify-content: center; padding: 0; background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none; }
+#nav button { pointer-events: auto; width: 64px; min-height: 64px; border-radius: 50%; background: #fff; box-shadow: 0 10px 24px -10px rgba(10, 46, 92, 0.5); border: 1px solid rgba(26, 99, 199, 0.12); }
+#nav button[aria-current="page"] { background: #fff; color: var(--teal); }
