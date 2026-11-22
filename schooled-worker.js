@@ -54,6 +54,7 @@ const PROMPT =
   'If you can only tell the group, give the group name (for example Stem Plant). Count separate plants or colonies; a carpet, mat or dense stand counts as 1. ' +
   'For each fish, coral or invertebrate entry also give "boxes": up to 3 tight bounding boxes around the clearest, largest individuals, each as [ymin, xmin, ymax, xmax] in whole numbers from 0 to 1000 relative to the whole image, where 0,0 is the top left. Give no boxes for plants. ' +
   'Only list what you can actually see clearly. If the photo is very dark, blurry or reflective, list fewer things with low confidence rather than guessing; never list a plant, coral or fish you cannot see. ' +
+  'Glass and the water surface act like mirrors, so the same fish can appear twice. A reflection is usually dimmer, mirrored or cut off, sits against a glass pane or just under the waterline, and copies the position and pose of a real fish. Never count reflections as extra fish: count each real fish once, and when you cannot tell a reflection from a real fish, count the lower number. ' +
   'Set too_far to true if many fish are too small or far away to identify reliably. ' +
   'If the photo is not an aquarium, set is_aquarium to false and return no species. ' +
   'If photo quality limited your answer (glare, too far, dark), put one short tip in photo_tips, otherwise leave it empty.';
@@ -62,7 +63,7 @@ const ZOOM_NOTE =
   'The first image is the whole tank. The images after it are zoomed-in, overlapping pieces of that same photo, ' +
   'in reading order (left to right, top to bottom), included so you can see small and distant fish clearly. ' +
   'Use the zoomed pieces to identify species and to count. Fish near the edges of a piece may also appear in the next piece, ' +
-  'so count each real fish only once. Return ONE combined list for the whole tank, with counts for the whole tank, not per piece.';
+  'so count each real fish only once (and never count a reflection in the glass). Return ONE combined list for the whole tank, with counts for the whole tank, not per piece.';
 
 const TYPE_NOTES = {
   Freshwater: 'This is a freshwater tank.',
@@ -738,7 +739,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 20: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 21: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {
