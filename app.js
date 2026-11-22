@@ -1316,12 +1316,7 @@ function renderHome() {
       putAll(body, card);
     }
   }
-  putAll(body, el('button', { type: 'button', class: 'home-tank store-card', 'aria-label': 'At the fish store? Snap a photo to check tank compatibility', onclick: () => { fishCheck = null; fishCheckTankId = ''; showView('fishcheck'); $('fishcheck-camera').click(); } },
-    el('span', { class: 'home-tank-pic empty' }, featureIcon('scan')),
-    el('span', { class: 'home-tank-text' },
-      el('strong', { text: 'At the fish store?' }),
-      el('span', { text: 'Snap a photo to check tank compatibility' })),
-    chevron()));
+  putAll(body, heroBtn('At the fish store?', 'Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; showView('fishcheck'); $('fishcheck-gallery').click(); }));
   updateBadge();
   const misses = loadMisses();
   if (misses.length) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
