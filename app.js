@@ -115,6 +115,38 @@ function resolveSpecies(common, scientific, where, kind) {
   return hit;
 }
 
+// ---------- Tester usage log (tokens and cost of each AI call, kept on this phone) ----------
+const USAGE_KEY = 'schooled.usage';
+const USAGE_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75], 'gemini-3.7-flash': [0.75, 3.75], 'gemini-3.6-flash': [0.75, 3.75], 'gemini-3.5-flash': [0.75, 3.75] };
+function loadUsage() {
+  try { const v = JSON.parse(localStorage.getItem(USAGE_KEY)); return Array.isArray(v) ? v : []; } catch (err) { return []; }
+}
+function saveUsage(list) {
+  try { localStorage.setItem(USAGE_KEY, JSON.stringify(list.slice(-500))); } catch (err) { /* storage full or blocked */ }
+}
+// kind: scan, zoom, fish, care, dream-plan, dream-image. cents is an estimate from Google's list prices.
+function logUsage(kind, model, usage, extra) {
+  if (!usage) return;
+  const inTok = Number(usage.input) || 0, outTok = Number(usage.output) || 0;
+  let dollars = null;
+  if (kind === 'dream-image') {
+    const c = dreamCost({ image: Object.assign({ model }, usage) });
+    if (c.known) dollars = c.dollars;
+  } else if (USAGE_PRICES[model]) dollars = (inTok * USAGE_PRICES[model][0] + outTok * USAGE_PRICES[model][1]) / 1e6;
+  const list = loadUsage();
+  list.push(Object.assign({ t: new Date().toISOString().slice(0, 19).replace('T', ' '), kind, model: model || '', in: inTok, out: outTok, cents: dollars === null ? '' : Math.round(dollars * 10000) / 100 }, extra || {}));
+  saveUsage(list);
+}
+function usageCsv(list) {
+  const head = 'time,kind,model,tokens_in,tokens_out,cents,detail';
+  return [head].concat(list.map((u) => [u.t, u.kind, u.model, u.in, u.out, u.cents, '"' + String(u.detail || '').replace(/"/g, '') + '"'].join(','))).join('\n');
+}
+function usageSummary(list) {
+  const by = {};
+  list.forEach((u) => { const b = by[u.kind] || (by[u.kind] = { n: 0, cents: 0 }); b.n++; b.cents += Number(u.cents) || 0; });
+  return { by, total: list.reduce((s, u) => s + (Number(u.cents) || 0), 0) };
+}
+
 // ---------- Names the app could not match cleanly ----------
 const MISS_KEY = 'schooled.misses';
 function loadMisses() {
@@ -143,7 +175,28 @@ function renderMisses() {
   const body = $('misses-body');
   body.replaceChildren();
   const list = loadMisses();
-  body.append(el('h1', { text: 'Names I could not match' }),
+  const usage = loadUsage();
+  body.append(el('h1', { text: 'Tester tools' }), el('h2', { class: 'section', text: 'Usage log' }));
+  if (!usage.length) body.append(el('p', { class: 'muted', text: 'Nothing yet. Every scan, Fish Check and dream picture is logged here with its tokens and estimated cost.' }));
+  else {
+    const sum = usageSummary(usage);
+    body.append(el('p', { class: 'muted', text: usage.length + ' calls, about $' + (sum.total / 100).toFixed(2) + ' in total. ' + Object.keys(sum.by).map((k) => k + ' ' + sum.by[k].n + ' (avg ' + (sum.by[k].cents / sum.by[k].n).toFixed(2) + '\u00a2)').join(', ') + '.' }),
+      el('div', { class: 'row photo-actions' },
+        el('button', { type: 'button', class: 'btn primary', text: 'Copy usage log', onclick: () => {
+          const text = usageCsv(usage);
+          const done = () => toast('Copied ' + usage.length + ' calls.');
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => { fallbackCopy(text); done(); });
+          else { fallbackCopy(text); done(); }
+        } }),
+        el('button', { type: 'button', class: 'btn', text: 'Download CSV', onclick: () => {
+          const url = URL.createObjectURL(new Blob([usageCsv(usage)], { type: 'text/csv' }));
+          const link = el('a', { href: url, download: 'schooled-usage.csv' });
+          document.body.append(link); link.click(); link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+        } }),
+        el('button', { type: 'button', class: 'btn', text: 'Clear log', onclick: () => { saveUsage([]); renderMisses(); } })));
+  }
+  body.append(el('h2', { class: 'section', text: 'Names I could not match' }),
     el('p', { class: 'muted', text: 'Names the AI used that were not in my species list, or matched only loosely. Send this list to Claude to grow the list.' }));
   if (!list.length) { body.append(el('p', { class: 'muted', text: 'Nothing yet. Scan or check a few fish.' })); return; }
   body.append(el('div', { class: 'row photo-actions' },
@@ -1358,6 +1411,11 @@ function renderHome() {
   putAll(body, heroBtn('Dream a tank', 'Picture the tank you want, fish and plants included', 'star', true, () => showView('dream')));
   updateBadge();
   const misses = loadMisses();
+  const usageN = loadUsage().length;
+  if (usageN) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
+    featureIcon('info'),
+    el('strong', { text: 'Usage log: ' + usageN + ' AI calls' }),
+    chevron()));
   if (misses.length) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
     featureIcon('info'),
     el('strong', { text: misses.length + (misses.length === 1 ? ' unmatched species to review' : ' unmatched species to review') }),
@@ -2079,6 +2137,7 @@ async function askWorker(images, mode, timeoutMs, ctx) {
       ? 'The photo reader had trouble (' + (data.ai_detail || 'error ' + data.ai_status) + '). Please try again in a moment.'
       : friendlyError(data.error, res.status));
   }
+  if (data.usage) logUsage(mode === 'zoom' || mode === 'verify' ? 'zoom' : mode === 'fish' ? 'fish' : 'scan', data.model, data.usage, { detail: mode + (ctx.deep ? ' deep' : '') + ', ' + (images || []).length + ' img, ' + Math.round(JSON.stringify(images || []).length / 1024) + ' KB' });
   return data;
 }
 
@@ -3043,7 +3102,7 @@ async function fetchCare(fc, r) {
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.ok) {
       if (data.care_estimate) r.care_estimate = data.care_estimate;
-      if (data.usage) fc.runs.push({ model: data.model, usage: data.usage });
+      if (data.usage) { fc.runs.push({ model: data.model, usage: data.usage }); logUsage('care', data.model, data.usage, { detail: r.common_name }); }
     }
   } catch (err) { /* the estimate is a bonus; the plain "ask the store" text shows instead */ }
   fc.careLoading = false;
@@ -3399,6 +3458,8 @@ async function runDream() {
       }
       const s = dreamLoad();
       if (image) s.used += 1;
+      if (j.usage && j.usage.plan) logUsage('dream-plan', j.usage.plan.model, j.usage.plan, { detail: 'plan' });
+      if (j.usage && j.usage.image) logUsage('dream-image', j.usage.image.model, j.usage.image, { detail: image ? 'picture' : 'no picture returned' });
       const cost = dreamCost(j.usage);
       if (image) s.cost = Math.round(((Number(s.cost) || 0) + cost.dollars) * 10000) / 10000;
       s.last = { title: String(j.title || ''), summary: String(j.summary || ''), species: j.species, image, gallons: gal, type: f.type, at: Date.now(), usage: j.usage || null, imageModel: String(j.image_model || '') };
