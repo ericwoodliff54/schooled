@@ -2099,18 +2099,25 @@ function canonList(list) {
 
 // Fish that look alike get a tell-apart tip, and a photo alone can't be "Sure" about the hard groups.
 // A look-alike already in the tank goes first in "Could also be".
+// A suggested look-alike must be the same kind (fish, coral, plant...) as what was seen. Unknown names are left alone.
+function sameKindAs(name, ref) {
+  const x = lookupSpecies(name), y = lookupSpecies(ref);
+  return !(x && y && x.k && y.k && x.k !== y.k);
+}
+
 function lookalikeGuard(sp) {
   if (!DB.ready || sp.kind === 'plant' || !sp.group || !DB.groups[sp.group]) return;
   const group = DB.groups[sp.group];
   const tank = getTank(pending && pending.tankId);
   const key = canonKey(sp.name);
   const members = DB.list.filter((e) => e.g === sp.group && normKey(e.n) !== key);
+  const padding = group.h ? members.map((e) => e.n) : [];
   const inTank = members.filter((e) => tank && tank.fish.some((f) => canonKey(f.name) === normKey(e.n)));
   const seen = new Set([key]);
   const alts = [];
-  inTank.map((e) => e.n).concat(sp.alternatives || [], members.map((e) => e.n)).forEach((n) => {
+  inTank.map((e) => e.n).concat(sp.alternatives || [], padding).forEach((n) => {
     const k = canonKey(n);
-    if (n && !seen.has(k)) { seen.add(k); alts.push(n); }
+    if (n && sameKindAs(n, sp.name) && !seen.has(k)) { seen.add(k); alts.push(n); }
   });
   sp.alternatives = alts.slice(0, 3);
   sp.tankMatches = inTank.map((e) => e.n);
@@ -3207,7 +3214,7 @@ function renderFishCheck() {
   const members = group && group.h ? DB.list.filter((e) => e.g === entry.g).map((e) => e.n).sort((x, y) => tipPos(x) - tipPos(y)) : [];
   const seenAlt = new Set();
   const alts = r.alternatives.concat(members).map((x) => lookupSpecies(x) ? lookupSpecies(x).n : x)
-    .filter((x) => { const k = canonKey(x); if (k === canonKey(fc.name) || seenAlt.has(k)) return false; seenAlt.add(k); return true; }).slice(0, 5);
+    .filter((x) => { const k = canonKey(x); if (k === canonKey(fc.name) || seenAlt.has(k) || !sameKindAs(x, fc.name)) return false; seenAlt.add(k); return true; }).slice(0, 5);
   if (alts.length) {
     const chunks = parseTip(group && group.tip);
     card.append(el('p', { class: 'label', text: 'Could also be' }),
