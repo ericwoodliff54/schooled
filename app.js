@@ -3742,4 +3742,4 @@ loadSpecies().then(() => {
   if (!$('view-home').hidden) renderHome();
   else if (!$('view-tank').hidden) renderTank();
 });
-showView(state.setupDone ? 'home' : 'setup');
+showView('home');
