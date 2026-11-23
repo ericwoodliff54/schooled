@@ -994,3 +994,6 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 /* New watercolor logo */
 #splash img { width: min(64vw, 300px); height: auto; }
 .home-logo { width: auto; height: 108px; max-width: 70%; object-fit: contain; filter: none; }
+
+.tank-hero{position:relative}
+.hero-edit{position:absolute;right:10px;bottom:10px;background:rgba(255,255,255,.92)}

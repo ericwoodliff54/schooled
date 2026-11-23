@@ -1508,6 +1508,11 @@ function renderTank() {
   $('tank-hero').replaceChildren(t.photo
     ? el('img', { src: t.photo, alt: 'Photo of ' + tankLabel(t) })
     : el('div', { class: 'tank-hero-empty' }, kindIcon('fish'), el('span', { text: 'No photo yet' })));
+  $('tank-hero').append(el('button', { type: 'button', class: 'btn small hero-edit', text: t.photo ? 'Edit photo' : 'Add photo', onclick: () => {
+    const box = $('tank-photo-camera').closest('details');
+    if (box) box.open = true;
+    $('tank-photo-camera').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } }));
   $('tank-photo-remove').hidden = !t.photo;
   $('tank-photo-camera').textContent = t.photo ? 'Retake' : 'Take photo';
   $('tank-photo-gallery').textContent = t.photo ? 'Change' : 'Choose photo';
@@ -3035,10 +3040,16 @@ async function fetchCare(fc, r) {
   if (fishCheck === fc) renderFishCheck();
 }
 
-async function startFishCheck(file) {
+async function startFishCheck(file, fromVideo) {
   fishCheck = { photoUrl: '', loading: true, error: '', result: null, name: '', count: 1, runs: [], images: null, deep: false };
   renderFishCheck();
   try {
+    if (fromVideo) {
+      let frames = [];
+      try { frames = await extractVideoFrames(file, 1); } catch (e) { frames = []; }
+      if (!frames.length) throw new Error('That video could not be read. Try recording again, or use a photo.');
+      file = frames[0];
+    }
     const image = await loadImage(file);
     const single = makeSingle(image);
     fishCheck.photoUrl = single.previewUrl;
@@ -3167,8 +3178,10 @@ function renderFishCheck() {
   const fc = fishCheck;
   const actions = el('div', { class: 'row photo-actions' },
     el('button', { type: 'button', class: 'btn primary', text: 'Take photo', onclick: () => $('fishcheck-camera').click() }),
-    el('button', { type: 'button', class: 'btn', text: 'Choose photo', onclick: () => $('fishcheck-gallery').click() }));
+    el('button', { type: 'button', class: 'btn', text: 'Choose photo', onclick: () => $('fishcheck-gallery').click() }),
+    el('button', { type: 'button', class: 'btn', text: 'Record short video', onclick: () => $('fishcheck-video').click() }));
   body.append(actions);
+  body.append(el('p', { class: 'muted small', text: 'Video: hold steady on one fish for about 3 seconds. We pick the sharpest frame, so it costs the same as one photo.' }));
   if (!fc) return;
   if (fc.photoUrl) body.append(el('img', { class: 'dream-image', src: fc.photoUrl, alt: 'The fish you photographed' }));
   if (fc.loading) { body.append(el('p', { class: 'muted center', role: 'status', text: 'Looking…' })); return; }
@@ -3267,6 +3280,11 @@ function renderFishCheck() {
   event.target.value = '';
   if (file) startFishCheck(file);
 }));
+if ($('fishcheck-video')) $('fishcheck-video').addEventListener('change', (event) => {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (file) startFishCheck(file, true);
+});
 $('fishcheck-back').addEventListener('click', () => (fishCheckFrom === 'tank' && getTank(openTankId) ? showTank(openTankId) : showView('home')));
 $('misses-back').addEventListener('click', () => showView('home'));
 
