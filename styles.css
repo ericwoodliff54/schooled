@@ -990,3 +990,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .compat-col h3 { margin: 0 0 6px; font-size: 14px; font-weight: 800; }
 .compat-col ul { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.5; }
 .link-out { display: block; margin: 10px 0 6px; font-weight: 700; color: var(--teal); text-decoration: none; }
+
+/* New watercolor logo */
+#splash img { width: min(64vw, 300px); height: auto; }
+.home-logo { width: auto; height: 108px; max-width: 70%; object-fit: contain; filter: none; }
