@@ -3154,6 +3154,12 @@ async function runFish(deep) {
     } else {
       fishCheck.result = r;
       fishCheck.deep = !!deep;
+      if (!fishCheck.picker && fishCheck.image && r.main_box && r.others && r.others.length) {
+        fishCheck.picker = { active: 0, items: [{ look: r.common_name, box: r.main_box, done: true }].concat(r.others.map((o) => ({ look: o.look, box: o.box, done: false }))) };
+      } else if (fishCheck.picker) {
+        const it = fishCheck.picker.items[fishCheck.picker.active];
+        if (it) { it.look = r.common_name; it.done = true; }
+      }
       const hit = resolveSpecies(r.common_name, r.scientific_name, 'fish check', r.kind);
       fishCheck.name = hit ? hit.n : r.common_name;
       fishCheck.count = hit && hit.c && hit.c.s > 1 ? hit.c.s : (r.care_estimate && r.care_estimate.min_group > 1 ? r.care_estimate.min_group : 1);
@@ -3188,6 +3194,20 @@ async function fetchCare(fc, r) {
   if (fishCheck === fc) renderFishCheck();
 }
 
+// Several kinds of fish in one photo: re-check a close-up of the one the person tapped.
+async function pickFish(index) {
+  const fc = fishCheck;
+  if (!fc || fc.loading || !fc.picker || !fc.image) return;
+  const item = fc.picker.items[index];
+  if (!item || index === fc.picker.active) return;
+  const r = cropRect(item.box, fc.image.width, fc.image.height);
+  const crop = drawToJpeg(fc.image.source, r.x, r.y, r.w, r.h, SINGLE_SIDE, 0.85);
+  fc.images = [crop.split(',')[1]];
+  fc.picker.active = index;
+  fc.result = null; fc.name = ''; fc.count = 1; fc.error = ''; fc.deep = false;
+  await runFish(false);
+}
+
 async function startFishCheck(file, fromVideo) {
   fishCheck = { photoUrl: '', loading: true, error: '', result: null, name: '', count: 1, runs: [], images: null, deep: false };
   renderFishCheck();
@@ -3202,6 +3222,7 @@ async function startFishCheck(file, fromVideo) {
     const single = makeSingle(image);
     fishCheck.photoUrl = single.previewUrl;
     fishCheck.images = single.images;
+    fishCheck.image = image;
   } catch (err) {
     fishCheck.error = (err && err.message) || 'I could not read that photo. Please try another.';
     fishCheck.loading = false;
@@ -3332,7 +3353,20 @@ function renderFishCheck() {
   body.append(actions);
   body.append(el('p', { class: 'muted small', text: 'Video: hold steady on one fish for about 3 seconds. We pick the sharpest frame, so it costs the same as one photo.' }));
   if (!fc) return;
-  if (fc.photoUrl) body.append(el('img', { class: 'dream-image', src: fc.photoUrl, alt: 'The fish you photographed' }));
+  if (fc.photoUrl && fc.picker) {
+    const pk = fc.picker;
+    const wrap = el('div', { class: 'pick-wrap' }, el('img', { class: 'dream-image', src: fc.photoUrl, alt: 'The fish you photographed' }));
+    pk.items.forEach((it, i) => {
+      wrap.append(el('button', {
+        type: 'button', class: 'pick-box' + (i === pk.active ? ' on' : ''),
+        style: 'top:' + it.box[0] / 10 + '%;left:' + it.box[1] / 10 + '%;height:' + (it.box[2] - it.box[0]) / 10 + '%;width:' + (it.box[3] - it.box[1]) / 10 + '%',
+        'aria-label': 'Check ' + it.look, onclick: () => pickFish(i)
+      }, el('span', { text: String(i + 1) })));
+    });
+    body.append(wrap);
+    body.append(el('p', { class: 'muted small', text: 'I can see ' + pk.items.length + ' kinds of fish here. Tap the one you want to check.' }));
+    body.append(el('div', { class: 'alts' }, ...pk.items.map((it, i) => el('button', { type: 'button', class: 'alt-chip' + (i === pk.active ? ' pick-on' : ''), text: (i + 1) + '. ' + it.look, onclick: () => pickFish(i) }))));
+  } else if (fc.photoUrl) body.append(el('img', { class: 'dream-image', src: fc.photoUrl, alt: 'The fish you photographed' }));
   if (fc.loading) { body.append(el('p', { class: 'muted center', role: 'status', text: 'Looking…' })); return; }
   if (fc.error) { body.append(el('div', { class: 'notice', role: 'status', text: fc.error })); return; }
   const r = fc.result;

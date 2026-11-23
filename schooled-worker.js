@@ -277,6 +277,8 @@ const FISH_PROMPT =
   'the kind, a confidence from 0 to 1, and up to three alternatives when it could be a lookalike. ' +
   'Alternatives must look like the animal in THIS photo: the same main color, pattern, body shape and kind (a yellow fish gets yellow look-alikes, never blue ones; a brain-like coral gets other brain-like or rounded stony corals, never long-tentacled ones). Never list a species just because it is in the same family or group. If you cannot name look-alikes that match what you see, leave alternatives empty. ' +
   'If you cannot see a single clear animal or plant, say so in note and keep confidence low. If it is not an aquarium animal or plant, set is_aquarium to false. ' +
+  'Also give main_box: a tight bounding box around the animal you identified, as [ymin, xmin, ymax, xmax] in whole numbers from 0 to 1000 relative to the whole image (0,0 is the top left). ' +
+  'If the photo also shows other clearly different KINDS of fish, coral or invertebrates (a different species, not just more of the same one), list up to 4 of them in others, each with look (2 to 5 plain words, such as "blue barred cichlid") and its own box in the same format. Skip tiny, blurry or mostly hidden ones, and never list a second fish of the same kind. If there is only one kind, leave others empty. ' +
   'Also check its visible health, only from what you can actually see. Go through health.checks one item at a time and do NOT assume the fish is healthy. ' +
   'For each item answer none (you can see that area and it looks normal), possible (a small or uncertain sign), clear (obvious), or not_visible (that part is hidden or too small to judge). ' +
   'Items: bloating (swollen or sunken belly), scales (raised pinecone scales or missing scales), spots (white salt-like spots, gold dust, ich or velvet), fins (clamped, torn, frayed, shortened or white-edged), ' +
@@ -290,9 +292,11 @@ const FISH_PROMPT =
 const HEALTH_ITEMS = ['bloating', 'scales', 'spots', 'fins', 'eyes', 'mouth', 'skin', 'color', 'posture'];
 const FISH_SCHEMA = {
   type: 'OBJECT',
-  propertyOrdering: ['features', 'is_aquarium', 'common_name', 'scientific_name', 'kind', 'confidence', 'alternatives', 'label_text', 'note', 'health'],
+  propertyOrdering: ['features', 'is_aquarium', 'common_name', 'scientific_name', 'kind', 'confidence', 'alternatives', 'label_text', 'note', 'main_box', 'others', 'health'],
   properties: {
     features: { type: 'STRING' },
+    main_box: { type: 'ARRAY', items: { type: 'NUMBER' } },
+    others: { type: 'ARRAY', items: { type: 'OBJECT', properties: { look: { type: 'STRING' }, box: { type: 'ARRAY', items: { type: 'NUMBER' } } }, required: ['look', 'box'] } },
     is_aquarium: { type: 'BOOLEAN' },
     common_name: { type: 'STRING' },
     scientific_name: { type: 'STRING' },
@@ -318,6 +322,32 @@ const FISH_SCHEMA = {
   required: ['features', 'is_aquarium', 'common_name', 'kind', 'confidence', 'health']
 };
 
+function cleanBox(b) {
+  if (!Array.isArray(b) || b.length !== 4) return null;
+  const n = b.map((x) => Math.round(Number(x)));
+  if (n.some((x) => !isFinite(x) || x < 0 || x > 1000)) return null;
+  if (n[2] - n[0] < 15 || n[3] - n[1] < 15) return null;
+  return n;
+}
+function boxOverlap(a, b) {
+  const iy = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
+  const ix = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+  const inter = iy * ix;
+  const union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter;
+  return union > 0 ? inter / union : 0;
+}
+function sanitizeOthers(parsed, mainBox) {
+  const out = [];
+  (Array.isArray(parsed.others) ? parsed.others : []).forEach((o) => {
+    const box = cleanBox(o && o.box), look = clean(o && o.look, 40);
+    if (!box || !look) return;
+    if (mainBox && boxOverlap(box, mainBox) > 0.4) return;
+    if (out.some((x) => boxOverlap(x.box, box) > 0.4)) return;
+    if (out.length < 4) out.push({ look, box });
+  });
+  return out;
+}
+
 function sanitizeFish(parsed) {
   const name = clean(parsed.common_name, 60);
   const alts = (Array.isArray(parsed.alternatives) ? parsed.alternatives : []).map((x) => clean(x, 60)).filter((x) => x && x.toLowerCase() !== name.toLowerCase()).slice(0, 3);
@@ -331,6 +361,8 @@ function sanitizeFish(parsed) {
       alternatives: alts,
       label_text: clean(parsed.label_text, 80),
       note: clean(parsed.note, 160),
+      main_box: cleanBox(parsed.main_box),
+      others: sanitizeOthers(parsed, cleanBox(parsed.main_box)),
       health: sanitizeHealth(parsed.health)
     }
   };

@@ -967,3 +967,9 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 
 html { background: var(--bg, #eef5fb); }
 body { min-height: 100vh; min-height: 100dvh; }
+
+.pick-wrap { position: relative; }
+.pick-box { position: absolute; box-sizing: border-box; padding: 0; background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.9); border-radius: 8px; box-shadow: 0 0 0 1px rgba(10,46,92,0.45); cursor: pointer; }
+.pick-box.on { border-color: #1A63C7; border-width: 3px; background: rgba(26,99,199,0.12); }
+.pick-box span { position: absolute; top: -1px; left: -1px; min-width: 22px; height: 22px; line-height: 22px; border-radius: 8px 0 8px 0; background: #1A63C7; color: #fff; font-size: 12px; font-weight: 800; text-align: center; }
+.alt-chip.pick-on { background: var(--mist); border-color: #1A63C7; font-weight: 800; }
