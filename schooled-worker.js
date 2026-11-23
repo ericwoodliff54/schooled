@@ -21,7 +21,7 @@ const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 // Best-effort limit per visitor while the Worker stays warm.
 // Real monthly limits come in a later stage (they need Cloudflare KV).
 const RATE_WINDOW_MS = 10 * 60 * 1000;
-const RATE_MAX = 15;
+const RATE_MAX = 30;
 const hits = new Map();
 const dreamHits = new Map();
 

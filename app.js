@@ -1198,6 +1198,8 @@ function renderTankAddMenu() {
   putAll(box,
     featureBtn({ icon: 'scan', color: 'blue', title: 'Scan the whole tank', text: 'Photograph the tank and name every fish, plant and coral',
       go: () => { state.activeId = t.id; saveState(); closeAddMenu(); $('gallery-input').click(); } }),
+    featureBtn({ icon: 'scan', color: 'purple', title: 'Scan with a short video', text: 'Hold steady for about 3 seconds. We pick the sharpest frames',
+      go: () => { state.activeId = t.id; saveState(); closeAddMenu(); $('video-input').click(); } }),
     featureBtn({ icon: 'fish', color: 'aqua', title: 'Check one fish', text: 'Photograph a fish and see if it fits ' + tankLabel(t),
       go: () => { fishCheck = null; fishCheckTankId = t.id; fishCheckNone = false; fishCheckFrom = 'tank'; closeAddMenu(); showView('fishcheck'); } }),
     featureBtn({ icon: 'plus', color: 'orange', title: 'Add by name', text: 'Search the list and add it yourself',
@@ -1918,6 +1920,11 @@ function wirePhotoInput(inputId) {
 }
 wirePhotoInput('camera-input');
 wirePhotoInput('gallery-input');
+if ($('video-input')) $('video-input').addEventListener('change', (event) => {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (file) startVideoScan(file);
+});
 
 $('rescan').addEventListener('click', () => $('gallery-input').click());
 $('add-photo').addEventListener('click', () => $('more-photo-input').click());
@@ -2232,14 +2239,100 @@ function mergeSessions(prior, fresh) {
   return out;
 }
 
-async function startScan(file, append) {
+// ---------- Short video scan ----------
+// Picks the sharpest, most different frames from a few seconds of video. `scores` has one sharpness value per candidate frame.
+function pickFrames(scores, wanted) {
+  const order = scores.map((v, i) => i).sort((a, b) => scores[b] - scores[a]);
+  const picked = [];
+  order.forEach((i) => {
+    if (picked.length >= wanted) return;
+    if (picked.every((j) => Math.abs(j - i) >= 2)) picked.push(i);
+  });
+  // Not enough spread-out frames (a very short clip): fill with the next sharpest ones.
+  order.forEach((i) => { if (picked.length < wanted && picked.indexOf(i) === -1) picked.push(i); });
+  return picked;
+}
+
+// Rough sharpness: average change between neighbouring pixels on a small grey copy of the frame.
+function frameSharpness(ctx, w, h) {
+  const d = ctx.getImageData(0, 0, w, h).data;
+  let sum = 0, n = 0;
+  for (let y = 1; y < h; y += 1) {
+    for (let x = 1; x < w; x += 1) {
+      const i = (y * w + x) * 4, a = (y * w + x - 1) * 4, b = ((y - 1) * w + x) * 4;
+      const g = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
+      sum += Math.abs(g - (d[a] * 0.3 + d[a + 1] * 0.59 + d[a + 2] * 0.11)) + Math.abs(g - (d[b] * 0.3 + d[b + 1] * 0.59 + d[b + 2] * 0.11));
+      n += 2;
+    }
+  }
+  return n ? sum / n : 0;
+}
+
+async function extractVideoFrames(file, wanted) {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.muted = true; video.playsInline = true; video.preload = 'auto'; video.setAttribute('playsinline', ''); video.src = url;
+  const waitFor = (name, ms) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { video.removeEventListener(name, ok); reject(new Error('video_timeout')); }, ms);
+    const ok = () => { clearTimeout(timer); resolve(); };
+    video.addEventListener(name, ok, { once: true });
+  });
+  try {
+    if (video.readyState < 1) { video.load(); await waitFor('loadedmetadata', 12000); }
+    const dur = isFinite(video.duration) && video.duration > 0 ? Math.min(video.duration, 10) : 3;
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) throw new Error('video_size');
+    const scale = Math.min(1, 1280 / Math.max(vw, vh));
+    const big = document.createElement('canvas'); big.width = Math.round(vw * scale); big.height = Math.round(vh * scale);
+    const small = document.createElement('canvas'); small.width = 240; small.height = Math.max(1, Math.round(240 * vh / vw));
+    const bigCtx = big.getContext('2d'), smallCtx = small.getContext('2d', { willReadFrequently: true });
+    const count = 12, blobs = [], scores = [];
+    for (let k = 0; k < count; k++) {
+      const t = dur * (0.08 + 0.84 * (k / (count - 1)));
+      try {
+        video.currentTime = t;
+        await waitFor('seeked', 6000);
+      } catch (e) { continue; }
+      bigCtx.drawImage(video, 0, 0, big.width, big.height);
+      smallCtx.drawImage(video, 0, 0, small.width, small.height);
+      const blob = await new Promise((resolve) => big.toBlob(resolve, 'image/jpeg', 0.88));
+      if (!blob) continue;
+      blobs.push(blob); scores.push(frameSharpness(smallCtx, small.width, small.height));
+    }
+    if (!blobs.length) throw new Error('video_frames');
+    return pickFrames(scores, Math.min(wanted, blobs.length)).map((i, n) => new File([blobs[i]], 'frame' + (n + 1) + '.jpg', { type: 'image/jpeg' }));
+  } finally {
+    URL.revokeObjectURL(url);
+    video.removeAttribute('src'); video.load();
+  }
+}
+
+async function startVideoScan(file) {
+  const target = activeTank();
+  pending = { photoUrl: '', species: [], tips: '', loading: true, error: '', note: '', tankId: target ? target.id : '', photos: 0, loadingNote: 'Picking the sharpest frames from your video\u2026' };
+  showView('results');
+  renderResults();
+  let frames = [];
+  try { frames = await extractVideoFrames(file, 3); } catch (e) { frames = []; }
+  if (!frames.length) {
+    pending.loading = false;
+    pending.error = 'That video could not be read. Try recording again, or use a photo.';
+    renderResults();
+    return;
+  }
+  for (let i = 0; i < frames.length; i++) {
+    await startScan(frames[i], i > 0, 'Checking frame ' + (i + 1) + ' of ' + frames.length + '\u2026');
+  }
+}
+
+async function startScan(file, append, note) {
   const target = activeTank();
   const more = !!(append && pending && pending.species && pending.species.length);
   const priorSpecies = more ? pending.species : [];
   const priorPhotos = more ? (pending.photos || 1) : 0;
   const tankId = more && getTank(pending.tankId) ? pending.tankId : (target ? target.id : '');
   const scanTank = getTank(tankId) || target;
-  pending = { photoUrl: more ? pending.photoUrl : '', species: [], tips: '', loading: true, error: '', note: '', tankId, photos: priorPhotos };
+  pending = { photoUrl: more ? pending.photoUrl : '', species: [], tips: '', loading: true, error: '', note: '', tankId, photos: priorPhotos, loadingNote: note || '' };
   // Tell the AI what this tank already has, plus anything found in earlier photos of this session.
   const known = [];
   (scanTank ? scanTank.fish.map((f) => f.name) : []).concat(priorSpecies.filter((sp) => sp.kind !== 'plant').map((sp) => sp.name)).forEach((n) => {
