@@ -2137,6 +2137,7 @@ async function askWorker(images, mode, timeoutMs, ctx) {
       ? 'The photo reader had trouble (' + (data.ai_detail || 'error ' + data.ai_status) + '). Please try again in a moment.'
       : friendlyError(data.error, res.status));
   }
+  if (data.first_pass && data.first_pass.usage) logUsage('fish', data.first_pass.model, data.first_pass.usage, { detail: 'first look' });
   if (data.usage) logUsage(mode === 'zoom' || mode === 'verify' ? 'zoom' : mode === 'fish' ? 'fish' : 'scan', data.model, data.usage, { detail: mode + (ctx.deep ? ' deep' : '') + ', ' + (images || []).length + ' img, ' + Math.round(JSON.stringify(images || []).length / 1024) + ' KB' });
   return data;
 }
@@ -3075,6 +3076,7 @@ async function runFish(deep) {
   try {
     const data = await askWorker(fishCheck.images, 'fish', 45000, { tank_type: t && TYPES.includes(t.type) ? t.type : '', deep: !!deep });
     const r = data.fish;
+    if (data.first_pass) fishCheck.runs.push({ model: data.first_pass.model, usage: data.first_pass.usage });
     fishCheck.runs.push({ model: data.model, usage: data.usage });
     if (!r || !r.is_aquarium || !r.common_name) {
       fishCheck.error = 'I could not find a fish, plant or coral in that photo. Move closer to one animal, hold still, and try again.';

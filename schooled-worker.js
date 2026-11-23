@@ -392,6 +392,13 @@ function sanitizeHealth(h) {
   return { status, score: shown, signs: status === 'healthy' ? [] : signs };
 }
 
+// A Fish Check answer is worth a second opinion when the cheap model is unsure, or gives a vague label instead of a species.
+const GENERIC_NAME = /^((african|malawi|tanganyika|lake victoria|small|large|mixed|dwarf)\s+)?(cichlid|cichlids|mbuna|haplochromis)$|^peacock cichlid$/i;
+function needsSecondOpinion(fish, env) {
+  const below = Number(env.ESCALATE_BELOW) > 0 ? Number(env.ESCALATE_BELOW) : 0.8;
+  return fish.confidence < below || GENERIC_NAME.test(String(fish.common_name || '').trim());
+}
+
 async function scan(request, env, origin) {
   if (!env.GEMINI_API_KEY) return json({ ok: false, error: 'server_not_configured' }, 500, origin);
 
@@ -521,10 +528,35 @@ async function scan(request, env, origin) {
     data = await upstream.json();
     const text = data.candidates[0].content.parts.map((p) => p.text || '').join('');
     const parsedReply = JSON.parse(text);
-    const result = mode === 'verify' ? { items: sanitizeVerify(parsedReply, items.length) } : mode === 'fish' ? sanitizeFish(parsedReply) : sanitize(parsedReply);
+    let result = mode === 'verify' ? { items: sanitizeVerify(parsedReply, items.length) } : mode === 'fish' ? sanitizeFish(parsedReply) : sanitize(parsedReply);
     const u = data.usageMetadata || {};
-    const usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
-    return json(Object.assign({ ok: true, model: usedModel, usage, mode }, result), 200, origin);
+    let usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
+    let finalModel = usedModel;
+    let firstPass = null;
+    // Automatic second opinion: when the cheap model is unsure or gives a vague label, the stronger model looks at the same photo.
+    // The person never sees a retry button, they just get the better answer.
+    if (mode === 'fish' && result.fish && result.fish.is_aquarium && usedModel === primary && needsSecondOpinion(result.fish, env)) {
+      const strong = env.GEMINI_ESCALATE_MODEL || env.GEMINI_VERIFY_MODEL || VERIFY_MODEL;
+      const left = TOTAL_BUDGET_MS - (Date.now() - started);
+      if (strong !== primary && left > 9000) {
+        try {
+          let res2 = await ask(strong, true, Math.min(20000, left), true);
+          if (res2.status === 400) res2 = await ask(strong, false, Math.min(20000, TOTAL_BUDGET_MS - (Date.now() - started)), false);
+          if (res2.ok) {
+            const d2 = await res2.json();
+            const r2 = sanitizeFish(JSON.parse(d2.candidates[0].content.parts.map((p) => p.text || '').join('')));
+            if (r2.fish && r2.fish.is_aquarium) {
+              const u2 = d2.usageMetadata || {};
+              firstPass = { model: usedModel, usage };
+              result = r2;
+              usage = { input: Number(u2.promptTokenCount) || 0, output: (Number(u2.candidatesTokenCount) || 0) + (Number(u2.thoughtsTokenCount) || 0) };
+              finalModel = strong;
+            }
+          }
+        } catch (err) { /* keep the first answer */ }
+      }
+    }
+    return json(Object.assign({ ok: true, model: finalModel, usage, mode }, firstPass ? { first_pass: firstPass } : {}, result), 200, origin);
   } catch (err) {
     const why = data && ((data.promptFeedback && data.promptFeedback.blockReason) || (data.candidates && data.candidates[0] && data.candidates[0].finishReason)) || String(err && err.message || err);
     return json({ ok: false, error: 'ai_error', ai_status: 200, ai_detail: 'bad reply: ' + String(why).slice(0, 120) }, 502, origin);
