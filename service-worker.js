@@ -1,6 +1,6 @@
 // Schooled service worker: keeps the app opening when offline.
 // Network first, so new uploads show up right away; falls back to the saved copy.
-const CACHE = 'schooled-shell-v79';
+const CACHE = 'schooled-shell-v80';
 const SHELL = [
   'species.json',
   './',
@@ -40,7 +40,7 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
 
   event.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' }) // always check with the server, so a new page never pairs with an old app.js from the browser's own cache
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();
