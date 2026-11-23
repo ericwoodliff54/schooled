@@ -1198,12 +1198,10 @@ function renderTankAddMenu() {
   putAll(box,
     featureBtn({ icon: 'scan', color: 'blue', title: 'Scan the whole tank', text: 'Photograph the tank and name every fish, plant and coral',
       go: () => { state.activeId = t.id; saveState(); closeAddMenu(); $('gallery-input').click(); } }),
-    featureBtn({ icon: 'scan', color: 'purple', title: 'Scan with a short video', text: 'Hold steady for about 3 seconds. We pick the sharpest frames',
-      go: () => { state.activeId = t.id; saveState(); closeAddMenu(); $('video-input').click(); } }),
     featureBtn({ icon: 'fish', color: 'aqua', title: 'Check one fish', text: 'Photograph a fish and see if it fits ' + tankLabel(t),
       go: () => { fishCheck = null; fishCheckTankId = t.id; fishCheckNone = false; fishCheckFrom = 'tank'; closeAddMenu(); showView('fishcheck'); } }),
     featureBtn({ icon: 'plus', color: 'orange', title: 'Add by name', text: 'Search the list and add it yourself',
-      go: () => { closeAddMenu(); tankSection = 'fish'; renderTank(); const inp = addSearch.root.querySelector('input'); if (inp) { inp.scrollIntoView({ block: 'center' }); inp.focus(); } } }));
+      go: () => { closeAddMenu(); openAddPop(); } }));
 }
 if ($('tank-add-fish')) $('tank-add-fish').addEventListener('click', () => {
   const box = $('tank-add-menu');
@@ -1885,11 +1883,16 @@ const addSearch = createSearch({
     if (!t) return;
     addToTank(t, name, 1, 'add', entry ? entry.k : undefined);
     addSearch.clear();
+    closeAddPop();
     saveState();
     renderTank();
   }
 });
 $('add-slot').append(addSearch.root);
+function openAddPop() { addSearch.clear(); $('add-pop').hidden = false; addSearch.input.focus(); }
+function closeAddPop() { $('add-pop').hidden = true; addSearch.clear(); }
+$('add-pop-close').addEventListener('click', closeAddPop);
+$('add-pop').addEventListener('click', (ev) => { if (ev.target === $('add-pop')) closeAddPop(); });
 
 let deleteArmed = false;
 let deleteTimer = null;
@@ -3181,7 +3184,8 @@ function renderFishCheck() {
   const t = fishCheckTank();
   body.append(el('h1', { text: 'Fish Check' }),
     el('p', { class: 'muted', text: 'Standing at the fish store? Photograph one fish, plant or coral. Get its name, what it needs, and whether it fits your tank. Including its name tag in the photo helps.' }));
-  putAll(body, tankSwitcher(t, 'Checking for', (id) => { fishCheckNone = !id; if (id) setActiveTank(id); else fishCheckTankId = ''; renderFishCheck(); }, 'No tank yet'));
+  if (fishCheckFrom === 'tank' && t) body.append(el('p', { class: 'muted small', text: 'Checking for ' + tankLabel(t) }));
+  else putAll(body, tankSwitcher(t, 'Checking for', (id) => { fishCheckNone = !id; if (id) setActiveTank(id); else fishCheckTankId = ''; renderFishCheck(); }, 'No tank yet'));
   const fc = fishCheck;
   const actions = el('div', { class: 'row photo-actions' },
     el('button', { type: 'button', class: 'btn primary', text: 'Take photo', onclick: () => $('fishcheck-camera').click() }),
