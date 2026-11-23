@@ -1000,19 +1000,85 @@ function toast(message) {
 // ---------- Navigation ----------
 const VIEWS = ['setup', 'home', 'results', 'water', 'tank', 'species', 'dream', 'fishcheck', 'misses'];
 let currentView = 'home';
-const NAV_FOR = { home: 'home', results: 'home', fishcheck: 'home', tank: 'home', species: 'home', dream: 'home', water: 'home', misses: 'home' };
 let openTankId = '';
 let editingSize = false;
+
+// Back swipe / back button: every screen change is a history entry, so the
+// phone's own back gesture walks back through the app instead of leaving it.
+let navIdx = -1;
+let navKey = '';
+let navRestoring = false;
+let navCurrent = null;
+function navSnapshot(name) {
+  return {
+    v: name, tank: openTankId, sec: tankSection, from: fishCheckFrom, wfrom: waterFrom,
+    sv: speciesView ? { name: speciesView.name, tankId: speciesView.tankId } : null,
+    so: speciesOrigin, sot: speciesOriginTank
+  };
+}
+function navRecord(name) {
+  if (navRestoring || !window.history || !history.pushState) return;
+  const snap = navSnapshot(name);
+  const key = name + '|' + (name === 'tank' ? snap.tank : '') + '|' + (name === 'species' && snap.sv ? snap.sv.name : '');
+  try {
+    if (navIdx < 0) { navIdx = 0; snap.i = 0; history.replaceState(snap, ''); }
+    else if (key === navKey) { snap.i = navIdx; history.replaceState(snap, ''); }
+    else { navIdx += 1; snap.i = navIdx; history.pushState(snap, ''); }
+  } catch (e) { /* history not available */ }
+  navKey = key;
+  navCurrent = snap;
+}
+function goBack(fallback) {
+  if (navIdx > 0 && window.history) history.back();
+  else fallback();
+}
+function overlayOpen() {
+  const pop = $('add-pop');
+  const menu = $('tank-add-menu');
+  return !!((pop && !pop.hidden) || (menu && !menu.hidden));
+}
+window.addEventListener('popstate', (ev) => {
+  const st = ev.state;
+  if (!st || !st.v) return;
+  if (overlayOpen()) {
+    // first back just closes the popup or menu and stays on the screen
+    closeAddPop();
+    closeAddMenu();
+    if (navCurrent) { try { history.pushState(navCurrent, ''); } catch (e) { /* ignore */ } }
+    return;
+  }
+  navIdx = typeof st.i === 'number' ? st.i : 0;
+  navRestoring = true;
+  try {
+    if (currentView === 'results' && st.v !== 'results') pending = null;
+    fishCheckFrom = st.from || 'home';
+    waterFrom = st.wfrom || 'home';
+    let v = st.v;
+    if (v === 'setup' && state.tanks.length) v = 'home';
+    if (v === 'results' && !pending) v = navIdx > 0 ? 'skip' : 'home';
+    if (v === 'species') {
+      speciesView = st.sv || null;
+      speciesOrigin = st.so || 'home';
+      speciesOriginTank = st.sot || '';
+      speciesStack = [];
+      if (!speciesView) v = 'home';
+    }
+    if (v === 'skip') { navRestoring = false; history.back(); return; }
+    if ((v === 'tank') && getTank(st.tank)) showTank(st.tank, st.sec);
+    else showView(v === 'tank' ? 'home' : v);
+    navKey = v + '|' + (v === 'tank' ? openTankId : '') + '|' + (v === 'species' && speciesView ? speciesView.name : '');
+    navCurrent = navSnapshot(currentView);
+    navCurrent.i = navIdx;
+  } finally {
+    navRestoring = false;
+  }
+});
 
 function showView(name) {
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== name; });
   document.body.dataset.view = name;
   currentView = name;
-  $('nav').hidden = name === 'setup';
-  document.querySelectorAll('#nav button').forEach((b) => {
-    if (b.dataset.view === NAV_FOR[name]) b.setAttribute('aria-current', 'page');
-    else b.removeAttribute('aria-current');
-  });
+  navRecord(name);
   if (name === 'setup') fillSetupForm();
   if (name === 'home') renderHome();
   if (name === 'water') renderWater();
@@ -1039,10 +1105,6 @@ function showTank(id, section, form) {
   resetDelete();
   showView('tank');
 }
-
-document.querySelectorAll('#nav button').forEach((b) => {
-  b.addEventListener('click', () => showView(b.dataset.view));
-});
 
 // ---------- Tank helpers ----------
 function getTank(id) {
@@ -1079,18 +1141,21 @@ function ensureTank() {
 
 function addToTank(tank, name, count, mode, kind) {
   let clean = name.trim().slice(0, 60);
-  if (!clean) return;
+  if (!clean) return '';
   const hit = lookupSpecies(clean);
   if (hit) { clean = hit.n; kind = kind || hit.k; }
   const key = canonKey(clean);
   const existing = tank.fish.find((f) => canonKey(f.name) === key);
   if (existing) {
+    const before = existing.count;
     if (kind && !existing.kind) existing.kind = kind;
     if (mode === 'add') existing.count = Math.min(999, existing.count + count);
     else if (mode === 'scan') existing.count = Math.max(existing.count, count); // a scan can only add or confirm, never lower
     else existing.count = count;
+    return existing.count > before ? 'raised' : 'same';
   }
-  else tank.fish.push(kind && KIND_LIST.includes(kind) ? { name: clean, count, kind } : { name: clean, count });
+  tank.fish.push(kind && KIND_LIST.includes(kind) ? { name: clean, count, kind } : { name: clean, count });
+  return 'new';
 }
 
 function totalFish(tank) {
@@ -1885,7 +1950,7 @@ function changeCount(tank, fish, delta) {
   if (currentView === 'species') renderSpecies(); else renderTank();
 }
 
-$('tank-back').addEventListener('click', () => showView('home'));
+$('tank-back').addEventListener('click', () => goBack(() => showView('home')));
 $('home-add').addEventListener('click', () => startAddTank());
 
 $('tank-title-input').addEventListener('change', () => {
@@ -1999,7 +2064,7 @@ $('more-photo-input').addEventListener('change', (event) => {
   event.target.value = '';
   if (file) startScan(file, true);
 });
-$('results-back').addEventListener('click', () => { const t = getTank(pending && pending.tankId) || activeTank(); pending = null; if (t) showTank(t.id); else showView('home'); });
+$('results-back').addEventListener('click', () => goBack(() => { const t = getTank(pending && pending.tankId) || activeTank(); pending = null; if (t) showTank(t.id); else showView('home'); }));
 
 // Opens a photo from almost any format. Tries the browser first, then a converter for iPhone HEIC photos.
 async function decodeWithBrowser(blob) {
@@ -2629,10 +2694,16 @@ function editRow(sp, index) {
 $('save-scan').addEventListener('click', () => {
   if (!pending) return;
   const target = getTank(pending.tankId) || ensureTank();
-  pending.species.forEach((sp) => addToTank(target, sp.name, sp.count, 'scan', sp.kind));
+  const out = { new: 0, raised: 0, same: 0 };
+  pending.species.forEach((sp) => { const r = addToTank(target, sp.name, sp.count, 'scan', sp.kind); if (r) out[r] += 1; });
   saveState();
   pending = null;
   showTank(target.id);
+  const bits = [];
+  if (out.new) bits.push(out.new + ' new');
+  if (out.raised) bits.push(out.raised + ' count' + (out.raised === 1 ? '' : 's') + ' raised');
+  if (out.same) bits.push(out.same + ' already in the tank');
+  if (bits.length) toast('Saved: ' + bits.join(', ') + '.');
 });
 
 // ---------- Care data, tank mate check and stocking ----------
@@ -2820,14 +2891,14 @@ function showSpecies(name, tankId, fromChip) {
   speciesView = { name, tankId: tankId || '' };
   showView('species');
 }
-$('species-back').addEventListener('click', () => {
+$('species-back').addEventListener('click', () => goBack(() => {
   if (speciesStack.length) { speciesView = speciesStack.pop(); showView('species'); return; }
   if (speciesOrigin === 'home') showView('home');
   else if (speciesOrigin === 'dream') showView('dream');
   else if (speciesOrigin === 'fishcheck') showView('fishcheck');
   else if (getTank(speciesOriginTank)) showTank(speciesOriginTank);
   else showView('home');
-});
+}));
 
 // Stock photos come from Wikipedia by name, with a link back to the page for credit.
 let stockSaved = {};
@@ -3362,14 +3433,13 @@ if ($('fishcheck-video')) $('fishcheck-video').addEventListener('change', (event
   event.target.value = '';
   if (file) startFishCheck(file, true);
 });
-$('fishcheck-back').addEventListener('click', () => (fishCheckFrom === 'tank' && getTank(openTankId) ? showTank(openTankId) : showView('home')));
-$('misses-back').addEventListener('click', () => showView('home'));
+$('fishcheck-back').addEventListener('click', () => goBack(() => (fishCheckFrom === 'tank' && getTank(openTankId) ? showTank(openTankId) : showView('home'))));
+$('misses-back').addEventListener('click', () => goBack(() => showView('home')));
 
 // ---------- Dream Tank ----------
 const DREAM_MONTHLY = 10;
 const DREAM_KEY = 'schooled.dream';
 const DEVICE_KEY = 'schooled.device';
-const DREAM_IDEAS = ['A heavily planted, peaceful community tank with lots of color', 'A reef with soft corals, clownfish and a mandarin', 'A rocky Malawi cichlid tank full of blue and yellow', 'A quiet blackwater tank with small schooling fish and driftwood'];
 const DREAM_ERRORS = {
   limit_reached: 'You have used this month’s dream pictures. They come back next month.',
   busy_today: 'Dream Tank has been very busy today. Please try again tomorrow.',
@@ -3561,7 +3631,6 @@ function renderDream() {
   size.addEventListener('input', () => { dreamForm.size = size.value; });
   const wishCard = el('div', { class: 'card' },
     el('h2', { text: 'What do you want?' }), area,
-    el('div', { class: 'chips ideas' }, ...DREAM_IDEAS.map((i) => el('button', { type: 'button', class: 'chip-btn', text: i, onclick: () => { dreamForm.text = i; area.value = i; } }))),
     el('div', { class: 'dream-row' }, el('label', {}, el('span', { class: 'label', text: 'Water' }), typeSel), el('label', {}, el('span', { class: 'label', text: 'Gallons' }), size)));
   body.append(wishCard);
 
@@ -3614,8 +3683,8 @@ function dreamResultCard(r) {
   return card;
 }
 
-$('dream-back').addEventListener('click', () => showView('home'));
-$('water-back').addEventListener('click', () => { if (waterFrom === 'tank' && getTank(openTankId)) showTank(openTankId); else showView('home'); waterFrom = 'home'; });
+$('dream-back').addEventListener('click', () => goBack(() => showView('home')));
+$('water-back').addEventListener('click', () => goBack(() => { if (waterFrom === 'tank' && getTank(openTankId)) showTank(openTankId); else showView('home'); waterFrom = 'home'; }));
 
 // ---------- Splash ----------
 (function () {
