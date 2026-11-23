@@ -272,6 +272,7 @@ function sanitize(parsed) {
 const FISH_PROMPT =
   'This photo was taken in a pet store or fish shop. Identify the ONE animal or plant that is most prominent or closest to the center. ' +
   'If a name tag, price tag or label is clearly readable near it, read it and use it as strong evidence, and copy the text you read into label_text. ' +
+  'First fill in features: in under 25 words, list what you can see that tells species apart (body shape, main colors, barring or stripes, fin shape, snout or mouth). Then name it from those features. ' +
   'Do not guess from the other fish in the background. Give the common name hobbyists use, the scientific name only if you are reasonably sure, ' +
   'the kind, a confidence from 0 to 1, and up to three alternatives when it could be a lookalike. ' +
   'Alternatives must look like the animal in THIS photo: the same main color, pattern, body shape and kind (a yellow fish gets yellow look-alikes, never blue ones; a brain-like coral gets other brain-like or rounded stony corals, never long-tentacled ones). Never list a species just because it is in the same family or group. If you cannot name look-alikes that match what you see, leave alternatives empty. ' +
@@ -289,7 +290,9 @@ const FISH_PROMPT =
 const HEALTH_ITEMS = ['bloating', 'scales', 'spots', 'fins', 'eyes', 'mouth', 'skin', 'color', 'posture'];
 const FISH_SCHEMA = {
   type: 'OBJECT',
+  propertyOrdering: ['features', 'is_aquarium', 'common_name', 'scientific_name', 'kind', 'confidence', 'alternatives', 'label_text', 'note', 'health'],
   properties: {
+    features: { type: 'STRING' },
     is_aquarium: { type: 'BOOLEAN' },
     common_name: { type: 'STRING' },
     scientific_name: { type: 'STRING' },
@@ -312,7 +315,7 @@ const FISH_SCHEMA = {
       required: ['visibility', 'checks']
     }
   },
-  required: ['is_aquarium', 'common_name', 'kind', 'confidence', 'health']
+  required: ['features', 'is_aquarium', 'common_name', 'kind', 'confidence', 'health']
 };
 
 function sanitizeFish(parsed) {
@@ -456,8 +459,8 @@ async function scan(request, env, origin) {
     ' ' + SPECIFIC_NOTE + (mode !== 'verify' ? ' ' + SCI_NOTE : '');
 
   const primary = env.GEMINI_MODEL || DEFAULT_MODEL;
-  const deep = mode === 'fish' && body.deep === true;
-  const lead = mode === 'verify' || mode === 'fish' ? (env.GEMINI_VERIFY_MODEL || VERIFY_MODEL) : primary;
+  // Ordinary Fish Check runs on the cheap first model. Only the close-up check uses the middle one.
+  const lead = mode === 'verify' ? (env.GEMINI_VERIFY_MODEL || VERIFY_MODEL) : primary;
   const models = [lead, primary, FALLBACK_MODEL, LAST_RESORT_MODEL].filter((m, i, all) => all.indexOf(m) === i);
   const started = Date.now();
 
@@ -485,7 +488,7 @@ async function scan(request, env, origin) {
   for (const model of models) {
     const left = TOTAL_BUDGET_MS - (Date.now() - started);
     if (left < 6000) break;
-    const ms = Math.min(mode === 'fish' && !deep ? 12000 : 24000, left); // a quick fish check should fail over fast, not wait
+    const ms = Math.min(mode === 'fish' ? 12000 : 24000, left); // a quick fish check should fail over fast, not wait
     let res = null;
     try {
       res = await ask(model, true, ms, true);
