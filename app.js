@@ -2167,7 +2167,13 @@ function sameKindAs(name, ref) {
   return !(x && y && x.k && y.k && x.k !== y.k);
 }
 
+// Vague labels the AI falls back on when it can't tell cichlids apart. They are never a confident answer.
+function isGenericName(name) {
+  return /^((african|malawi|tanganyika|lake victoria|small|large|mixed|dwarf)\s+)?(cichlid|cichlids|mbuna|haplochromis)$/i.test(String(name || '').trim()) || /^peacock cichlid$/i.test(String(name || '').trim());
+}
+
 function lookalikeGuard(sp) {
+  if (isGenericName(sp.name)) sp.confidence = Math.min(sp.confidence, 0.6);
   if (!DB.ready || sp.kind === 'plant' || !sp.group || !DB.groups[sp.group]) return;
   const group = DB.groups[sp.group];
   const tank = getTank(pending && pending.tankId);
@@ -3262,7 +3268,7 @@ function renderFishCheck() {
   // A photo alone can't settle the look-alike groups (two rainbowfish, neon vs cardinal and so on), so never say "Confident" for those.
   const group = entry && entry.g && DB.groups[entry.g] ? DB.groups[entry.g] : null;
   const switched = canonKey(fc.name) !== canonKey(r.common_name);
-  const conf = group && group.h ? Math.min(r.confidence, 0.85) : r.confidence;
+  const conf = isGenericName(r.common_name) ? Math.min(r.confidence, 0.6) : (group && group.h ? Math.min(r.confidence, 0.85) : r.confidence);
   const sure = switched ? ['Your pick', 'ok'] : conf >= 0.95 ? ['Confident', 'ok'] : conf >= 0.8 ? ['Likely', 'warn'] : ['Not sure', 'bad'];
   const card = el('div', { class: 'card dream-result' });
   card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), el('span', { class: 'pill ' + sure[1], text: sure[0] })));
