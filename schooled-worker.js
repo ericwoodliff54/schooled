@@ -72,6 +72,10 @@ const TYPE_NOTES = {
   Brackish: 'This is a brackish tank.'
 };
 
+// Test-only: lets the close-up check look up what separates the candidate species. Search works from text, not from the photo.
+const GROUND_NOTE = 'You may use Google Search to check which visible features separate the candidate species (and their look-alikes) in reliable aquarium or biology sources. ' +
+  'Search cannot see the picture, so judge the picture yourself and use search only to confirm which features matter. Do not change an answer unless the picture matches the searched features.';
+const GROUND_JSON_NOTE = ' Reply with only one JSON object shaped {"items":[{"index":0,"common_name":"","scientific_name":"","confidence":0.0,"alternatives":[]}]} and nothing else.';
 const VERIFY_PROMPT =
   'You are double-checking species names in an aquarium. Each numbered entry has one image: a montage of close-up crops of the same kind of animal, ' +
   'side by side, cut from a larger photo. The entries can be fish, corals, invertebrates or plants. For each entry decide the most likely species or hobby trade name. For a plant, go by leaf shape, leaf edges, size, color, stem or rhizome and how it grows (rosette, stem, carpet, attached to wood). For a coral, go by polyp shape, skeleton shape and color. ' +
@@ -491,11 +495,12 @@ async function scan(request, env, origin) {
     });
     return parts;
   }
+  const ground = mode === 'verify' && body.ground === true && isTester(request, env);
   const basePrompt = mode === 'verify' ? VERIFY_PROMPT : mode === 'fish' ? FISH_PROMPT : (mode === 'zoom' ? PROMPT + ' ' + ZOOM_NOTE : PROMPT);
   // The app matches names against its own species list on the phone, so no list is sent here.
   // That keeps a scan the same cost however large the species list grows.
   const promptText = basePrompt + (tankType ? ' ' + TYPE_NOTES[tankType] : '') + (known.length ? ' ' + KNOWN_NOTE(known) : '') +
-    ' ' + SPECIFIC_NOTE + (mode !== 'verify' ? ' ' + SCI_NOTE : '');
+    ' ' + SPECIFIC_NOTE + (mode !== 'verify' ? ' ' + SCI_NOTE : '') + (ground ? ' ' + GROUND_NOTE : '');
 
   const primary = env.GEMINI_MODEL || DEFAULT_MODEL;
   // Ordinary Fish Check runs on the cheap first model. Only the close-up check uses the middle one.
@@ -503,14 +508,16 @@ async function scan(request, env, origin) {
   const models = [lead, primary, FALLBACK_MODEL, LAST_RESORT_MODEL].filter((m, i, all) => all.indexOf(m) === i);
   const started = Date.now();
 
+  let plainJson = false; // grounded calls fall back to plain text JSON if Google rejects search together with a schema
   async function ask(model, withThinking, ms, withRes) {
-    const generationConfig = { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : mode === 'fish' ? FISH_SCHEMA : SCHEMA };
+    const generationConfig = plainJson ? {} : { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : mode === 'fish' ? FISH_SCHEMA : SCHEMA };
     if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
     const payload = {
       systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
-      contents: [{ role: 'user', parts: [{ text: promptText }].concat(buildParts(withRes)) }],
+      contents: [{ role: 'user', parts: [{ text: promptText + (plainJson ? GROUND_JSON_NOTE : '') }].concat(buildParts(withRes)) }],
       generationConfig
     };
+    if (ground) payload.tools = [{ google_search: {} }];
     return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
@@ -534,6 +541,7 @@ async function scan(request, env, origin) {
       // A model may not accept the per-image resolution or thinking settings: retry with fewer extras.
       if (res.status === 400) res = await ask(model, true, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started)), false);
       if (res.status === 400) res = await ask(model, false, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started)), false);
+      if (ground && res.status === 400) { plainJson = true; res = await ask(model, true, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started)), true); }
       if ((res.status === 503 || res.status === 429) && TOTAL_BUDGET_MS - (Date.now() - started) > 12000) {
         await new Promise((r) => setTimeout(r, 1200)); // one quick retry when Google says "busy"
         res = await ask(model, true, Math.min(20000, TOTAL_BUDGET_MS - (Date.now() - started)), true);
@@ -559,7 +567,12 @@ async function scan(request, env, origin) {
   try {
     data = await upstream.json();
     const text = data.candidates[0].content.parts.map((p) => p.text || '').join('');
-    const parsedReply = JSON.parse(text);
+    let parsedReply;
+    try { parsedReply = JSON.parse(text); } catch (e1) {
+      if (!ground) throw e1;
+      const a0 = text.indexOf('{'), b0 = text.lastIndexOf('}'); // search replies can carry stray text around the JSON
+      parsedReply = JSON.parse(text.slice(a0, b0 + 1));
+    }
     let result = mode === 'verify' ? { items: sanitizeVerify(parsedReply, items.length) } : mode === 'fish' ? sanitizeFish(parsedReply) : sanitize(parsedReply);
     const u = data.usageMetadata || {};
     let usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
@@ -588,7 +601,9 @@ async function scan(request, env, origin) {
         } catch (err) { /* keep the first answer */ }
       }
     }
-    return json(Object.assign({ ok: true, model: finalModel, usage, mode }, firstPass ? { first_pass: firstPass } : {}, result), 200, origin);
+    const gm = ground && data.candidates[0].groundingMetadata;
+    const groundInfo = ground ? { ground: { queries: ((gm && gm.webSearchQueries) || []).slice(0, 12), plain_json: plainJson } } : {};
+    return json(Object.assign({ ok: true, model: finalModel, usage, mode }, firstPass ? { first_pass: firstPass } : {}, groundInfo, result), 200, origin);
   } catch (err) {
     const why = data && ((data.promptFeedback && data.promptFeedback.blockReason) || (data.candidates && data.candidates[0] && data.candidates[0].finishReason)) || String(err && err.message || err);
     return json({ ok: false, error: 'ai_error', ai_status: 200, ai_detail: 'bad reply: ' + String(why).slice(0, 120) }, 502, origin);
