@@ -1035,7 +1035,8 @@ function goBack(fallback) {
 function overlayOpen() {
   const pop = $('add-pop');
   const menu = $('tank-add-menu');
-  return !!((pop && !pop.hidden) || (menu && !menu.hidden));
+  const es = $('edit-sheet'), gs = $('gallery-sheet');
+  return !!((pop && !pop.hidden) || (menu && !menu.hidden) || (es && !es.hidden) || (gs && !gs.hidden));
 }
 window.addEventListener('popstate', (ev) => {
   const st = ev.state;
@@ -1044,6 +1045,7 @@ window.addEventListener('popstate', (ev) => {
     // first back just closes the popup or menu and stays on the screen
     closeAddPop();
     closeAddMenu();
+    closeSheets();
     if (navCurrent) { try { history.pushState(navCurrent, ''); } catch (e) { /* ignore */ } }
     return;
   }
@@ -1076,6 +1078,7 @@ window.addEventListener('popstate', (ev) => {
 
 function showView(name) {
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== name; });
+  if (name !== 'tank') closeSheets();
   document.body.dataset.view = name;
   currentView = name;
   navRecord(name);
@@ -1626,14 +1629,15 @@ function renderTank() {
   const t = getTank(openTankId);
   if (!t) { showView('home'); return; }
 
-  $('tank-hero').replaceChildren(t.photo
-    ? el('img', { src: t.photo, alt: 'Photo of ' + tankLabel(t) })
-    : el('div', { class: 'tank-hero-empty' }, kindIcon('fish'), el('span', { text: 'No photo yet' })));
-  $('tank-hero').append(el('button', { type: 'button', class: 'btn small hero-edit', text: t.photo ? 'Edit photo' : 'Add photo', onclick: () => {
-    const box = $('tank-photo-camera').closest('details');
-    if (box) box.open = true;
-    $('tank-photo-camera').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  } }));
+  $('tank-hero').replaceChildren(
+    t.photo ? el('img', { src: t.photo, alt: 'Photo of ' + tankLabel(t) }) : el('div', { class: 'tank-hero-empty' }, kindIcon('fish'), el('span', { text: 'No photo yet' })),
+    el('div', { class: 'hero-shade' }),
+    el('div', { class: 'hero-title' }, el('h1', { text: tankLabel(t) }),
+      el('button', { type: 'button', class: 'hero-pencil', 'aria-label': 'Rename tank', onclick: () => openEditSheet(true) }, iconSvg(['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'], 20))));
+  const startedText = t.started ? (() => { const d = new Date(t.started + 'T00:00:00'); return isNaN(d) ? '' : 'Since ' + d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }); })() : '';
+  $('tank-chips').replaceChildren(...[sizeShort(t) || 'Add size', t.type, t.style, WATER_SHORT[t.water], startedText || 'Add start date']
+    .filter(Boolean).map((label) => el('button', { type: 'button', class: 'chip-pill', text: label, onclick: () => openEditSheet(false) })));
+  $('sheet-photo-thumb').replaceChildren(t.photo ? el('img', { src: t.photo, alt: '' }) : el('span', { text: 'No photo' }));
   $('tank-photo-remove').hidden = !t.photo;
   $('tank-photo-camera').textContent = t.photo ? 'Retake' : 'Take photo';
   $('tank-photo-gallery').textContent = t.photo ? 'Change' : 'Choose photo';
@@ -1695,7 +1699,8 @@ function renderTank() {
     );
   });
   const ins = $('tank-insights');
-  ins.replaceChildren(stockCard(t), mateCheckCard(t));
+  const strip = summaryStrip(t);
+  ins.replaceChildren(strip.row, ...(strip.showMates ? [mateCheckCard(t)] : []));
   renderGear();
   if (photoState.tank !== t.id || photoState.list === null) { photoState.list = null; loadProgressPhotos(); } else renderProgress();
 }
@@ -1806,17 +1811,20 @@ function renderGear() {
   const parts = [
     mine.length ? el('div', { class: 'gear-list' }, ...mine) : el('p', { class: 'muted small', text: 'Nothing logged yet. Add the filter, heater, light and anything else on this tank.' }),
     el('div', { class: 'gear-form' }, kindSel, nameIn, noteIn, addBtn),
-    el('h3', { class: 'gear-h', text: 'Ideas for this tank' }),
-    el('p', { class: 'muted small', text: 'Based on ' + t.type.toLowerCase() + (tankGallons(t) ? ', ' + Math.round(tankGallons(t)) + ' gallons' : '') + (t.fish.length ? ' and what you keep in it' : '') + '. General guidance, so check the label on any product you buy.' })
   ];
-  if (!sugg.length) parts.push(el('p', { class: 'muted small', text: t.gear.length ? 'You have the basics covered.' : 'No ideas right now.' }));
-  sugg.forEach((s) => parts.push(el('div', { class: 'gear-idea' },
-    el('div', { class: 'gear-main' }, el('strong', { text: s.title }), el('span', { class: 'sub', text: s.why })),
-    el('div', { class: 'gear-idea-actions' },
-      el('button', { type: 'button', class: 'btn small', text: 'I have this', onclick: () => { gearState.kind = s.kind; gearState.name = ''; renderGear(); $('gear-name').focus(); } }),
-      el('button', { type: 'button', class: 'btn link small-link', 'aria-label': 'Hide the idea ' + s.title, text: 'Hide', onclick: () => { t.gearSkip.push(s.title); t.gearSkip = t.gearSkip.slice(-30); saveState(); renderGear(); } })))));
-  if (hiddenCount) parts.push(el('button', { type: 'button', class: 'btn link', text: 'Show ' + hiddenCount + ' hidden idea' + (hiddenCount === 1 ? '' : 's'), onclick: () => { t.gearSkip = []; saveState(); renderGear(); } }));
   body.replaceChildren(...parts);
+
+  // Recommended gear: its own collapsible card, a row you swipe sideways.
+  $('tank-ideas-count').textContent = sugg.length ? String(sugg.length) : '';
+  const ip = [el('p', { class: 'muted small', text: 'Based on ' + t.type.toLowerCase() + (tankGallons(t) ? ', ' + Math.round(tankGallons(t)) + ' gallons' : '') + (t.fish.length ? ' and what you keep in it' : '') + '. General guidance, so check the label on any product you buy.' })];
+  if (!sugg.length) ip.push(el('p', { class: 'muted small', text: t.gear.length ? 'You have the basics covered.' : 'No ideas right now.' }));
+  else ip.push(el('div', { class: 'idea-row' }, ...sugg.map((s) => el('div', { class: 'idea-card gear-idea' },
+    el('div', { class: 'gear-main' }, el('strong', { text: s.title }), el('span', { class: 'sub', text: s.why })),
+    el('div', { class: 'idea-actions' },
+      el('button', { type: 'button', class: 'btn small', text: 'I have this', onclick: () => { gearState.kind = s.kind; gearState.name = ''; $('tank-gear').open = true; renderGear(); $('gear-name').focus(); } }),
+      el('button', { type: 'button', class: 'btn link small-link', 'aria-label': 'Hide the idea ' + s.title, text: 'Hide', onclick: () => { t.gearSkip.push(s.title); t.gearSkip = t.gearSkip.slice(-30); saveState(); renderGear(); } }))))));
+  if (hiddenCount) ip.push(el('button', { type: 'button', class: 'btn link', text: 'Show ' + hiddenCount + ' hidden idea' + (hiddenCount === 1 ? '' : 's'), onclick: () => { t.gearSkip = []; saveState(); renderGear(); } }));
+  $('tank-ideas-body').replaceChildren(...ip);
 }
 
 // Progress photos live in the browser's database (IndexedDB), not in the small saved-settings space.
@@ -1852,7 +1860,7 @@ const PhotoDB = (() => {
   };
 })();
 
-const photoState = { date: '', note: '', list: null, error: false, tank: '', viewing: '' };
+const photoState = { date: '', note: '', list: null, error: false, tank: '', viewing: '', gallery: false };
 
 async function loadProgressPhotos() {
   const t = getTank(openTankId);
@@ -1870,6 +1878,26 @@ async function loadProgressPhotos() {
   renderProgress();
 }
 
+function progressInputs(t) {
+  const camIn = el('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: '' });
+  const galIn = el('input', { type: 'file', accept: 'image/*,.heic,.heif,.avif,.webp', hidden: '' });
+  [camIn, galIn].forEach((inp) => inp.addEventListener('change', async () => {
+    const file = inp.files && inp.files[0];
+    inp.value = '';
+    if (!file) return;
+    try {
+      const data = await photoFromFile(file, 1000);
+      await PhotoDB.add({ id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), tank: t.id, date: photoState.date || todayISO(), note: photoState.note.trim().slice(0, 80), data });
+      photoState.note = '';
+      await loadProgressPhotos();
+      toast('Photo saved.');
+    } catch (err) {
+      toast("Couldn't save that photo. This browser may not allow saved photos, or it is out of space.");
+    }
+  }));
+  return { camIn, galIn };
+}
+
 function renderProgress() {
   const t = getTank(openTankId);
   const body = $('tank-progress-body');
@@ -1882,47 +1910,22 @@ function renderProgress() {
   dateIn.addEventListener('change', () => { photoState.date = /^\d{4}-\d{2}-\d{2}$/.test(dateIn.value) ? dateIn.value : todayISO(); });
   const noteIn = el('input', { id: 'progress-note', type: 'text', maxlength: '80', placeholder: 'Caption (optional), e.g. Week 4, plants filling in', autocomplete: 'off', 'aria-label': 'Caption', value: photoState.note });
   noteIn.addEventListener('input', () => { photoState.note = noteIn.value; });
-  const camIn = el('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: '' });
-  const galIn = el('input', { type: 'file', accept: 'image/*,.heic,.heif,.avif,.webp', hidden: '' });
-  [camIn, galIn].forEach((inp) => inp.addEventListener('change', async () => {
-    const file = inp.files && inp.files[0];
-    inp.value = '';
-    if (!file) return;
-    try {
-      const data = await photoFromFile(file, 1000);
-      await PhotoDB.add({ id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), tank: t.id, date: photoState.date, note: photoState.note.trim().slice(0, 80), data });
-      photoState.note = '';
-      await loadProgressPhotos();
-      toast('Photo saved.');
-    } catch (err) {
-      toast("Couldn't save that photo. This browser may not allow saved photos, or it is out of space.");
-    }
-  }));
+  const { camIn, galIn } = progressInputs(t);
 
   const parts = [
     el('p', { class: 'muted small', text: 'Add a photo every week or two and watch the tank grow in. Photos stay on this phone.' }),
-    el('div', { class: 'gear-form' },
-      el('label', { class: 'field' }, el('span', { class: 'label', text: 'Photo date' }), dateIn),
-      noteIn,
-      el('div', { class: 'row photo-actions' },
-        el('button', { type: 'button', class: 'btn small primary', text: 'Take photo', onclick: () => camIn.click() }),
-        el('button', { type: 'button', class: 'btn small', text: 'Choose photo', onclick: () => galIn.click() })),
-      camIn, galIn)
+    el('div', { class: 'row photo-actions' },
+      el('button', { type: 'button', class: 'btn small primary', text: 'Take photo', onclick: () => camIn.click() }),
+      el('button', { type: 'button', class: 'btn small', text: 'Upload photo', onclick: () => galIn.click() }),
+      list && list.length ? el('button', { type: 'button', class: 'btn small', id: 'open-gallery', text: 'Open gallery (' + list.length + ')', onclick: openGallery }) : null),
+    camIn, galIn,
+    el('details', { class: 'photo-details' }, el('summary', { text: 'Date and caption (optional)' }),
+      el('div', { class: 'gear-form' }, el('label', { class: 'field' }, el('span', { class: 'label', text: 'Photo date' }), dateIn), noteIn))
   ];
   if (photoState.error) parts.push(el('p', { class: 'error small', text: 'This browser does not allow saved photos right now (private mode can cause this).' }));
   if (list === null) parts.push(el('p', { class: 'muted small', text: 'Loading photos...' }));
   else if (list.length) {
-    parts.push(el('div', { class: 'progress-grid' }, ...list.map((p) => el('button', { type: 'button', class: 'progress-tile', 'aria-label': 'Open photo from ' + p.date, onclick: () => { photoState.viewing = p.id; renderProgress(); } },
-      el('img', { src: p.data, alt: 'Tank on ' + p.date }),
-      el('span', { class: 'progress-date', text: p.date })))));
-    if (list.length > 1) {
-      const a = list[list.length - 1], b = list[0];
-      parts.push(el('div', { class: 'progress-compare' },
-        el('h3', { class: 'gear-h', text: 'First and latest' }),
-        el('div', { class: 'progress-pair' },
-          el('figure', {}, el('img', { src: a.data, alt: 'First photo' }), el('figcaption', { text: a.date })),
-          el('figure', {}, el('img', { src: b.data, alt: 'Latest photo' }), el('figcaption', { text: b.date })))));
-    }
+    parts.push(el('div', { class: 'progress-grid strip' }, ...list.slice(0, 3).map((p) => progressTile(p))));
   } else if (!photoState.error) parts.push(el('p', { class: 'muted small', text: 'No progress photos yet.' }));
 
   const view = list && photoState.viewing ? list.find((p) => p.id === photoState.viewing) : null;
@@ -1940,6 +1943,50 @@ function renderProgress() {
         } }))));
   }
   body.replaceChildren(...parts);
+  renderGallery();
+}
+
+function progressTile(p) {
+  return el('button', { type: 'button', class: 'progress-tile', 'aria-label': 'Open photo from ' + p.date, onclick: () => { photoState.viewing = p.id; renderProgress(); } },
+    el('img', { src: p.data, alt: 'Tank on ' + p.date }),
+    el('span', { class: 'progress-date', text: p.date }));
+}
+
+// The whole gallery for this tank: every photo, plus the first and latest side by side.
+function openGallery() { photoState.gallery = true; renderGallery(); }
+function closeGallery() {
+  photoState.gallery = false;
+  const g = $('gallery-sheet');
+  if (g) { g.hidden = true; g.replaceChildren(); }
+}
+function renderGallery() {
+  const g = $('gallery-sheet');
+  if (!g) return;
+  const t = getTank(openTankId);
+  if (!photoState.gallery || !t) { g.hidden = true; return; }
+  const list = photoState.list || [];
+  const { camIn, galIn } = progressInputs(t);
+  const parts = [
+    el('div', { class: 'sheet-head' }, el('h2', { text: 'Photos of ' + tankLabel(t) }),
+      el('button', { type: 'button', id: 'gallery-close', class: 'sheet-x', 'aria-label': 'Close gallery', onclick: closeGallery }, iconSvg(['M6 6l12 12', 'M18 6L6 18'], 20))),
+    el('div', { class: 'row photo-actions' },
+      el('button', { type: 'button', class: 'btn small primary', text: 'Take photo', onclick: () => camIn.click() }),
+      el('button', { type: 'button', class: 'btn small', text: 'Upload photo', onclick: () => galIn.click() })),
+    camIn, galIn
+  ];
+  if (list.length) {
+    parts.push(el('div', { class: 'progress-grid' }, ...list.map((p) => progressTile(p))));
+    if (list.length > 1) {
+      const a = list[list.length - 1], b = list[0];
+      parts.push(el('div', { class: 'progress-compare' },
+        el('h3', { class: 'gear-h', text: 'First and latest' }),
+        el('div', { class: 'progress-pair' },
+          el('figure', {}, el('img', { src: a.data, alt: 'First photo' }), el('figcaption', { text: a.date })),
+          el('figure', {}, el('img', { src: b.data, alt: 'Latest photo' }), el('figcaption', { text: b.date })))));
+    }
+  } else parts.push(el('p', { class: 'muted', text: 'No photos yet. Take or upload one to start the gallery.' }));
+  g.replaceChildren(el('div', { class: 'sheet-dim', onclick: closeGallery }), el('div', { class: 'sheet tall', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Tank photos' }, el('div', { class: 'sheet-grab', 'aria-hidden': 'true' }), ...parts));
+  g.hidden = false;
 }
 
 function changeCount(tank, fish, delta) {
@@ -1951,6 +1998,18 @@ function changeCount(tank, fish, delta) {
 }
 
 $('tank-back').addEventListener('click', () => goBack(() => showView('home')));
+
+function openEditSheet(focusName) {
+  if (!getTank(openTankId)) return;
+  $('edit-sheet').hidden = false;
+  if (focusName) setTimeout(() => { try { $('tank-title-input').focus(); } catch (e) { /* ignore */ } }, 50);
+}
+function closeEditSheet() { const sh = $('edit-sheet'); if (sh) sh.hidden = true; }
+function closeSheets() { closeEditSheet(); closeGallery(); }
+$('tank-edit').addEventListener('click', () => openEditSheet(false));
+$('edit-sheet-close').addEventListener('click', closeEditSheet);
+$('edit-sheet-done').addEventListener('click', closeEditSheet);
+$('edit-sheet-dim').addEventListener('click', closeEditSheet);
 $('home-add').addEventListener('click', () => startAddTank());
 
 $('tank-title-input').addEventListener('change', () => {
@@ -1958,6 +2017,7 @@ $('tank-title-input').addEventListener('change', () => {
   if (!t) return;
   t.name = $('tank-title-input').value.trim().slice(0, 40);
   saveState();
+  if (currentView === 'tank') renderTank();
 });
 
 $('tank-notes').addEventListener('change', () => {
@@ -2850,6 +2910,40 @@ function stockBar(t) {
 }
 
 let mateShowAll = false;
+let mateOpen = null; // null = open only when something needs a look
+function iconSvg(paths, size) {
+  return svgEl('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' }, ...paths.map((d) => svgEl('path', { d })));
+}
+// Two small cards side by side: how full the tank is, and whether the fish get along.
+function summaryStrip(t) {
+  const s = stocking(t);
+  const left = el('div', { class: 'sum-card' }, el('div', { class: 'sum-k', text: 'Stocking' }));
+  if (!s.gal) left.append(el('div', { class: 'sum-big sm', text: 'Set size' }), el('p', { class: 'sum-note', text: 'Add the tank size to see how full it is.' }));
+  else if (!s.known) left.append(el('div', { class: 'sum-big sm', text: 'Empty' }), el('p', { class: 'sum-note', text: 'Add fish to see how full it is.' }));
+  else {
+    const lvl = stockLevel(s.pct);
+    left.append(el('div', { class: 'sum-big', text: Math.round(s.pct * 100) + '%' }),
+      el('div', { class: 'stock-track sum-track', role: 'img', 'aria-label': lvl.label + ', ' + Math.round(s.pct * 100) + ' percent of capacity' },
+        el('div', { class: 'stock-fill ' + lvl.tone, style: 'width:' + Math.max(2, Math.min(s.pct, 1) * 100).toFixed(1) + '%' })),
+      el('p', { class: 'sum-note', text: s.tooSmall ? s.tooSmall.name + ' needs ' + s.tooSmall.gal + ' gal or more' : lvl.label }));
+  }
+  const allIssues = tankCheck(t).issues;
+  const issues = allIssues.filter((i) => t.dismissed.indexOf(i.text) === -1);
+  const cleared = allIssues.length - issues.length;
+  const bad = issues.some((i) => i.level === 'bad');
+  const open = mateOpen === null ? (issues.length > 0 || cleared > 0) : mateOpen;
+  let tone = 'ok', head = cleared ? 'Cleared' : 'All clear', note = cleared ? 'Tap to bring them back' : 'No clashes found';
+  if (!t.fish.length) { tone = 'none'; head = 'Add fish'; note = 'I check how they get along'; }
+  else if (issues.length) { tone = bad ? 'bad' : 'warn'; head = issues.length + (issues.length === 1 ? ' to look at' : ' to look at'); note = open ? 'Tap to hide details' : 'Tap for details'; }
+  else if (cleared) note = open ? 'Tap to hide' : 'Tap to see what you cleared';
+  const right = el('button', { type: 'button', class: 'sum-card sum-btn', 'aria-expanded': String(open), onclick: () => { mateOpen = !open; renderTank(); } },
+    el('div', { class: 'sum-k', text: 'Compatibility' }),
+    el('div', { class: 'sum-status' },
+      el('span', { class: 'sum-badge ' + tone, 'aria-hidden': 'true' }, tone === 'ok' ? iconSvg(['M5 12.5l4.5 4.5L19 7.5'], 18) : tone === 'none' ? iconSvg(['M12 5v14', 'M5 12h14'], 18) : iconSvg(['M12 8v5', 'M12 17h.01'], 18)),
+      el('span', { class: 'sum-head', text: head })),
+    el('p', { class: 'sum-note', text: note }));
+  return { row: el('div', { class: 'sum-strip' }, left, right), showMates: open && t.fish.length > 0 };
+}
 function mateCheckCard(t) {
   const all = tankCheck(t).issues;
   const r = { issues: all.filter((i) => t.dismissed.indexOf(i.text) === -1), checked: tankCheck(t).checked, unknown: tankCheck(t).unknown };

@@ -110,6 +110,33 @@
 
 
   <div id="add-pop" class="add-pop" hidden><div class="add-pop-card" role="dialog" aria-label="Add by name"><div class="add-pop-head"><strong>Add by name</strong><button type="button" id="add-pop-close" class="btn small">Close</button></div><div id="add-slot"></div></div></div>
+  <div id="edit-sheet" class="sheet-wrap" hidden>
+    <div class="sheet-dim" id="edit-sheet-dim"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="Edit tank">
+      <div class="sheet-grab" aria-hidden="true"></div>
+      <div class="sheet-head"><h2>Edit tank</h2><button type="button" id="edit-sheet-close" class="sheet-x" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="sheet-photo"><div id="sheet-photo-thumb" class="sheet-thumb"></div>
+        <div class="row photo-actions">
+          <button type="button" id="tank-photo-camera" class="btn small">Take photo</button>
+          <button type="button" id="tank-photo-gallery" class="btn small">Choose photo</button>
+          <button type="button" id="tank-photo-remove" class="btn small danger-text" hidden>Remove</button>
+        </div></div>
+      <input id="tank-photo-camera-input" type="file" accept="image/*" capture="environment" hidden>
+      <input id="tank-photo-gallery-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
+      <label class="field"><span class="label">Tank name</span><input id="tank-title-input" class="title-input" type="text" maxlength="40" placeholder="Tank name" aria-label="Tank name" autocomplete="off"></label>
+      <div id="tank-pills" class="pills sheet-grid"></div>
+      <label class="field" id="tank-zip-row" hidden>
+        <span class="label">ZIP code for tap water</span>
+        <input id="tank-zip-edit" type="text" inputmode="numeric" maxlength="5" placeholder="32065" autocomplete="postal-code">
+        <span class="error small" id="tank-zip-error" role="alert" hidden>ZIP code should be 5 digits.</span>
+      </label>
+      <label class="field"><span class="label">Notes</span>
+        <textarea id="tank-notes" class="textarea" maxlength="400" rows="3" placeholder="Filter, lights, fertilizer, anything you want to remember"></textarea></label>
+      <button type="button" id="edit-sheet-done" class="btn primary big">Done</button>
+      <button type="button" id="tank-delete" class="btn-link danger">Delete this tank</button>
+    </div>
+  </div>
+  <div id="gallery-sheet" class="sheet-wrap gallery" hidden></div>
 
   <div hidden>
     <input id="camera-input" type="file" accept="image/*" capture="environment">
@@ -149,21 +176,25 @@
 
   <!-- One tank -->
   <section id="view-tank" class="view" hidden>
-    <button type="button" id="tank-back" class="btn link back">&larr; Home</button>
-    <div id="tank-hero" class="tank-hero"></div>
-    <button type="button" id="tank-add-fish" class="btn primary big" aria-expanded="false" aria-controls="tank-add-menu">Add fish</button>
-    <div id="tank-add-menu" class="add-menu features" hidden></div>
+    <div class="tank-top">
+      <div id="tank-hero" class="tank-hero"></div>
+      <button type="button" id="tank-back" class="hero-btn left" aria-label="Back"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button type="button" id="tank-edit" class="hero-btn right" aria-label="Edit tank"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+    </div>
+    <div id="tank-chips" class="chip-strip"></div>
 
-    <input id="tank-title-input" class="title-input" type="text" maxlength="40" placeholder="Tank name" aria-label="Tank name" autocomplete="off">
-    <p class="hint small" id="tank-pill-hint">Tap any pill to change it.</p>
-    <div id="tank-pills" class="pills"></div>
-
-    <div id="tank-seg" class="seg" role="group" aria-label="Tank sections"></div>
+    <div class="seg-sticky"><div id="tank-seg" class="seg" role="group" aria-label="Tank sections"></div></div>
 
     <div id="tank-sec-fish">
       <div id="tank-insights" class="insights"></div>
-      <h2 class="section">Fish and plants</h2>
-      <div id="tank-list" class="list"></div>
+      <div class="card fish-card">
+        <div class="card-head">
+          <h2>Fish and plants</h2>
+          <button type="button" id="tank-add-fish" class="btn primary add-pill2" aria-expanded="false" aria-controls="tank-add-menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Scan / Add</button>
+        </div>
+        <div id="tank-add-menu" class="add-menu features" hidden></div>
+        <div id="tank-list" class="list"></div>
+      </div>
     </div>
     <div id="tank-sec-water" class="log-body" hidden></div>
     <div id="tank-sec-care" class="log-body" hidden></div>
@@ -175,34 +206,15 @@
       <div id="tank-gear-body"></div>
     </details>
 
-    <details class="card tank-settings" id="tank-progress">
-      <summary>Progress photos <span id="tank-progress-count" class="summary-count"></span></summary>
+    <details class="card tank-settings" id="tank-ideas" open>
+      <summary>Recommended gear <span id="tank-ideas-count" class="summary-count"></span></summary>
+      <div id="tank-ideas-body"></div>
+    </details>
+
+    <div class="card" id="tank-progress">
+      <div class="card-head"><h2>Progress photos</h2><span id="tank-progress-count" class="summary-count"></span></div>
       <div id="tank-progress-body"></div>
-    </details>
-
-    <details class="card tank-settings">
-      <summary>Tank settings</summary>
-      <div class="row photo-actions">
-        <button type="button" id="tank-photo-camera" class="btn small">Take photo</button>
-        <button type="button" id="tank-photo-gallery" class="btn small">Choose photo</button>
-        <button type="button" id="tank-photo-remove" class="btn small" hidden>Remove</button>
-      </div>
-      <input id="tank-photo-camera-input" type="file" accept="image/*" capture="environment" hidden>
-      <input id="tank-photo-gallery-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
-
-      <label class="field" id="tank-zip-row" hidden>
-        <span class="label">ZIP code for tap water</span>
-        <input id="tank-zip-edit" type="text" inputmode="numeric" maxlength="5" placeholder="32065" autocomplete="postal-code">
-        <span class="error small" id="tank-zip-error" role="alert" hidden>ZIP code should be 5 digits.</span>
-      </label>
-
-      <label class="field">
-        <span class="label">Notes</span>
-        <textarea id="tank-notes" class="textarea" maxlength="400" rows="3" placeholder="Filter, lights, fertilizer, anything you want to remember"></textarea>
-      </label>
-
-      <button type="button" id="tank-delete" class="btn-link danger">Delete this tank</button>
-    </details>
+    </div>
   </section>
 
   <!-- Fish Check -->
