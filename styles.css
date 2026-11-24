@@ -1176,3 +1176,16 @@ body { min-height: 100vh; min-height: 100dvh; }
 .tier-pro .tier-pill { color: #4338CA; background: #E7E8FB; }
 .gpick-other { align-self: flex-start; }
 .gear-foot { margin: 12px 0 0; font-size: 11px; line-height: 1.4; color: #7A8794; }
+
+/* No header: Add a tank button in the top right, styled like the Care reminders Add button */
+.home-top { display: flex; justify-content: flex-end; }
+
+/* S logo watermark: pinned behind the cards so content scrolls over it */
+.watermark {
+  position: fixed; inset: 0; z-index: 0;
+  background: url("logo-watermark.png") center / min(78vw, 400px) auto no-repeat;
+  opacity: 0.05;
+  filter: saturate(0.75);
+  pointer-events: none;
+}
+#app { position: relative; z-index: 1; }
