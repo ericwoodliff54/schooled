@@ -1515,6 +1515,33 @@ function renderWater() {
   } else {
     text.textContent = 'Add your ZIP code on your tank page to get tap water info in a later update.';
   }
+  renderWaterRecs(t);
+}
+
+// Chemicals and test kits for this tank's water, with the same curated picks as equipment.
+function renderWaterRecs(t) {
+  const box = $('water-recs-body');
+  if (!box) return;
+  if (!t) { box.replaceChildren(el('p', { class: 'muted small', text: 'Add a tank on Home to see picks for your water.' })); return; }
+  const seen = {};
+  const items = gearSuggestions(t).filter((s) => WATER_KINDS.indexOf(s.kind) !== -1 && !seen[s.title] && (seen[s.title] = 1));
+  if (t.type === 'Saltwater' && !items.some((s) => s.kind === 'Water conditioner')) items.push({ kind: 'Water conditioner', title: 'Water conditioner', why: 'Treats tap or RO/DI top-off water before it goes into mixed salt water.' });
+  const anyPicks = items.some((s) => gearPicks(s.kind, t).length);
+  const parts = [el('p', { class: 'muted small gear-disclaimer', text: GEAR_DISCLAIMER + (anyPicks ? ' Last checked ' + GEAR_PICKS_CHECKED + '.' : '') })];
+  if (t.water === 'city') parts.push(el('p', { class: 'muted small', text: t.zip ? 'City water (ZIP ' + t.zip + '). Most city supplies use chlorine or chloramine, so pick a conditioner that handles both.' : 'City water. Most city supplies use chlorine or chloramine, so pick a conditioner that handles both.' }));
+  items.forEach((s) => {
+    const have = t.gear.some((g) => g.kind === s.kind);
+    const picks = gearPicks(s.kind, t);
+    parts.push(el('div', { class: 'water-rec' },
+      el('strong', { text: s.title }), el('span', { class: 'sub', text: s.why }),
+      ...picks.map((p) => el('button', { type: 'button', class: 'pick', 'aria-label': 'I have ' + p.name, onclick: () => {
+        if (t.gear.length >= 40) { toast('That is the most equipment one tank can list.'); return; }
+        t.gear.push({ id: uid(), kind: s.kind, name: p.name.slice(0, 60), note: '', added: todayISO() });
+        saveState(); renderWaterRecs(t); toast('Added to ' + (t.name || 'your tank') + '.');
+      } }, el('span', { class: 'pick-tier', text: p.tier }), el('strong', { text: p.name }), el('span', { class: 'sub', text: p.spec }))),
+      have ? el('span', { class: 'sub', text: 'Already in your equipment list.' }) : null));
+  });
+  box.replaceChildren(...parts);
 }
 
 // ---------- My Tanks (list) ----------
@@ -1842,6 +1869,7 @@ function gearPicks(kind, t) {
   return out.slice(0, 3);
 }
 
+const WATER_KINDS = ['Water conditioner', 'Test kit'];
 const gearState = { kind: 'Filter', name: '', note: '', skipOpen: false };
 
 function renderGear() {
@@ -1873,8 +1901,9 @@ function renderGear() {
   } });
 
   const skipped = t.gearSkip;
-  const sugg = gearSuggestions(t).filter((s) => !t.gear.some((g) => g.kind === s.kind) && skipped.indexOf(s.title) === -1);
-  const hiddenCount = gearSuggestions(t).filter((s) => !t.gear.some((g) => g.kind === s.kind) && skipped.indexOf(s.title) !== -1).length;
+  const equip = gearSuggestions(t).filter((s) => WATER_KINDS.indexOf(s.kind) === -1); // chemicals and tests live on the Water page
+  const sugg = equip.filter((s) => !t.gear.some((g) => g.kind === s.kind) && skipped.indexOf(s.title) === -1);
+  const hiddenCount = equip.filter((s) => !t.gear.some((g) => g.kind === s.kind) && skipped.indexOf(s.title) !== -1).length;
 
   const parts = [
     mine.length ? el('div', { class: 'gear-list' }, ...mine) : el('p', { class: 'muted small', text: 'Nothing logged yet. Add the filter, heater, light and anything else on this tank.' }),
