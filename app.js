@@ -1206,7 +1206,7 @@ function toast(message) {
 }
 
 // ---------- Navigation ----------
-const VIEWS = ['setup', 'home', 'results', 'water', 'tank', 'species', 'dream', 'fishcheck', 'misses'];
+const VIEWS = ['setup', 'home', 'results', 'water', 'tank', 'species', 'dream', 'fishcheck', 'misses', 'ask'];
 let currentView = 'home';
 let openTankId = '';
 let editingSize = false;
@@ -1227,7 +1227,7 @@ function navSnapshot(name) {
 function navRecord(name) {
   if (navRestoring || !window.history || !history.pushState) return;
   const snap = navSnapshot(name);
-  const key = name + '|' + (name === 'tank' ? snap.tank : '') + '|' + (name === 'species' && snap.sv ? snap.sv.name : '');
+  const key = name + '|' + (name === 'tank' || name === 'ask' ? snap.tank : '') + '|' + (name === 'species' && snap.sv ? snap.sv.name : '');
   try {
     if (navIdx < 0) { navIdx = 0; snap.i = 0; history.replaceState(snap, ''); }
     else if (key === navKey) { snap.i = navIdx; history.replaceState(snap, ''); }
@@ -1275,7 +1275,8 @@ window.addEventListener('popstate', (ev) => {
     }
     if (v === 'skip') { navRestoring = false; history.back(); return; }
     if ((v === 'tank') && getTank(st.tank)) showTank(st.tank, st.sec);
-    else showView(v === 'tank' ? 'home' : v);
+    else if (v === 'ask' && getTank(st.tank)) { openTankId = st.tank; showView('ask'); }
+    else showView(v === 'tank' || v === 'ask' ? 'home' : v);
     navKey = v + '|' + (v === 'tank' ? openTankId : '') + '|' + (v === 'species' && speciesView ? speciesView.name : '');
     navCurrent = navSnapshot(currentView);
     navCurrent.i = navIdx;
@@ -1298,6 +1299,7 @@ function showView(name) {
   if (name === 'dream') renderDream();
   if (name === 'fishcheck') renderFishCheck();
   if (name === 'misses') renderMisses();
+  if (name === 'ask') renderAsk();
   window.scrollTo(0, 0);
 }
 
@@ -1571,7 +1573,7 @@ const WATER_TOOLS = [
   { icon: 'drop', color: 'aqua', title: 'Water care', text: 'Conditioner and test kit picks for this tank', go: () => { state.activeId = openTankId; saveState(); waterFrom = 'tank'; showView('water'); } },
 ];
 const TANK_TOOLS = [
-  { icon: 'chat', color: 'blue', title: 'Ask the tank', text: 'Ask questions about this tank', soon: true }
+  { icon: 'chat', color: 'blue', title: 'Ask the Tank', text: 'Questions about your fish, water and care', go: () => openAsk(openTankId) }
 ];
 const FEATURES = [
   { icon: 'sparkle', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you dream of, we\'ll bring it to life!', go: () => showView('dream') },
@@ -4004,6 +4006,221 @@ if ($('fishcheck-video')) $('fishcheck-video').addEventListener('change', (event
 $('fishcheck-back').addEventListener('click', () => goBack(() => (fishCheckFrom === 'tank' && getTank(openTankId) ? showTank(openTankId) : showView('home'))));
 $('misses-back').addEventListener('click', () => goBack(() => showView('home')));
 
+// ---------- Ask the Tank ----------
+// A short chat about one tank. The phone builds a plain summary of the tank and sends it with each question,
+// so the AI always answers about this tank. Chats are kept on this phone, per tank.
+const ASK_KEY = 'schooled.ask';
+const ASK_MONTHLY = 100;
+const ASK_KEEP = 40; // messages kept per tank
+const ASK_ERRORS = {
+  limit_reached: 'You have used all ' + ASK_MONTHLY + ' questions for this month. They reset on the 1st.',
+  busy_today: 'Ask the Tank is very busy today. Please try again tomorrow.',
+  rate_limited: 'That is a lot of questions in a short time. Wait a few minutes and try again.',
+  ai_busy: 'The AI is busy right now. Try again in a minute.',
+  bad_request: 'Type a question first.'
+};
+let askBusy = false;
+let askDraft = '';
+let askMessage = '';
+
+function askLoad() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(ASK_KEY)); } catch (err) { s = null; }
+  if (!s || typeof s !== 'object') s = {};
+  if (!s.chats || typeof s.chats !== 'object') s.chats = {};
+  const m = new Date().toISOString().slice(0, 7);
+  if (s.month !== m) { s.month = m; s.used = 0; }
+  s.used = Math.max(0, Number(s.used) || 0);
+  return s;
+}
+function askSave(s) {
+  try { localStorage.setItem(ASK_KEY, JSON.stringify(s)); return true; } catch (err) { return false; }
+}
+function askChat(s, id) {
+  const list = Array.isArray(s.chats[id]) ? s.chats[id] : [];
+  return list.filter((m) => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string');
+}
+function askLeft() { return Math.max(0, ASK_MONTHLY - askLoad().used); }
+
+// Plain-text summary of the tank for the AI. Uses the same checks the app shows, so answers agree with the app.
+function askContext(t) {
+  const L = [];
+  const gal = tankGallons(t);
+  L.push('Name: ' + tankLabel(t));
+  L.push('Type: ' + t.type + (t.style ? ', style: ' + t.style : ''));
+  L.push('Size: ' + (gal ? Math.round(gal) + ' gallons' + (t.unit === 'liters' ? ' (' + t.size + ' liters)' : '') : 'not set'));
+  if (t.filter) L.push('Filter: ' + (FILTER_TYPES.find((x) => x[0] === t.filter) || ['', t.filter])[1]);
+  if (t.started) L.push('Set up on: ' + t.started + ' (' + Math.max(0, daysBetween(new Date(t.started + 'T12:00:00').getTime(), Date.now())) + ' days ago)');
+  if (t.notes) L.push('Keeper notes: ' + t.notes);
+  if (t.fish.length) {
+    L.push('Livestock and plants:');
+    t.fish.slice(0, 40).forEach((f) => {
+      const e = careOf(f.name);
+      let line = '- ' + f.count + ' x ' + (e ? e.n : f.name);
+      if (e && e.c) {
+        const c = e.c;
+        line += ' (' + e.k + (e.k === 'plant' ? '' : ', adult ' + c.z + ' in, min ' + c.g + ' gal') + ', ' + Math.round(c.t[0]) + '-' + Math.round(c.t[1]) + ' F, pH ' + c.p[0] + '-' + c.p[1] + (TEMPER[c.m] ? ', ' + TEMPER[c.m].toLowerCase() : '') + (c.s > 1 ? ', group of ' + c.s + '+' : '') + ')';
+      }
+      L.push(line);
+    });
+    const st = stocking(t);
+    if (st.gal && st.known) L.push('App stocking estimate: ' + stockLevel(st.pct).label + ' (' + Math.round(st.pct * 100) + '% of capacity).');
+    const chk = tankCheck(t);
+    if (chk.issues.length) {
+      L.push('App compatibility warnings:');
+      chk.issues.slice(0, 8).forEach((i) => L.push('- ' + i.text));
+    }
+  } else L.push('Livestock: none added yet.');
+  const tests = t.log.filter((r) => r.k === 'test').slice(-5).reverse();
+  if (tests.length) {
+    L.push('Recent water tests (newest first):');
+    tests.forEach((r) => L.push('- ' + new Date(r.t).toISOString().slice(0, 10) + ': ' + Object.keys(r.v).map((k) => LOG_FIELDS[k].label + ' ' + r.v[k] + (LOG_FIELDS[k].unit ? ' ' + LOG_FIELDS[k].unit : '')).join(', ') + (r.note ? ' (note: ' + r.note + ')' : '')));
+  } else L.push('Water tests: none logged.');
+  const changes = t.log.filter((r) => r.k === 'change').slice(-3).reverse();
+  if (changes.length) L.push('Recent water changes: ' + changes.map((r) => new Date(r.t).toISOString().slice(0, 10) + (r.pct ? ' (' + r.pct + '%)' : '')).join(', '));
+  if (t.tasks.length) L.push('Reminders: ' + t.tasks.map((k) => k.label + ' every ' + k.every + ' days, ' + taskInfo(k).text.toLowerCase()).join('; '));
+  if (t.gear.length) L.push('Equipment: ' + t.gear.map((g) => g.kind + ': ' + g.name).join('; '));
+  return L.join('\n').slice(0, 4000);
+}
+
+function askStarters(t) {
+  const out = [];
+  if (t.fish.length) out.push('Are my fish good tankmates?', 'Is my tank overstocked?');
+  else out.push('What fish would suit this tank?');
+  if (t.log.some((r) => r.k === 'test')) out.push('What do my last test results mean?');
+  else out.push('Which water tests should I do first?');
+  out.push('How often should I change the water?');
+  if (t.started && daysBetween(new Date(t.started + 'T12:00:00').getTime(), Date.now()) < 60) out.push('Is my tank cycled yet?');
+  return out.slice(0, 4);
+}
+
+// Turns a plain-text answer into paragraphs and simple bullet lists.
+function askText(text) {
+  const box = el('div', { class: 'ask-text' });
+  let ul = null;
+  String(text).split(/\n+/).forEach((line) => {
+    const s = line.trim();
+    if (!s) return;
+    const b = /^[-*•]\s+(.*)$/.exec(s) || /^\d+[.)]\s+(.*)$/.exec(s);
+    if (b) {
+      if (!ul) { ul = el('ul'); box.append(ul); }
+      ul.append(el('li', { text: b[1] }));
+    } else { ul = null; box.append(el('p', { text: s })); }
+  });
+  return box;
+}
+
+function openAsk(id) {
+  if (!getTank(id)) return;
+  openTankId = id;
+  askMessage = '';
+  showView('ask');
+}
+
+function renderAsk() {
+  const body = $('ask-body');
+  if (!body) return;
+  const t = getTank(openTankId);
+  if (!t) { showView('home'); return; }
+  const s = askLoad();
+  const chat = askChat(s, t.id);
+  const left = Math.max(0, ASK_MONTHLY - s.used);
+
+  const head = el('div', { class: 'ask-head' },
+    el('div', {}, el('h1', { text: 'Ask the Tank' }), el('p', { class: 'muted small', text: 'About ' + tankLabel(t) })),
+    chat.length ? el('button', { type: 'button', class: 'btn link small-link', text: 'Clear chat', onclick: () => {
+      const s2 = askLoad(); delete s2.chats[t.id]; askSave(s2); askMessage = ''; renderAsk();
+    } }) : null);
+  const parts = [head];
+
+  if (!chat.length) {
+    parts.push(el('div', { class: 'card ask-intro' },
+      el('p', { text: 'Ask anything about this tank. The AI sees your fish, water tests, reminders and equipment, so answers are about your tank, not tanks in general.' }),
+      el('div', { class: 'ask-chips' }, ...askStarters(t).map((q) => el('button', { type: 'button', class: 'chip-btn', text: q, onclick: () => sendAsk(q) })))));
+  }
+
+  const log = el('div', { class: 'ask-log', 'aria-live': 'polite' });
+  chat.forEach((m) => log.append(el('div', { class: 'ask-msg ' + (m.role === 'user' ? 'me' : 'ai') }, m.role === 'user' ? el('p', { text: m.text }) : askText(m.text))));
+  if (askBusy) log.append(el('div', { class: 'ask-msg ai busy', 'aria-label': 'Thinking' }, el('span', { class: 'ask-dots' }, el('i'), el('i'), el('i'))));
+  parts.push(log);
+
+  const last = chat[chat.length - 1];
+  if (!askBusy && last && last.role === 'model' && Array.isArray(last.sug) && last.sug.length) {
+    parts.push(el('div', { class: 'ask-chips' }, ...last.sug.map((q) => el('button', { type: 'button', class: 'chip-btn', text: q, onclick: () => sendAsk(q) }))));
+  }
+  if (askMessage) parts.push(el('div', { class: 'notice', role: 'status', text: askMessage }));
+
+  const area = el('textarea', { class: 'ask-input', rows: 1, maxlength: 500, placeholder: left ? 'Ask about this tank…' : 'No questions left this month', 'aria-label': 'Your question' });
+  area.value = askDraft;
+  const fit = () => { area.style.height = 'auto'; area.style.height = Math.min(140, area.scrollHeight) + 'px'; };
+  area.addEventListener('input', () => { askDraft = area.value; fit(); });
+  area.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendAsk(area.value); } });
+  const send = el('button', { type: 'button', class: 'ask-send', 'aria-label': 'Send', onclick: () => sendAsk(area.value) }, iconSvg(['M5 12h13', 'M13 6l6 6-6 6'], 22));
+  if (askBusy || !left) { send.disabled = true; area.disabled = !left; }
+  parts.push(el('div', { class: 'ask-bar' }, el('div', { class: 'ask-row' }, area, send),
+    el('p', { class: 'muted small center', text: left + ' of ' + ASK_MONTHLY + ' questions left this month. Answers are AI guidance; check anything serious with a local fish store.' })));
+
+  body.replaceChildren(...parts);
+  requestAnimationFrame(fit);
+}
+
+async function sendAsk(text) {
+  const q = String(text || '').trim().slice(0, 500);
+  const t = getTank(openTankId);
+  if (!t || askBusy) return;
+  if (q.length < 2) { toast('Type a question first.'); return; }
+  if (!askLeft()) { askMessage = ASK_ERRORS.limit_reached; renderAsk(); return; }
+  const s = askLoad();
+  const chat = askChat(s, t.id);
+  const history = chat.slice(-8).map((m) => ({ role: m.role, text: m.text }));
+  while (history.length && history[0].role !== 'user') history.shift();
+  chat.push({ role: 'user', text: q, t: Date.now() });
+  s.chats[t.id] = chat.slice(-ASK_KEEP);
+  askSave(s);
+  askDraft = ''; askMessage = ''; askBusy = true;
+  renderAsk();
+  window.scrollTo(0, document.body.scrollHeight);
+  try {
+    const res = await fetch(WORKER_URL + '/ask', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, tank: askContext(t), history, device: deviceId() }),
+      signal: AbortSignal.timeout(60000)
+    });
+    let j = null;
+    try { j = await res.json(); } catch (err) { j = null; }
+    const s2 = askLoad();
+    const c2 = askChat(s2, t.id);
+    if (!j || !j.ok) {
+      const code = j && j.error;
+      if (code === 'limit_reached') s2.used = ASK_MONTHLY;
+      // take the unanswered question back out, and put it in the box so it can be sent again
+      if (c2.length && c2[c2.length - 1].role === 'user') { askDraft = c2.pop().text; }
+      s2.chats[t.id] = c2;
+      askSave(s2);
+      askMessage = ASK_ERRORS[code] || 'Something went wrong. Your question was not counted. Try again in a minute.';
+    } else {
+      c2.push({ role: 'model', text: String(j.answer || ''), sug: Array.isArray(j.suggestions) ? j.suggestions.slice(0, 3).map(String) : [], t: Date.now() });
+      s2.chats[t.id] = c2.slice(-ASK_KEEP);
+      s2.used += 1;
+      if (typeof j.left === 'number') s2.used = Math.max(s2.used, ASK_MONTHLY - j.left);
+      askSave(s2);
+      if (j.usage) logUsage('ask', j.model, j.usage, { detail: q.slice(0, 40) });
+    }
+  } catch (err) {
+    const s2 = askLoad();
+    const c2 = askChat(s2, t.id);
+    if (c2.length && c2[c2.length - 1].role === 'user') { askDraft = c2.pop().text; }
+    s2.chats[t.id] = c2;
+    askSave(s2);
+    askMessage = 'Could not reach the server. Check your connection and try again.';
+  }
+  askBusy = false;
+  if (currentView === 'ask') {
+    renderAsk();
+    window.scrollTo(0, document.body.scrollHeight);
+  }
+}
+
 // ---------- Dream Tank ----------
 const DREAM_MONTHLY = 10;
 const DREAM_KEY = 'schooled.dream';
@@ -4252,6 +4469,7 @@ function dreamResultCard(r) {
 }
 
 $('dream-back').addEventListener('click', () => goBack(() => showView('home')));
+$('ask-back').addEventListener('click', () => goBack(() => (getTank(openTankId) ? showTank(openTankId) : showView('home'))));
 $('water-back').addEventListener('click', () => goBack(() => { if (waterFrom === 'tank' && getTank(openTankId)) showTank(openTankId); else showView('home'); waterFrom = 'home'; }));
 
 // ---------- Splash ----------
