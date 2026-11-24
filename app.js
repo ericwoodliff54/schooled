@@ -1572,9 +1572,7 @@ function kindTotals(t) {
 const WATER_TOOLS = [
   { icon: 'drop', color: 'aqua', title: 'Water care', text: 'Conditioner and test kit picks for this tank', go: () => { state.activeId = openTankId; saveState(); waterFrom = 'tank'; showView('water'); } },
 ];
-const TANK_TOOLS = [
-  { icon: 'chat', color: 'blue', title: 'Get Schooled', text: 'Ask anything about your fish, water and care', go: () => openAsk(openTankId) }
-];
+const TANK_TOOLS = []; // Get Schooled moved to a button on the tank photo (#tank-ask)
 const FEATURES = [
   { icon: 'sparkle', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you dream of, we\'ll bring it to life!', go: () => showView('dream') },
   { icon: 'drop', color: 'aqua', title: 'Water care', text: 'Conditioner and test kit picks for your tank', go: () => showView('water') }
@@ -2413,6 +2411,7 @@ function openEditSheet(focusName) {
 function closeEditSheet() { const sh = $('edit-sheet'); if (sh) sh.hidden = true; }
 function closeSheets() { closeEditSheet(); closeGallery(); closeScanSheet(); }
 $('tank-edit').addEventListener('click', () => openEditSheet(false));
+$('tank-ask').addEventListener('click', () => openAsk(openTankId));
 $('edit-sheet-close').addEventListener('click', closeEditSheet);
 $('edit-sheet-done').addEventListener('click', closeEditSheet);
 $('edit-sheet-dim').addEventListener('click', closeEditSheet);

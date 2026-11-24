@@ -1231,3 +1231,5 @@ body { min-height: 100vh; min-height: 100dvh; }
 .ask-msg.has-img { padding-top: 6px; }
 .ask-img { display: block; width: 100%; max-width: 240px; border-radius: 14px; margin: 0 0 8px; }
 .ask-msg.me .ask-img { margin-left: auto; }
+/* Get Schooled button: top right of the tank photo, same style as the settings gear */
+.hero-gear.hero-ask { top: 12px; bottom: auto; }
