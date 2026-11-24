@@ -60,6 +60,7 @@ def genus_of(sci):
 
 def commons_candidates(api, sci, rng, want):
     """Photos of one species from Wikimedia Commons: list of dicts with thumb url, title, license, page."""
+    sci = re.split(r'\s+(?:var|subsp|ssp|f|cv)\.?\s', sci.strip())[0]  # Anubias barteri var. nana -> Anubias barteri
     params = {
         'action': 'query', 'format': 'json', 'generator': 'search', 'gsrsearch': sci + ' filetype:bitmap',
         'gsrnamespace': 6, 'gsrlimit': 40, 'prop': 'imageinfo', 'iiprop': 'url|mime|size|extmetadata',
