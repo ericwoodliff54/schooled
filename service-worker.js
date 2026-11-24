@@ -1,6 +1,6 @@
 // Schooled service worker: keeps the app opening when offline.
 // Network first, so new uploads show up right away; falls back to the saved copy.
-const CACHE = 'schooled-shell-v91';
+const CACHE = 'schooled-shell-v92';
 const SHELL = [
   'species.json',
   './',

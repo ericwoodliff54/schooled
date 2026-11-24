@@ -1122,3 +1122,11 @@ body { min-height: 100vh; min-height: 100dvh; }
 .tip-row { display: flex; flex-direction: column; gap: 6px; padding: 12px; margin-top: 10px; border-radius: 14px; background: var(--bg, #EEF5FC); }
 .tip-row p { margin: 0; }
 .treat-card .pick { max-width: 100%; }
+
+/* Tank page spacing: Equipment, Recommended gear and Progress photos match the group cards */
+#tank-sec-fish > .tank-settings, #tank-sec-fish > #tank-progress { margin-top: 10px; }
+#tank-sec-fish > .tank-settings { padding: 0 16px; }
+#tank-sec-fish > .tank-settings summary { min-height: 64px; }
+#tank-sec-fish > .tank-settings[open] { padding-bottom: 14px; }
+#tank-sec-fish > .tank-settings[open] summary { margin-bottom: 4px; }
+#tank-sec-fish > #tank-progress { padding: 16px; }
