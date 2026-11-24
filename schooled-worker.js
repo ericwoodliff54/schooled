@@ -53,7 +53,7 @@ const PROMPT =
   'Plants and corals matter as much as fish: list every clearly visible kind of plant or macroalgae (kind "plant") and coral (kind "coral"), and crabs, anemones, clams, urchins, starfish and worms (kind "invert"). ' +
   'Name plants and corals by the common hobby name, for example Amazon Sword, Java Fern, Cryptocoryne, Vallisneria, Anubias, Ludwigia, Hornwort, Java Moss, Hammer Coral, Torch Coral, Zoanthids, Mushroom Coral, Acropora, Montipora, Green Star Polyps, Xenia. ' +
   'If you can only tell the group, give the group name (for example Stem Plant). Count separate plants or colonies; a carpet, mat or dense stand counts as 1. ' +
-  'For each fish, coral, invertebrate or plant entry also give "boxes": up to 3 tight bounding boxes around the clearest, largest individuals (for a plant, its clearest leaves or clump, with the leaf shape and edges showing), each as [ymin, xmin, ymax, xmax] in whole numbers from 0 to 1000 relative to the whole image, where 0,0 is the top left. ' +
+  'For each fish, coral, invertebrate or plant entry also give "boxes": up to 3 tight bounding boxes around the clearest, largest individuals (for a plant, its clearest leaves or clump, with the leaf shape and edges showing), each as [ymin, xmin, ymax, xmax] in whole numbers from 0 to 1000 relative to the whole image, where 0,0 is the top left. Every entry needs at least one box: the close-up check that makes names accurate depends on it. ' +
   'Only list what you can actually see clearly. If the photo is very dark, blurry or reflective, list fewer things with low confidence rather than guessing; never list a plant, coral or fish you cannot see. ' +
   'Glass and the water surface act like mirrors, so the same fish can appear twice. A reflection is usually dimmer, mirrored or cut off, sits against a glass pane or just under the waterline, and copies the position and pose of a real fish. Never count reflections as extra fish: count each real fish once, and when you cannot tell a reflection from a real fish, count the lower number. ' +
   'Set too_far to true if many fish are too small or far away to identify reliably. ' +
@@ -148,7 +148,7 @@ const SCHEMA = {
           count: { type: 'INTEGER' },
           confidence: { type: 'NUMBER' },
           alternatives: { type: 'ARRAY', items: { type: 'STRING' } },
-          boxes: { type: 'ARRAY', items: { type: 'ARRAY', items: { type: 'INTEGER' } } }
+          boxes: { type: 'ARRAY', minItems: 1, items: { type: 'ARRAY', items: { type: 'INTEGER' } } }
         },
         required: ['common_name', 'kind', 'count', 'confidence', 'boxes']
       }

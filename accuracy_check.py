@@ -165,6 +165,9 @@ def main():
             continue
         if e['n'] in seen or (kinds and e['k'] not in kinds):
             continue
+        if (e.get('s') or '').strip().lower() in ('plantae', 'animalia', ''):
+            print('Too generic to test, skipped:', n)
+            continue
         seen.add(e['n'])
         chosen.append(e)
     if a.limit and len(chosen) > a.limit:
