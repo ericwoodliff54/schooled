@@ -172,7 +172,7 @@ def main():
             for f in found:
                 hit = db.find(f['matched']) if f['matched'] else None
                 grp = db.groups.get(hit['g']) if hit and hit.get('g') else None
-                if (f['kind'] in ('fish', 'coral', 'invert') or grp) and f['boxes'] and (f['conf'] < 0.9 or (grp and grp.get('h')) or not hit):
+                if (f['kind'] in ('fish', 'coral', 'invert', 'plant') or grp) and f['boxes'] and (f['conf'] < 0.9 or (grp and grp.get('h')) or not hit):
                     targets.append(f)
             targets = sorted(targets, key=lambda f: f['conf'])[:6]
             if targets:
