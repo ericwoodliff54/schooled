@@ -1,0 +1,28 @@
+fish|f|Jellybean Tetra|Lepidarchus adonis|jelly bean tetra;lepidarchus;adonis tetra|
+fish|f|Five Banded Barb|Desmopuntius pentazona|five-banded barb;pentazona;banded barb|redbarb
+fish|f|Banded Gourami|Trichogaster fasciata|striped gourami;giant danio gourami;trichogaster fasciata|gourami
+fish|f|Cuban Limia|Poecilia vittata|limia;cuban limia;vittata|guppy
+fish|fb|Halfbeak|Dermogenys pusilla|wrestling halfbeak;malayan halfbeak;dermogenys|
+fish|f|Redtail Splitfin|Xenotoca eiseni|red tail goodeid;eiseni;redtail goodeid|
+fish|f|Bandit Cory|Corydoras metae|bandit corydoras;metae|cory
+fish|f|Dwarf Chain Loach|Ambastaia sidthimunki|sidthimunki;chain loach;dwarf loach|loach
+fish|f|Bulldog Pleco|Chaetostoma sp.|bulldog plec;chaetostoma|pleco
+fish|f|Blue Phantom Pleco|Hemiancistrus sp. L128|blue phantom;l128;l128 pleco|pleco
+fish|f|Banded Leporinus|Leporinus fasciatus|leporinus;striped leporinus;banded leporinus|
+fish|f|Celebes Rainbowfish|Marosatherina ladigesi|celebes rainbow;ladigesi;sulawesi rainbowfish|rainbow
+fish|f|Spotted Blue-Eye|Pseudomugil gertrudae|gertrude's blue-eye;gertrudae;spotted blue eye|
+fish|f|Glowlight Danio|Danio choprae|choprae;glowlight danio;burmese danio|danio
+fish|f|Medaka|Oryzias latipes|japanese rice fish;ricefish;rice fish;oryzias|
+fish|s|Marine Betta|Calloplesiops altivelis|comet;comet grouper;calloplesiops|
+fish|s|Fang Blenny|Meiacanthus nigrolineatus|bluestriped fangblenny;meiacanthus;poison fang blenny|gobyb
+fish|s|Barnacle Blenny|Acanthemblemaria spinosa|spinyhead blenny;acanthemblemaria;barnacle blenny|gobyb
+fish|s|Yasha Goby|Stonogobiops yasha|yasha shrimp goby;stonogobiops|gobyb
+fish|s|Randall's Shrimp Goby|Amblyeleotris randalli|randalli goby;randall's goby;amblyeleotris randalli|gobyb
+fish|s|Wheeler's Shrimp Goby|Amblyeleotris wheeleri|wheeler's goby;gorgeous prawn goby;amblyeleotris wheeleri|gobyb
+fish|s|Bluethroat Triggerfish|Xanthichthys auromarginatus|bluethroat trigger;bluechin trigger;xanthichthys|
+fish|s|Powder Brown Tang|Acanthurus japonicus|powder brown;japonicus tang;white-faced surgeonfish|tang
+fish|s|Pixy Hawkfish|Cirrhitichthys oxycephalus|pixie hawkfish;coral hawkfish;spotted hawkfish|
+fish|s|Eibli Angelfish|Centropyge eibli|eibli;blacktail angelfish;orangefin angelfish|angel
+fish|s|Keyhole Angelfish|Centropyge tibicen|keyhole angel;tibicen;white-tail angelfish|angel
+fish|s|Multicolor Pygmy Angelfish|Centropyge multicolor|multicolor angelfish;multicolor angel;rainbow dwarf angel|angel
+fish|s|Fire Clownfish|Amphiprion ephippium|red saddleback clownfish;ephippium|cfish

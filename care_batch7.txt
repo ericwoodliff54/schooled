@@ -1,0 +1,28 @@
+Jellybean Tetra|0.8|10|75-82|5.0-7.0|p|o|m|8|m|soft|Tiny, shy West African tetra. Best in a quiet, softly lit planted tank with only small, gentle tankmates.
+Five Banded Barb|1.6|15|72-79|5.0-7.0|p|o|m|6|m|soft|Small, peaceful barb with five dark bars. Kept in a group it is much calmer than most barbs and rarely nips.
+Banded Gourami|4|20|72-82|6.0-8.0|p|o|t|1|e|terr|Peaceful gourami that stays near the top. Males can squabble with each other, so keep one male with plenty of plants.
+Cuban Limia|3|20|72-82|7.0-8.5|p|o|m|3|e|hard|Active, hardy livebearer that likes hard, alkaline water. Keep more females than males to spread out the chasing.
+Halfbeak|2.5|20|72-82|7.0-8.0|s|c|t|4|m|hard,jump|Surface-feeding livebearer with a long lower jaw. Males fight each other, so keep one male with several females, with a tight lid.
+Redtail Splitfin|2.5|20|68-77|7.0-8.0|s|o|m|6|m|hard,nip|Lively goodeid livebearer that likes cooler, hard water. Males chase and can nip, so keep a group with plenty of plants.
+Bandit Cory|2.2|15|72-79|6.0-7.5|p|o|b|6|e||Small cory with a dark mask across the eyes. Keep a group of six or more on soft sand or fine gravel.
+Dwarf Chain Loach|2.2|20|75-86|6.0-7.5|p|o|b|6|m|snail|Small, active loach that does best in a group of six or more. Keeps snails in check, but needs hiding spots and a well-settled tank.
+Bulldog Pleco|5|30|68-78|6.5-7.5|p|h|b|1|m||Small pleco that clings to rocks in fast water. Needs good flow, high oxygen and algae or vegetables. Different fish are sold under this name.
+Blue Phantom Pleco|5|30|75-82|6.5-7.5|p|o|b|1|m|terr|Small pleco with a dark blue body and light spots. Needs caves, driftwood and clean, well-filtered water. Males can defend their cave.
+Banded Leporinus|12|100|75-82|6.0-7.5|s|o|m|1|m|eatsplants,jump,terr|Big, active South American fish that eats plants and can bully slow tankmates. Needs a long tank with a tight lid.
+Celebes Rainbowfish|3|20|72-79|7.0-8.0|p|o|t|6|m|hard,jump|Graceful rainbowfish with long fin extensions. Needs hard, alkaline water and a group of six or more.
+Spotted Blue-Eye|1.5|10|72-80|6.5-7.5|p|o|t|6|m||Tiny, peaceful and pretty with blue eyes. Best with other small fish; larger fish can outcompete it for food.
+Glowlight Danio|1.5|10|72-80|6.5-7.5|p|o|t|6|e|fast|Small, peaceful danio with a glowing stripe. Keep a group of six or more near the top of the tank.
+Medaka|2|10|60-80|6.5-8.0|p|o|t|6|e||Hardy Japanese rice fish that handles cool rooms and even unheated tanks. Peaceful, so keep with other small fish.
+Marine Betta|7|55|72-78|8.1-8.4|s|c|b|1|m|pred,terr|Shy night hunter that copies the look of a venomous eel. Needs lots of caves and will eat small fish and shrimp at night.
+Fang Blenny|4|30|72-78|8.1-8.4|s|o|b|1|m|terr|Colorful blenny with venomous fangs it uses for defense. Active and hardy, but can chase other blennies and gobies.
+Barnacle Blenny|2|20|72-78|8.1-8.4|p|o|b|1|e||Tiny blenny that perches in a hole and watches its surroundings. Peaceful and reef-safe, but needs a small hole or empty shell.
+Yasha Goby|2.5|20|72-78|8.1-8.4|p|c|b|1|m||Small goby that often lives in a pair with a pistol shrimp. Needs fine sand and a lid, because gobies jump.
+Randall's Shrimp Goby|3|30|72-78|8.1-8.4|p|c|b|1|m||Peaceful goby that digs a burrow, often shared with a pistol shrimp. Needs deep, fine sand and a tight-fitting lid.
+Wheeler's Shrimp Goby|3.5|30|72-78|8.1-8.4|p|c|b|1|m||Peaceful sand-sitting goby that lives with a pistol shrimp. Needs fine sand and a lid, and does best in a quiet reef.
+Bluethroat Triggerfish|10|125|72-78|8.1-8.4|s|c|a|1|m|opp,shrimp,terr|One of the more reef-friendly triggerfish, but it still eats shrimp, crabs and small fish. Needs a big tank with lots of swim room.
+Powder Brown Tang|8|90|75-80|8.1-8.4|s|h|a|1|m|terr,fast|Active algae grazer with a white face. Needs a large tank with room to swim, and can bicker with other tangs.
+Pixy Hawkfish|3.5|30|72-78|8.1-8.4|s|c|b|1|e|shrimp,terr|Small hawkfish that perches on corals and rocks. Hardy and reef-safe, but will eat tiny shrimp and may pick on small fish.
+Eibli Angelfish|5|70|72-78|8.1-8.4|s|o|m|1|m|terr|Hardy dwarf angelfish with orange bars. Usually reef-safe, but can nip at large-polyp corals and clams in some tanks.
+Keyhole Angelfish|4|55|72-78|8.1-8.4|s|o|m|1|m|terr|Dark dwarf angelfish with a pale tail and a white keyhole mark. Hardy, but may nip at some corals.
+Multicolor Pygmy Angelfish|4|55|72-78|8.1-8.4|s|o|m|1|m|terr|Small, colorful dwarf angelfish. Shy at first and needs rock to hide in. Can nip at some corals and clams.
+Fire Clownfish|6|30|75-80|8.1-8.4|s|o|m|1|m|terr|Large, bold clownfish with red-orange sides and a white stripe. Pairs well with a host anemone, but can be aggressive to other clownfish.

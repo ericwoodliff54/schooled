@@ -2582,6 +2582,10 @@ function makeSingle(image) {
 // ---------- Photo quality check (free, runs on the phone) ----------
 // Only catches clearly dark or clearly blurry photos, so it never nags about a decent shot.
 function photoQualityTip(image) {
+  return photoQuality(image).tip;
+}
+
+function photoQuality(image) {
   try {
     const w = 512;
     const h = Math.max(8, Math.round(w * image.height / image.width));
@@ -2612,10 +2616,10 @@ function photoQualityTip(image) {
     }
     const mean = sum / (n || 1);
     const edges = sumSq / (n || 1) - mean * mean;
-    if (brightness < 28) return 'This photo is very dark, so fish may be missed. Turn the tank light on and try again.';
-    if (edges < 25) return 'This photo looks blurry, so fish may be missed. Hold steady, tap the tank on screen to focus, and try again.';
+    if (brightness < 28) return { tip: 'This photo is very dark, so fish may be missed. Turn the tank light on and try again.', severe: brightness < 18 };
+    if (edges < 25) return { tip: 'This photo looks blurry, so fish may be missed. Hold steady, tap the tank on screen to focus, and try again.', severe: edges < 8 };
   } catch (err) { /* no canvas available: skip the check */ }
-  return '';
+  return { tip: '', severe: false };
 }
 
 function friendlyError(code, status) {
@@ -2912,11 +2916,20 @@ async function startVideoScan(file) {
     return;
   }
   for (let i = 0; i < frames.length; i++) {
-    await startScan(frames[i], i > 0, 'Checking frame ' + (i + 1) + ' of ' + frames.length + '\u2026');
+    await startScan(frames[i], i > 0, 'Checking frame ' + (i + 1) + ' of ' + frames.length + '\u2026', true);
   }
 }
 
-async function startScan(file, append, note) {
+// A repeat of the same photo (double tap, or going back and rescanning) returns the saved answer instead of paying for another scan.
+const scanCache = new Map();
+const SCAN_CACHE_MS = 15 * 60 * 1000;
+function hashText(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36) + ':' + str.length;
+}
+
+async function startScan(file, append, note, force) {
   const target = activeTank();
   const more = !!(append && pending && pending.species && pending.species.length);
   const priorSpecies = more ? pending.species : [];
@@ -2936,10 +2949,25 @@ async function startScan(file, append, note) {
   let qualityTip = '';
   try {
     image = await loadImage(file);
-    qualityTip = photoQualityTip(image);
+    const quality = photoQuality(image);
+    qualityTip = quality.tip;
+    if (quality.severe && !force) {
+      // Too dark or too blurry to read: stop here and let the person retake it, rather than spend a scan.
+      pending.error = quality.tip;
+      pending.forceFile = file;
+      return finishScan(more, priorSpecies, priorPhotos, image);
+    }
     const single = makeSingle(image);
     pending.photoUrl = single.previewUrl;
     renderResults();
+    const cacheKey = hashText(single.images[0]) + '|' + (scanTank ? scanTank.type : '') + '|' + known.join(',');
+    const cached = scanCache.get(cacheKey);
+    if (cached && Date.now() - cached.t < SCAN_CACHE_MS) {
+      pending.species = JSON.parse(cached.species);
+      pending.tips = cached.tips;
+      pending.debug = 'Same photo as a moment ago, so no new scan was used.';
+      return finishScan(more, priorSpecies, priorPhotos, image);
+    }
 
     const ctx = { known, tank_type: scanTank && TYPES.includes(scanTank.type) ? scanTank.type : '' };
     const data = await askWorker(single.images, 'single', 60000, ctx);
@@ -2960,11 +2988,18 @@ async function startScan(file, append, note) {
       }
     }
     if (qualityTip) pending.tips = pending.tips ? pending.tips + ' ' + qualityTip : qualityTip;
+    if (!pending.error && pending.species.length) {
+      if (scanCache.size >= 6) scanCache.delete(scanCache.keys().next().value);
+      scanCache.set(cacheKey, { t: Date.now(), species: JSON.stringify(pending.species), tips: pending.tips });
+    }
   } catch (err) {
     showScanError(err);
-  } finally {
-    if (image) image.done();
   }
+  return finishScan(more, priorSpecies, priorPhotos, image);
+}
+
+function finishScan(more, priorSpecies, priorPhotos, image) {
+  if (image) image.done();
   if (more) {
     if (pending.error) {
       // The new photo failed or showed nothing: keep what the earlier photos found.
@@ -3036,6 +3071,11 @@ function renderResults() {
   if (pending.error) {
     $('results-title').textContent = 'No results';
     status.append(el('div', { class: 'status-card bad' }, el('span', { text: pending.error })));
+    if (pending.forceFile) {
+      const f = pending.forceFile;
+      pending.forceFile = null;
+      status.append(el('button', { class: 'btn', type: 'button', text: 'Scan anyway', onclick: () => startScan(f, false, '', true) }));
+    }
     $('results-actions').hidden = false;
     $('save-scan').hidden = true;
     return;
