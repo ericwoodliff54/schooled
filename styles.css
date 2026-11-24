@@ -1223,3 +1223,11 @@ body { min-height: 100vh; min-height: 100dvh; }
 .ask-send { flex: none; width: 48px; height: 48px; border-radius: 50%; border: 0; background: var(--teal); color: #fff; display: grid; place-items: center; cursor: pointer; }
 .ask-send:disabled { opacity: 0.45; cursor: default; }
 .ask-bar .muted.small { font-size: 11.5px; line-height: 1.35; }
+.ask-cam { flex: none; width: 48px; height: 48px; border-radius: 50%; border: 1.5px solid #B9CFEA; background: #fff; color: var(--teal); display: grid; place-items: center; cursor: pointer; }
+.ask-cam:disabled { opacity: 0.45; cursor: default; }
+.ask-preview { position: relative; align-self: flex-start; }
+.ask-preview img { display: block; width: 84px; height: 84px; object-fit: cover; border-radius: 14px; border: 1.5px solid #B9CFEA; }
+.ask-preview-x { position: absolute; top: -8px; right: -8px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: var(--ink); color: #fff; font-size: 18px; line-height: 1; cursor: pointer; }
+.ask-msg.has-img { padding-top: 6px; }
+.ask-img { display: block; width: 100%; max-width: 240px; border-radius: 14px; margin: 0 0 8px; }
+.ask-msg.me .ask-img { margin-left: auto; }

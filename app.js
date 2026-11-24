@@ -4017,10 +4017,13 @@ const ASK_ERRORS = {
   busy_today: 'Get Schooled is very busy today. Please try again tomorrow.',
   rate_limited: 'That is a lot of questions in a short time. Wait a few minutes and try again.',
   ai_busy: 'The AI is busy right now. Try again in a minute.',
-  bad_request: 'Type a question first.'
+  bad_request: 'Type a question first.',
+  bad_image: 'That photo could not be sent. Try a different one.',
+  too_large: 'That photo is too large. Try a different one.'
 };
 let askBusy = false;
 let askDraft = '';
+let askPhoto = ''; // photo waiting to be sent with the next question (data URL)
 let askMessage = '';
 
 function askLoad() {
@@ -4112,6 +4115,7 @@ function askText(text) {
 
 function openAsk(id) {
   if (!getTank(id)) return;
+  if (openTankId !== id) { askPhoto = ''; askDraft = ''; }
   openTankId = id;
   askMessage = '';
   showView('ask');
@@ -4135,12 +4139,14 @@ function renderAsk() {
 
   if (!chat.length) {
     parts.push(el('div', { class: 'card ask-intro' },
-      el('p', { text: 'Ask anything about this tank. The AI sees your fish, water tests, reminders and equipment, so answers are about your tank, not tanks in general.' }),
+      el('p', { text: 'Ask anything about this tank. The AI sees your fish, water tests, reminders and equipment, so answers are about your tank, not tanks in general. Tap the camera to add a photo, like a spot on a fish or algae on the glass.' }),
       el('div', { class: 'ask-chips' }, ...askStarters(t).map((q) => el('button', { type: 'button', class: 'chip-btn', text: q, onclick: () => sendAsk(q) })))));
   }
 
   const log = el('div', { class: 'ask-log', 'aria-live': 'polite' });
-  chat.forEach((m) => log.append(el('div', { class: 'ask-msg ' + (m.role === 'user' ? 'me' : 'ai') }, m.role === 'user' ? el('p', { text: m.text }) : askText(m.text))));
+  chat.forEach((m) => log.append(el('div', { class: 'ask-msg ' + (m.role === 'user' ? 'me' : 'ai') + (m.img ? ' has-img' : '') },
+    m.img ? el('img', { class: 'ask-img', src: m.img, alt: 'Your photo' }) : null,
+    m.role === 'user' ? el('p', { text: m.text }) : askText(m.text))));
   if (askBusy) log.append(el('div', { class: 'ask-msg ai busy', 'aria-label': 'Thinking' }, el('span', { class: 'ask-dots' }, el('i'), el('i'), el('i'))));
   parts.push(log);
 
@@ -4156,8 +4162,20 @@ function renderAsk() {
   area.addEventListener('input', () => { askDraft = area.value; fit(); });
   area.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendAsk(area.value); } });
   const send = el('button', { type: 'button', class: 'ask-send', 'aria-label': 'Send', onclick: () => sendAsk(area.value) }, iconSvg(['M5 12h13', 'M13 6l6 6-6 6'], 22));
-  if (askBusy || !left) { send.disabled = true; area.disabled = !left; }
-  parts.push(el('div', { class: 'ask-bar' }, el('div', { class: 'ask-row' }, area, send),
+  const pick = el('input', { type: 'file', accept: 'image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff', hidden: true });
+  pick.addEventListener('change', async (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    try { askPhoto = await photoFromFile(file, 1024); renderAsk(); } catch (err) { toast("This device couldn't open that photo. Try another one."); }
+  });
+  const cam = el('button', { type: 'button', class: 'ask-cam', 'aria-label': askPhoto ? 'Change photo' : 'Add a photo', onclick: () => pick.click() },
+    iconSvg(['M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z', 'M12 10a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4z'], 22));
+  if (askBusy || !left) { send.disabled = true; cam.disabled = true; area.disabled = !left; }
+  const preview = askPhoto ? el('div', { class: 'ask-preview' }, el('img', { src: askPhoto, alt: 'Photo to send' }),
+    el('button', { type: 'button', class: 'ask-preview-x', 'aria-label': 'Remove photo', text: '\u00d7', onclick: () => { askPhoto = ''; renderAsk(); } })) : null;
+  if (askPhoto && !askDraft) area.placeholder = 'Ask about this photo…';
+  parts.push(el('div', { class: 'ask-bar' }, preview, el('div', { class: 'ask-row' }, cam, area, send, pick),
     el('p', { class: 'muted small center', text: left + ' of ' + ASK_MONTHLY + ' questions left this month. Answers are AI guidance; check anything serious with a local fish store.' })));
 
   body.replaceChildren(...parts);
@@ -4165,26 +4183,35 @@ function renderAsk() {
 }
 
 async function sendAsk(text) {
-  const q = String(text || '').trim().slice(0, 500);
+  let q = String(text || '').trim().slice(0, 500);
   const t = getTank(openTankId);
   if (!t || askBusy) return;
+  const photo = askPhoto;
+  if (photo && q.length < 2) q = 'What do you see in this photo? Anything I should worry about?';
   if (q.length < 2) { toast('Type a question first.'); return; }
   if (!askLeft()) { askMessage = ASK_ERRORS.limit_reached; renderAsk(); return; }
   const s = askLoad();
   const chat = askChat(s, t.id);
-  const history = chat.slice(-8).map((m) => ({ role: m.role, text: m.text }));
+  const history = chat.slice(-8).map((m) => ({ role: m.role, text: m.text + (m.img ? ' [I attached a photo with this message]' : '') }));
   while (history.length && history[0].role !== 'user') history.shift();
-  chat.push({ role: 'user', text: q, t: Date.now() });
+  let thumb = '';
+  if (photo) { try { thumb = await shrinkDataUrl(photo, 360); } catch (err) { thumb = ''; } }
+  const msg = { role: 'user', text: q, t: Date.now() };
+  if (thumb) msg.img = thumb;
+  chat.push(msg);
   s.chats[t.id] = chat.slice(-ASK_KEEP);
-  askSave(s);
-  askDraft = ''; askMessage = ''; askBusy = true;
+  if (!askSave(s)) { // phone storage full: drop old photo thumbnails and try again
+    s.chats[t.id].forEach((m, i, a) => { if (i < a.length - 1) delete m.img; });
+    if (!askSave(s)) { delete msg.img; askSave(s); }
+  }
+  askDraft = ''; askPhoto = ''; askMessage = ''; askBusy = true;
   renderAsk();
   window.scrollTo(0, document.body.scrollHeight);
   try {
     const res = await fetch(WORKER_URL + '/ask', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: q, tank: askContext(t), history, device: deviceId() }),
-      signal: AbortSignal.timeout(60000)
+      body: JSON.stringify(Object.assign({ question: q, tank: askContext(t), history, device: deviceId() }, photo ? { image: photo.split(',')[1] || '', mime: 'image/jpeg' } : {})),
+      signal: AbortSignal.timeout(75000)
     });
     let j = null;
     try { j = await res.json(); } catch (err) { j = null; }
@@ -4194,7 +4221,7 @@ async function sendAsk(text) {
       const code = j && j.error;
       if (code === 'limit_reached') s2.used = ASK_MONTHLY;
       // take the unanswered question back out, and put it in the box so it can be sent again
-      if (c2.length && c2[c2.length - 1].role === 'user') { askDraft = c2.pop().text; }
+      if (c2.length && c2[c2.length - 1].role === 'user') { askDraft = c2.pop().text; askPhoto = photo; }
       s2.chats[t.id] = c2;
       askSave(s2);
       askMessage = ASK_ERRORS[code] || 'Something went wrong. Your question was not counted. Try again in a minute.';
@@ -4209,7 +4236,7 @@ async function sendAsk(text) {
   } catch (err) {
     const s2 = askLoad();
     const c2 = askChat(s2, t.id);
-    if (c2.length && c2[c2.length - 1].role === 'user') { askDraft = c2.pop().text; }
+    if (c2.length && c2[c2.length - 1].role === 'user') { askDraft = c2.pop().text; askPhoto = photo; }
     s2.chats[t.id] = c2;
     askSave(s2);
     askMessage = 'Could not reach the server. Check your connection and try again.';
