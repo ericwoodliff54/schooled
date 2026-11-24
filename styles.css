@@ -1045,3 +1045,6 @@ body { min-height: 100vh; min-height: 100dvh; }
 .sheet-grid .pill-edit.editing { grid-column: 1 / -1; }
 .gallery .sheet .progress-grid { margin-top: 0; }
 .viewer { z-index: 80; }
+
+.home-brand { align-items: flex-end; }
+.home-head p.home-tag { padding-bottom: 12px; }

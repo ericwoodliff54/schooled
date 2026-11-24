@@ -2831,7 +2831,8 @@ function singleIssues(e, count, gal) {
   const out = [];
   if (e.k === 'plant' || !e.c) return out;
   if (gal && e.c.g > gal) out.push({ level: 'bad', text: e.n + ' needs a tank of at least ' + e.c.g + ' gallons' });
-  if (e.c.s >= 3 && count < e.c.s && (e.k === 'fish' || e.k === 'shrimp')) out.push({ level: 'warn', text: e.n + ' do best in groups of ' + e.c.s + ' or more (you have ' + count + ')' });
+  // Only flag a group that is clearly too small: 4 of a recommended 5 is fine, 2 of 5 is not.
+  if (e.c.s >= 3 && count < Math.max(3, Math.ceil(e.c.s * 0.6)) && (e.k === 'fish' || e.k === 'shrimp')) out.push({ level: 'warn', text: e.n + ' do best in groups of ' + e.c.s + ' or more (you have ' + count + ')' });
   if (count > 1 && e.k === 'fish' && hasTag(e, 'terr') && e.c.s <= 1 && e.g !== 'cfish' && gal && gal < e.c.g * count * 2) {
     out.push({ level: 'warn', text: 'Several ' + e.n + ' may fight in a tank this size' });
   }
