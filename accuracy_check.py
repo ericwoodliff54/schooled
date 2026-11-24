@@ -157,19 +157,28 @@ def main():
     wanted = [n.strip() for n in a.names.split(',') if n.strip()] if a.names.strip() else \
         [l.strip() for l in open(a.names_file, encoding='utf-8') if l.strip() and not l.startswith('#')]
     kinds = {k.strip() for k in a.kinds.split(',') if k.strip()}
-    chosen, seen = [], set()
+    chosen, seen, skipped = [], set(), []
     for n in wanted:
         e = db.find(n)
         if not e:
             print('Not in the species list, skipped:', n)
+            skipped.append(n + ' (not in the species list)')
             continue
         if e['n'] in seen or (kinds and e['k'] not in kinds):
+            if kinds and e['k'] not in kinds:
+                skipped.append(n + ' (kind is ' + e['k'] + ', not in: ' + ', '.join(sorted(kinds)) + ')')
             continue
         if (e.get('s') or '').strip().lower() in ('plantae', 'animalia', ''):
             print('Too generic to test, skipped:', n)
+            skipped.append(n + ' (too generic to test)')
             continue
         seen.add(e['n'])
         chosen.append(e)
+    if not chosen:
+        print('Nothing to test. Wanted %d names, none usable (kinds filter: %r).' % (len(wanted), a.kinds))
+        for x in skipped[:30]:
+            print('  -', x)
+        sys.exit(1)
     if a.limit and len(chosen) > a.limit:
         chosen = rng.sample(chosen, a.limit)
     chosen.sort(key=lambda e: (e['k'], e['n']))
