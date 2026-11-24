@@ -80,6 +80,7 @@ async function loadSpecies() {
     DB.list = data.species;
     DB.groups = data.groups || {};
     DB.byKey = new Map();
+    DB.bySquash = new Map(); // same keys without spaces, so "Yellow-tail" finds "Yellowtail"
     DB.byGenus = new Map();
     DB.list.forEach((e) => {
       const g = /^([A-Z][a-z]+)( sp\.?)?$/.exec(e.s || '');
@@ -87,6 +88,8 @@ async function loadSpecies() {
       [e.n, e.s].concat(e.a || []).forEach((key) => {
         const k = normKey(key);
         if (k && !DB.byKey.has(k)) DB.byKey.set(k, e);
+        const q = k.replace(/ /g, '');
+        if (q && !DB.bySquash.has(q)) DB.bySquash.set(q, e);
       });
     });
     DB.ready = true;
@@ -94,7 +97,8 @@ async function loadSpecies() {
 }
 
 function lookupSpecies(name) {
-  return DB.byKey.get(normKey(name)) || null;
+  const k = normKey(name);
+  return DB.byKey.get(k) || (DB.bySquash && DB.bySquash.get(k.replace(/ /g, ''))) || null;
 }
 
 // Matches what the AI said to the species list on the phone: common name, then scientific name, then the genus.
