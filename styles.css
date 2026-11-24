@@ -1072,3 +1072,6 @@ body { min-height: 100vh; min-height: 100dvh; }
 .compat-pill[aria-expanded="true"] .chev { transform: rotate(90deg); }
 .home-brand { gap: 4px; }
 .home-head p.home-tag { padding-bottom: 4px; }
+
+.stock-slim { border-radius: var(--radius); border: 1px solid rgba(26, 99, 199, 0.08); }
+.compat-pill { border-radius: var(--radius); }

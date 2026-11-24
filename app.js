@@ -2827,8 +2827,8 @@ function singleIssues(e, count, gal) {
   const out = [];
   if (e.k === 'plant' || !e.c) return out;
   if (gal && e.c.g > gal) out.push({ level: 'bad', text: e.n + ' needs a tank of at least ' + e.c.g + ' gallons' });
-  // Only flag a group that is clearly too small: 4 of a recommended 5 is fine, 2 of 5 is not.
-  if (e.c.s >= 3 && count < Math.max(3, Math.ceil(e.c.s * 0.6)) && (e.k === 'fish' || e.k === 'shrimp')) out.push({ level: 'warn', text: e.n + ' do best in groups of ' + e.c.s + ' or more (you have ' + count + ')' });
+  // Only flag a group that is clearly too small: 2 of a recommended 3 or 4 of 5 is fine, a lone fish or 2 of 5 is not.
+  if (e.c.s >= 3 && count < Math.max(2, Math.ceil(e.c.s * 0.6)) && (e.k === 'fish' || e.k === 'shrimp')) out.push({ level: 'warn', text: e.n + ' do best in groups of ' + e.c.s + ' or more (you have ' + count + ')' });
   if (count > 1 && e.k === 'fish' && hasTag(e, 'terr') && e.c.s <= 1 && e.g !== 'cfish' && gal && gal < e.c.g * count * 2) {
     out.push({ level: 'warn', text: 'Several ' + e.n + ' may fight in a tank this size' });
   }
@@ -3486,7 +3486,7 @@ function renderFishCheck() {
   const members = group && group.h ? DB.list.filter((e) => e.g === entry.g).map((e) => e.n).sort((x, y) => tipPos(x) - tipPos(y)) : [];
   const seenAlt = new Set();
   const alts = r.alternatives.concat(members).map((x) => lookupSpecies(x) ? lookupSpecies(x).n : x)
-    .filter((x) => { const k = canonKey(x); if (k === canonKey(fc.name) || seenAlt.has(k) || !sameKindAs(x, fc.name)) return false; seenAlt.add(k); return true; }).slice(0, 5);
+    .filter((x) => { const k = canonKey(x); if (k === canonKey(fc.name) || seenAlt.has(k) || !sameKindAs(x, fc.name)) return false; seenAlt.add(k); return true; }).slice(0, 3);
   if (alts.length) {
     const chunks = parseTip(group && group.tip);
     card.append(el('p', { class: 'label', text: 'Could also be' }),
