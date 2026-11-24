@@ -1184,8 +1184,8 @@ body { min-height: 100vh; min-height: 100dvh; }
 .watermark {
   position: fixed; inset: 0; z-index: 0;
   background: url("logo-watermark.png") center / min(78vw, 400px) auto no-repeat;
-  opacity: 0.05;
-  filter: saturate(0.75);
+  opacity: 0.1;
+  filter: saturate(0.9);
   pointer-events: none;
 }
 #app { position: relative; z-index: 1; }
