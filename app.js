@@ -1632,11 +1632,7 @@ function renderTank() {
   $('tank-hero').replaceChildren(
     t.photo ? el('img', { src: t.photo, alt: 'Photo of ' + tankLabel(t) }) : el('div', { class: 'tank-hero-empty' }, kindIcon('fish'), el('span', { text: 'No photo yet' })),
     el('div', { class: 'hero-shade' }),
-    el('div', { class: 'hero-title' }, el('h1', { text: tankLabel(t) }),
-      el('button', { type: 'button', class: 'hero-pencil', 'aria-label': 'Rename tank', onclick: () => openEditSheet(true) }, iconSvg(['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'], 20))));
-  const startedText = t.started ? (() => { const d = new Date(t.started + 'T00:00:00'); return isNaN(d) ? '' : 'Since ' + d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }); })() : '';
-  $('tank-chips').replaceChildren(...[sizeShort(t) || 'Add size', t.type, t.style, WATER_SHORT[t.water], startedText || 'Add start date']
-    .filter(Boolean).map((label) => el('button', { type: 'button', class: 'chip-pill', text: label, onclick: () => openEditSheet(false) })));
+    el('div', { class: 'hero-title' }, el('h1', { text: tankLabel(t) })));
   $('sheet-photo-thumb').replaceChildren(t.photo ? el('img', { src: t.photo, alt: '' }) : el('span', { text: 'No photo' }));
   $('tank-photo-remove').hidden = !t.photo;
   $('tank-photo-camera').textContent = t.photo ? 'Retake' : 'Take photo';
@@ -2911,39 +2907,44 @@ function stockBar(t) {
 }
 
 let mateShowAll = false;
-let mateOpen = null; // null = open only when something needs a look
+let mateOpen = false; // the Compatibility pill stays collapsed until tapped
 function iconSvg(paths, size) {
   return svgEl('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' }, ...paths.map((d) => svgEl('path', { d })));
 }
 // Two small cards side by side: how full the tank is, and whether the fish get along.
+// A slim full-width Stocking card, with a Compatibility pill under it that opens to show any issues.
 function summaryStrip(t) {
   const s = stocking(t);
-  const left = el('div', { class: 'sum-card' }, el('div', { class: 'sum-k', text: 'Stocking' }));
-  if (!s.gal) left.append(el('div', { class: 'sum-big sm', text: 'Set size' }), el('p', { class: 'sum-note', text: 'Add the tank size to see how full it is.' }));
-  else if (!s.known) left.append(el('div', { class: 'sum-big sm', text: 'Empty' }), el('p', { class: 'sum-note', text: 'Add fish to see how full it is.' }));
+  const stock = el('div', { class: 'stock-slim' });
+  if (!s.gal) stock.append(el('div', { class: 'stock-slim-top' }, el('span', { class: 'sum-k', text: 'Stocking' }), el('span', { class: 'stock-slim-note', text: 'Add the tank size to see how full it is.' })));
+  else if (!s.known) stock.append(el('div', { class: 'stock-slim-top' }, el('span', { class: 'sum-k', text: 'Stocking' }), el('span', { class: 'stock-slim-note', text: 'Add fish to see how full it is.' })));
   else {
     const lvl = stockLevel(s.pct);
-    left.append(el('div', { class: 'sum-big', text: Math.round(s.pct * 100) + '%' }),
+    stock.append(
+      el('div', { class: 'stock-slim-top' }, el('span', { class: 'sum-k', text: 'Stocking' }),
+        el('span', { class: 'stock-slim-val' }, el('strong', { text: Math.round(s.pct * 100) + '%' }), ' ' + (s.tooSmall ? s.tooSmall.name + ' needs ' + s.tooSmall.gal + ' gal or more' : lvl.label))),
       el('div', { class: 'stock-track sum-track', role: 'img', 'aria-label': lvl.label + ', ' + Math.round(s.pct * 100) + ' percent of capacity' },
-        el('div', { class: 'stock-fill ' + lvl.tone, style: 'width:' + Math.max(2, Math.min(s.pct, 1) * 100).toFixed(1) + '%' })),
-      el('p', { class: 'sum-note', text: s.tooSmall ? s.tooSmall.name + ' needs ' + s.tooSmall.gal + ' gal or more' : lvl.label }));
+        el('div', { class: 'stock-fill ' + lvl.tone, style: 'width:' + Math.max(2, Math.min(s.pct, 1) * 100).toFixed(1) + '%' })));
   }
   const allIssues = tankCheck(t).issues;
   const issues = allIssues.filter((i) => t.dismissed.indexOf(i.text) === -1);
   const cleared = allIssues.length - issues.length;
   const bad = issues.some((i) => i.level === 'bad');
-  const open = mateOpen === null ? (issues.length > 0 || cleared > 0) : mateOpen;
-  let tone = 'ok', head = cleared ? 'Cleared' : 'All clear', note = cleared ? 'Tap to bring them back' : 'No clashes found';
-  if (!t.fish.length) { tone = 'none'; head = 'Add fish'; note = 'I check how they get along'; }
-  else if (issues.length) { tone = bad ? 'bad' : 'warn'; head = issues.length + (issues.length === 1 ? ' to look at' : ' to look at'); note = open ? 'Tap to hide details' : 'Tap for details'; }
-  else if (cleared) note = open ? 'Tap to hide' : 'Tap to see what you cleared';
-  const right = el('button', { type: 'button', class: 'sum-card sum-btn', 'aria-expanded': String(open), onclick: () => { mateOpen = !open; renderTank(); } },
-    el('div', { class: 'sum-k', text: 'Compatibility' }),
-    el('div', { class: 'sum-status' },
-      el('span', { class: 'sum-badge ' + tone, 'aria-hidden': 'true' }, tone === 'ok' ? iconSvg(['M5 12.5l4.5 4.5L19 7.5'], 18) : tone === 'none' ? iconSvg(['M12 5v14', 'M5 12h14'], 18) : iconSvg(['M12 8v5', 'M12 17h.01'], 18)),
-      el('span', { class: 'sum-head', text: head })),
-    el('p', { class: 'sum-note', text: note }));
-  return { row: el('div', { class: 'sum-strip' }, left, right), showMates: open && t.fish.length > 0 };
+  const canOpen = issues.length > 0 || cleared > 0;
+  const open = canOpen && mateOpen === true;
+  let tone = 'ok', head = cleared ? 'Cleared' : 'All clear';
+  if (!t.fish.length) { tone = 'none'; head = 'Add fish'; }
+  else if (issues.length) { tone = bad ? 'bad' : 'warn'; head = issues.length + ' to look at'; }
+  const inner = [
+    el('span', { class: 'sum-badge ' + tone, 'aria-hidden': 'true' }, tone === 'ok' ? iconSvg(['M5 12.5l4.5 4.5L19 7.5'], 18) : tone === 'none' ? iconSvg(['M12 5v14', 'M5 12h14'], 18) : iconSvg(['M12 8v5', 'M12 17h.01'], 18)),
+    el('span', { class: 'compat-label', text: 'Compatibility' }),
+    el('span', { class: 'compat-status ' + tone, text: head }),
+    canOpen ? chevron() : null
+  ];
+  const pill = canOpen
+    ? el('button', { type: 'button', class: 'compat-pill', 'aria-expanded': String(open), onclick: () => { mateOpen = !open; renderTank(); } }, ...inner)
+    : el('div', { class: 'compat-pill static' }, ...inner);
+  return { row: el('div', { class: 'sum-stack' }, stock, pill), showMates: open };
 }
 function mateCheckCard(t) {
   const all = tankCheck(t).issues;
@@ -2955,7 +2956,7 @@ function mateCheckCard(t) {
     : el('span', { class: 'pill ' + (bad ? 'bad' : 'warn'), text: r.issues.length + (r.issues.length === 1 ? ' thing to look at' : ' things to look at') });
   const shown = mateShowAll ? r.issues : r.issues.slice(0, 5);
   const card = el('div', { class: 'card' },
-    el('div', { class: 'card-head' }, el('h2', { text: 'Tank mate check' }), chip));
+    el('div', { class: 'card-head' }, el('h2', { text: 'Compatibility' }), chip));
   if (!t.fish.length) card.append(el('p', { class: 'muted small', text: 'Add fish and I will check how they get along.' }));
   else if (!r.issues.length) card.append(el('p', { class: 'muted small', text: cleared ? 'You cleared everything I flagged.' : (r.checked ? 'No problems found between the ' + r.checked + ' kinds I could check.' : 'None of these names are in the species list yet, so nothing could be checked.') }));
   shown.forEach((i) => card.append(
