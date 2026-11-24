@@ -12,7 +12,7 @@ const IMAGE_MODEL = 'gemini-3.1-flash-image'; // Dream Tank pictures (env GEMINI
 const DREAM_PER_MONTH = 10; // pictures per device per month, enforced here only when the LIMITS KV store is bound
 const DREAM_PER_DAY_ALL = 60; // pictures per day across everyone, same condition
 const DREAM_RATE_MAX = 3; // and no more than this many tries per 10 minutes from one address
-const ASK_PER_MONTH = 100; // Ask the Tank questions per device per month, enforced here only when the LIMITS KV store is bound
+const ASK_PER_MONTH = 100; // Get Schooled questions per device per month, enforced here only when the LIMITS KV store is bound
 const ASK_PER_DAY_ALL = 3000; // questions per day across everyone, same condition
 const ASK_RATE_MAX = 10; // and no more than this many questions per 10 minutes from one address
 const TOTAL_BUDGET_MS = 52000; // stop trying more models after this long
@@ -928,7 +928,7 @@ async function dream(request, env, origin) {
   return json({ ok: true, title, summary, species, image, image_model: imageModel, image_error: image ? '' : imageErrors.join('; ').slice(0, 300), usage: { plan: planUsage, image: imageUsage }, enforced: !!kv }, 200, origin);
 }
 
-// ---------- Ask the Tank ----------
+// ---------- Get Schooled (Ask about a tank) ----------
 // A short chat about one tank. The phone sends a plain summary of the tank (fish, water tests, reminders, gear),
 // the last few messages and the new question. Text only, on the cheap model, so each answer costs a fraction of a cent.
 const ASK_INSTRUCTIONS =

@@ -1573,7 +1573,7 @@ const WATER_TOOLS = [
   { icon: 'drop', color: 'aqua', title: 'Water care', text: 'Conditioner and test kit picks for this tank', go: () => { state.activeId = openTankId; saveState(); waterFrom = 'tank'; showView('water'); } },
 ];
 const TANK_TOOLS = [
-  { icon: 'chat', color: 'blue', title: 'Ask the Tank', text: 'Questions about your fish, water and care', go: () => openAsk(openTankId) }
+  { icon: 'chat', color: 'blue', title: 'Get Schooled', text: 'Ask anything about your fish, water and care', go: () => openAsk(openTankId) }
 ];
 const FEATURES = [
   { icon: 'sparkle', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you dream of, we\'ll bring it to life!', go: () => showView('dream') },
@@ -4006,7 +4006,7 @@ if ($('fishcheck-video')) $('fishcheck-video').addEventListener('change', (event
 $('fishcheck-back').addEventListener('click', () => goBack(() => (fishCheckFrom === 'tank' && getTank(openTankId) ? showTank(openTankId) : showView('home'))));
 $('misses-back').addEventListener('click', () => goBack(() => showView('home')));
 
-// ---------- Ask the Tank ----------
+// ---------- Get Schooled (ask about a tank) ----------
 // A short chat about one tank. The phone builds a plain summary of the tank and sends it with each question,
 // so the AI always answers about this tank. Chats are kept on this phone, per tank.
 const ASK_KEY = 'schooled.ask';
@@ -4014,7 +4014,7 @@ const ASK_MONTHLY = 100;
 const ASK_KEEP = 40; // messages kept per tank
 const ASK_ERRORS = {
   limit_reached: 'You have used all ' + ASK_MONTHLY + ' questions for this month. They reset on the 1st.',
-  busy_today: 'Ask the Tank is very busy today. Please try again tomorrow.',
+  busy_today: 'Get Schooled is very busy today. Please try again tomorrow.',
   rate_limited: 'That is a lot of questions in a short time. Wait a few minutes and try again.',
   ai_busy: 'The AI is busy right now. Try again in a minute.',
   bad_request: 'Type a question first.'
@@ -4127,7 +4127,7 @@ function renderAsk() {
   const left = Math.max(0, ASK_MONTHLY - s.used);
 
   const head = el('div', { class: 'ask-head' },
-    el('div', {}, el('h1', { text: 'Ask the Tank' }), el('p', { class: 'muted small', text: 'About ' + tankLabel(t) })),
+    el('div', {}, el('h1', { text: 'Get Schooled' }), el('p', { class: 'muted small', text: 'About ' + tankLabel(t) })),
     chat.length ? el('button', { type: 'button', class: 'btn link small-link', text: 'Clear chat', onclick: () => {
       const s2 = askLoad(); delete s2.chats[t.id]; askSave(s2); askMessage = ''; renderAsk();
     } }) : null);
