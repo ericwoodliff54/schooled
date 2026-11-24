@@ -36,7 +36,7 @@ jobs:
           python-version: '3.12'
       - name: Install image tools
         run: |
-          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install --quiet timm pillow numpy requests
       - name: Collect photos and make fingerprints
         run: |
