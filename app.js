@@ -416,6 +416,7 @@ function cleanLog(list) {
       const p = Number(r.pct);
       e.pct = isFinite(p) && p > 0 && p <= 100 ? Math.round(p) : 0;
     } else if (!Object.keys(e.v).length) return;
+    if (e.k === 'test' && r.cleared === true) e.cleared = true;
     out.push(e);
   });
   return out.sort((a, b) => a.t - b.t).slice(-MAX_LOG);
@@ -673,6 +674,7 @@ function logChart(t, key) {
   return svg;
 }
 
+let latestOpen = false;
 function logSummaryCard(t) {
   const tests = t.log.filter((e) => e.k === 'test');
   const card = el('div', { class: 'card' });
@@ -684,17 +686,26 @@ function logSummaryCard(t) {
   const last = tests[tests.length - 1];
   const checks = entryChecks(t, last);
   const worst = worstLevel(checks);
-  card.append(el('div', { class: 'water-line' }, el('h2', { text: 'Latest test' }), el('span', { class: 'pill ' + worst, text: LEVEL_WORDS[worst] })),
-    el('p', { class: 'muted small', text: fmtDay(last.t) + ' · ' + agoText(last.t) }));
+  const det = el('details', { class: 'card group-card log-latest' });
+  det.open = latestOpen;
+  det.addEventListener('toggle', () => { latestOpen = det.open; });
+  const dots = el('div', { class: 'log-dots' });
+  checks.forEach((c) => dots.append(el('span', { class: 'log-dot ' + (c.j ? c.j.level : 'ok'), text: LOG_FIELDS[c.key].label })));
+  det.append(el('summary', { class: 'group-sum log-latest-sum' },
+    el('div', { class: 'log-latest-main' },
+      el('div', { class: 'water-line' }, el('h2', { text: 'Latest test' }), el('span', { class: 'pill ' + worst, text: LEVEL_WORDS[worst] })),
+      el('p', { class: 'muted small', text: fmtDay(last.t) + ' · ' + agoText(last.t) }), dots),
+    el('span', { class: 'chev', text: '›' })));
   const list = el('div', { class: 'log-values' });
   checks.forEach((c) => {
     list.append(el('div', { class: 'log-val' },
       el('div', { class: 'water-line' }, el('span', { text: LOG_FIELDS[c.key].label }), el('strong', { text: fmtVal(c.key, c.val) + (LOG_FIELDS[c.key].unit ? ' ' + LOG_FIELDS[c.key].unit : '') })),
       c.j && c.j.level !== 'ok' ? el('div', { class: 'log-note ' + c.j.level, text: c.j.text }) : null));
   });
-  card.append(list);
-  if (tests.length && daysBetween(last.t, Date.now()) >= 14) card.append(el('p', { class: 'muted small', text: 'It has been a while. Test again to see where the tank stands now.' }));
-  return card;
+  const inner = el('div', { class: 'log-latest-body' }, list);
+  if (daysBetween(last.t, Date.now()) >= 14) inner.append(el('p', { class: 'muted small', text: 'It has been a while. Test again to see where the tank stands now.' }));
+  det.append(inner);
+  return det;
 }
 
 function submitTest(t, inputs, dateInput, noteInput) {
@@ -855,7 +866,10 @@ function addPickToGear(t, kind, name) {
 function treatCard(t) {
   const r = treatmentsFor(t);
   if (!r) return null;
-  const card = el('div', { class: 'card treat-card' }, el('h2', { text: 'What to do' }));
+  const lastTest = t.log.filter((e) => e.k === 'test').slice(-1)[0];
+  if (lastTest && lastTest.cleared) return null;
+  const card = el('div', { class: 'card treat-card' }, el('div', { class: 'water-line' }, el('h2', { text: 'What to do' }),
+    r.list.length ? el('button', { type: 'button', class: 'btn small', text: 'Clear', 'aria-label': 'Clear these treatments', onclick: () => { lastTest.cleared = true; saveState(); renderLog(); toast('Cleared. A new test will bring them back if needed.'); } }) : null));
   if (!r.list.length) {
     card.append(el('p', { class: 'muted', text: 'No treatments needed. Your latest test looks fine for ' + tankLabel(t) + '.' }));
     return card;
@@ -998,7 +1012,6 @@ function renderLog() {
     el('button', { type: 'button', class: 'btn small', text: 'Log a test', onclick: () => { logForm = { mode: 'test' }; renderLog(); } }),
     el('button', { type: 'button', class: 'btn small', text: 'Log a water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } })));
   putAll(body, treatCard(t), logTrendCard(t), logHistoryCard(t));
-  putAll(body, el('h2', { class: 'section', text: 'Water tools' }), el('div', { class: 'features' }, ...WATER_TOOLS.map(featureBtn)));
   putAll(body, el('p', { class: 'muted small', text: 'These checks are general guidance. Your own fish and your test kit come first.' }));
 }
 
@@ -1124,9 +1137,23 @@ function defaultState() {
 }
 
 let migrated = false;
+const GEAR_KINDS = ['Filter', 'Heater', 'Light', 'Pump or wavemaker', 'Protein skimmer', 'Air pump', 'CO2 system', 'Fan or chiller', 'Auto top-off', 'Test kit', 'Water conditioner', 'Substrate', 'Other'];
+const BACKUP_KEY = 'schooled.v1.bak';
 function loadState() {
+  let st = loadFrom(STORE_KEY);
+  if (!st.tanks.length) {
+    // Nothing usable in the main slot. Recover from the copy kept at the last good start.
+    const back = loadFrom(BACKUP_KEY);
+    if (back.tanks.length) { st = back; try { localStorage.setItem(STORE_KEY, JSON.stringify(st)); } catch (err) { /* ignore */ } }
+  } else {
+    try { localStorage.setItem(BACKUP_KEY, localStorage.getItem(STORE_KEY)); } catch (err) { /* storage full; backup is optional */ }
+  }
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (err) { /* optional */ }
+  return st;
+}
+function loadFrom(key) {
   try {
-    const raw = localStorage.getItem(STORE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return defaultState();
     const saved = JSON.parse(raw);
     if (!saved || typeof saved !== 'object') return defaultState();
@@ -1158,6 +1185,7 @@ function loadState() {
 function saveState() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    if (!state.tanks.length) localStorage.removeItem(BACKUP_KEY); // deleted on purpose
     return true;
   } catch (err) {
     return false; // private mode or full storage; the app still works for this visit
@@ -1891,7 +1919,6 @@ function renderTank() {
 }
 
 // ---------- Equipment and progress photos (one expandable card each, inside every tank) ----------
-const GEAR_KINDS = ['Filter', 'Heater', 'Light', 'Pump or wavemaker', 'Protein skimmer', 'Air pump', 'CO2 system', 'Fan or chiller', 'Auto top-off', 'Test kit', 'Water conditioner', 'Substrate', 'Other'];
 
 function cleanGear(list) {
   if (!Array.isArray(list)) return [];

@@ -1130,3 +1130,16 @@ body { min-height: 100vh; min-height: 100dvh; }
 #tank-sec-fish > .tank-settings[open] { padding-bottom: 14px; }
 #tank-sec-fish > .tank-settings[open] summary { margin-bottom: 4px; }
 #tank-sec-fish > #tank-progress { padding: 16px; }
+
+/* latest test collapsible */
+.log-latest-sum { align-items: flex-start; }
+.log-latest-main { flex: 1; min-width: 0; }
+.log-latest-main h2 { margin: 0; }
+.log-dots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.log-dot { font-size: 12px; padding: 3px 9px 3px 8px; border-radius: 999px; background: var(--card-2, rgba(127,127,127,.12)); display: inline-flex; align-items: center; gap: 5px; }
+.log-dot::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #3fae6a; }
+.log-dot.warn::before { background: #e0a21b; }
+.log-dot.bad::before { background: #d9534f; }
+.log-latest[open] .group-sum .chev { transform: rotate(90deg); }
+.log-latest-body { padding: 0 16px 14px; }
+.treat-card .water-line .btn { flex: none; }
