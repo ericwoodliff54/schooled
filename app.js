@@ -1996,6 +1996,7 @@ function gearSuggestions(t) {
     add('Auto top-off', 'Auto top-off', 'Keeps salinity steady by replacing evaporated water with fresh RO/DI water.');
     add('Fan or chiller', 'Cooling fan', 'Small clip-on fans stop summer heat spikes, which stress corals.');
   }
+  if (!salt && inverts) add('Fan or chiller', 'Cooling fan', 'Shrimp are sensitive to heat. Small clip-on fans help in summer if your room runs warm.');
   if (brackish) add('Test kit', 'Hydrometer or refractometer', 'Brackish tanks need a salinity reading too.');
   if (ft === 'sponge' || ft === 'undergravel') add('Air pump', 'Air pump', 'Drives the ' + ft + ' filter. Pick one rated above your tank size, with an air line and a check valve.');
   else if (inverts && !salt && ft !== 'sump') add('Air pump', 'Sponge filter or air pump', 'Shrimp and snails do best with gentle flow, and a sponge filter keeps babies from being sucked in.');
@@ -2010,6 +2011,9 @@ const GEAR_DISCLAIMER = 'Product names and models are suggested for compatibilit
 const AQUACLEAR = [[20, 5, 20, 100], [30, 10, 30, 150], [50, 20, 50, 200], [70, 40, 70, 300], [110, 60, 110, 500]]; // model, min gal, max gal, GPH
 const FLUVAL07 = [[107, 10, 30], [207, 20, 45], [307, 40, 70], [407, 50, 100]];
 const JAGER = [[5, 7, 25], [7, 16, 50], [16, 26, 75], [26, 40, 100], [40, 53, 125], [53, 79, 150], [79, 106, 200], [106, 159, 250], [159, 264, 300]]; // min gal, max gal, watts
+const TIDAL = [['35', 35, 130], ['55', 55, 250], ['75', 75, 350], ['110', 110, 450]]; // model, max gal, GPH (Seachem)
+const HYDRO_SPONGE = [['I', 10], ['II', 20], ['III', 30], ['IV', 80], ['V', 120]]; // size, max gal (Aquarium Technology)
+const FLUVAL_CO2 = [['Mini Pressurized CO2 Kit (20 g)', 15], ['Pressurized CO2 Kit (45 g)', 30], ['Pressurized CO2 Kit (95 g)', 50]]; // kit, max gal
 const OCTO = [['110-INT', 75], ['150-INT', 120], ['200-INT', 160]]; // model, largest tank Bulk Reef Supply recommends
 
 function gearPicks(kind, t) {
@@ -2025,6 +2029,10 @@ function gearPicks(kind, t) {
     if (ac) P('Starter', 'AquaClear ' + ac[0], 'Hang-on filter. Rated ' + ac[1] + ' to ' + ac[2] + ' gal, up to ' + ac[3] + ' GPH.');
     const fl = ft && ft !== 'canister' ? null : FLUVAL07.find((m) => gal >= m[1] && gal * 1.25 <= m[2]) || FLUVAL07.find((m) => gal >= m[1] && gal <= m[2]);
     if (fl) P('Popular', 'Fluval ' + fl[0], 'Canister filter. Rated ' + fl[1] + ' to ' + fl[2] + ' gal.');
+    const td = ft && ft !== 'hob' ? null : TIDAL.find((m) => gal <= m[1] && gal * 1.25 <= m[1]) || TIDAL.find((m) => gal <= m[1]);
+    if (td) P('Popular', 'Seachem Tidal ' + td[0], 'Hang-on filter with an adjustable flow dial. Rated up to ' + td[1] + ' gal, ' + td[2] + ' GPH.');
+    const sp = ft === 'sponge' ? (HYDRO_SPONGE.find((m) => gal <= m[1]) || null) : null;
+    if (sp) P('Popular', 'Hydro-Sponge ' + sp[0], 'Sponge filter that runs off an air pump. Sold for up to ' + sp[1] + ' gal.');
     if ((!ft || ft === 'canister') && gal >= 60 && gal <= 400) P('Step up', 'Fluval FX6', 'Large canister filter. Rated up to 400 gal, 925 GPH pump.');
   } else if (kind === 'Heater' && gal > 0) {
     const h = JAGER.find((m) => gal > m[0] && gal <= m[1]) || (gal <= 5 ? JAGER[0] : null);
@@ -2041,6 +2049,8 @@ function gearPicks(kind, t) {
     } else {
       const sz = gal <= 12 ? ['15 to 24 in', '22 W'] : gal <= 35 ? ['24 to 34 in', '32 W'] : gal <= 50 ? ['36 to 48 in', '46 W'] : ['48 to 60 in', '59 W'];
       P('Popular', 'Fluval Plant 3.0 LED (' + sz[0] + ')', sz[1] + ', 6500K full spectrum with app control. Sold by tank length, so match yours.');
+      const fl = gal <= 12 ? '20' : gal <= 20 ? '24' : gal <= 35 ? '30' : gal <= 50 ? '36' : '48';
+      P('Step up', 'Finnex Planted+ 24/7 (' + fl + ' in)', 'Automated sunrise to sunset on a built-in controller. Sold by tank length (20, 24, 30, 36, 48 in), so match yours.');
     }
   } else if (kind === 'Pump or wavemaker' && salt && gal >= 10 && gal <= 132) {
     P('Starter', 'Tunze Nanostream 6045', '400 to 1,175 GPH with a manual flow slider. Rated for about 10 to 135 gal.');
@@ -2051,6 +2061,19 @@ function gearPicks(kind, t) {
   } else if (kind === 'Auto top-off' && salt && gal > 0) {
     if (gal <= 66) P('Starter', 'Tunze Osmolator 3 Nano', 'Run-dry protection. Suggested by Bulk Reef Supply for tanks up to 66 gal.');
     if (gal <= 100) P('Popular', 'Tunze Osmolator Universal 3155', 'Optical sensor with a float-switch backup. Best under about 100 gal.');
+  } else if (kind === 'Air pump') {
+    if (gal <= 20) P('Starter', 'Active Aqua AAPA3.2L', 'One outlet, 3.2 L/min, 2 W. Runs one air stone or a small sponge filter.');
+    if (gal > 10 && gal <= 75) P('Popular', 'Active Aqua AAPA7.8L', 'Two outlets, 7.8 L/min, 3 W. Runs a couple of stones or sponge filters.');
+    if (gal > 40) P('Step up', 'Active Aqua AAPA15L', 'Four outlets, 15 L/min, 6 W. For bigger tanks or several stones and filters.');
+  } else if (kind === 'CO2 system' && fresh && gal > 0) {
+    const co = FLUVAL_CO2.find((m) => gal <= m[1]);
+    if (co) P('Popular', 'Fluval ' + co[0], 'Complete kit with regulator and diffuser. Made for planted tanks up to ' + co[1] + ' gal.');
+  } else if (kind === 'Fan or chiller' && gal > 0) {
+    if (gal <= 50) P('Starter', 'Hygger Aquarium Chiller Cooling Fan (HG051)', 'Clip-on fans that take a few degrees off in hot rooms. Sold for tanks up to about 50 gal, so check your glass thickness.');
+    if (gal <= 10) P('Popular', 'JBJ Nano Arctica E-Chiller', 'Compact cooler for tanks up to 10 gal. Cools about 9 to 10 F below room temperature.');
+    else if (gal <= 40) P('Popular', 'JBJ Mini Arctica 1/15 HP', 'Inline chiller for small tanks. Wants 100 to 200 GPH of flow through it.');
+    else if (gal <= 130) P('Step up', 'JBJ Arctica 1/10 HP', 'Inline titanium chiller. Recommended up to 130 gal, wants 240 to 960 GPH of flow.');
+    else if (gal <= 340) P('Step up', 'JBJ Arctica 1/3 HP', 'Inline titanium chiller. Recommended up to 340 gal, wants 480 to 2,400 GPH of flow.');
   } else if (kind === 'Substrate' && !salt) {
     const amt = gal > 0 ? 'About ' + g + ' lb for a 1 in bed, ' + g * 2 + ' lb for 2 in.' : 'About 1 lb per gal for a 1 in bed.';
     P('Popular', 'CaribSea Eco-Planted', amt);
