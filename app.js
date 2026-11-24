@@ -3452,7 +3452,60 @@ function stockCached(entry, name) {
     if (v) return v;
     if (v === undefined) unknown = true;
   }
-  return unknown ? undefined : 0;
+  if (unknown) return undefined;
+  const x = stockSaved[stockExtraKey(entry, name)]; // the Wikidata / iNaturalist fallback
+  return x === undefined ? undefined : (x || 0);
+}
+// "Genus species" without variety names in quotes, for photo lookups.
+function stockSci(entry) {
+  const sci = String(usableScientific(entry) || '').replace(/\s*['"‘’(].*$/, '').trim();
+  return /^[A-Z][a-z]+ [a-z]+$/.test(sci) ? sci : '';
+}
+function stockExtraKey(entry, name) { return 'x:' + normKey(stockSci(entry) || (entry ? entry.n : name)); }
+// Free photo licenses that allow use in a paid app (with credit).
+const STOCK_LICENSES = ['cc0', 'cc-by', 'cc-by-sa'];
+async function fetchStockExtra(entry, name) {
+  const key = stockExtraKey(entry, name);
+  if (stockSaved[key] !== undefined) return stockSaved[key] || null;
+  const sci = stockSci(entry);
+  let reached = false;
+  // 1. Wikidata: the species' main picture on Wikimedia Commons.
+  if (sci) {
+    try {
+      const r1 = await fetch('https://www.wikidata.org/w/api.php?action=query&list=search&srlimit=1&format=json&origin=*&srsearch=' + encodeURIComponent('haswbstatement:"P225=' + sci + '"'), { signal: AbortSignal.timeout(8000) });
+      const j1 = r1.ok ? await r1.json() : null;
+      reached = reached || r1.ok;
+      const id = j1 && j1.query && j1.query.search && j1.query.search[0] && j1.query.search[0].title;
+      if (id && /^Q\d+$/.test(id)) {
+        const r2 = await fetch('https://www.wikidata.org/w/api.php?action=wbgetclaims&property=P18&format=json&origin=*&entity=' + id, { signal: AbortSignal.timeout(8000) });
+        const j2 = r2.ok ? await r2.json() : null;
+        const file = j2 && j2.claims && j2.claims.P18 && j2.claims.P18[0] && j2.claims.P18[0].mainsnak && j2.claims.P18[0].mainsnak.datavalue && j2.claims.P18[0].mainsnak.datavalue.value;
+        if (typeof file === 'string' && /\.(jpe?g|png|webp)$/i.test(file)) {
+          const f = file.replace(/ /g, '_');
+          const found = { src: 'https://commons.wikimedia.org/wiki/Special:FilePath/' + encodeURIComponent(f) + '?width=400', page: 'https://commons.wikimedia.org/wiki/File:' + encodeURIComponent(f), from: 'Wikimedia Commons' };
+          saveStock(key, found);
+          return found;
+        }
+      }
+    } catch (err) { /* try the next source */ }
+  }
+  // 2. iNaturalist: the taxon's default photo, only when its license allows commercial use.
+  try {
+    const q = sci || (entry ? entry.n : name);
+    const r3 = await fetch('https://api.inaturalist.org/v1/taxa?per_page=5&q=' + encodeURIComponent(q), { signal: AbortSignal.timeout(8000) });
+    const j3 = r3.ok ? await r3.json() : null;
+    reached = reached || r3.ok;
+    const list = (j3 && Array.isArray(j3.results)) ? j3.results : [];
+    const hit = list.find((x) => x && x.default_photo && (!sci || String(x.name || '').toLowerCase() === sci.toLowerCase()));
+    const ph = hit && hit.default_photo;
+    if (ph && STOCK_LICENSES.includes(String(ph.license_code || '').toLowerCase()) && /^https:\/\//.test(ph.medium_url || '')) {
+      const found = { src: ph.medium_url, page: 'https://www.inaturalist.org/taxa/' + hit.id, from: 'iNaturalist', credit: String(ph.attribution || '').slice(0, 160) };
+      saveStock(key, found);
+      return found;
+    }
+  } catch (err) { /* offline */ }
+  if (reached) saveStock(key, 0); // only remember "no photo" when the services actually answered
+  return null;
 }
 async function fetchStock(entry, name) {
   const titles = [usableScientific(entry), entry ? entry.n : name].filter(Boolean);
@@ -3472,6 +3525,8 @@ async function fetchStock(entry, name) {
       } else if (res.status === 404) saveStock(key, 0);
     } catch (err) { /* offline: try again next time */ }
   }
+  // No Wikipedia article or picture: try free photos from Wikidata and iNaturalist.
+  if (titles.every((tt) => stockSaved[normKey(tt)] === 0)) return fetchStockExtra(entry, name);
   return null;
 }
 
@@ -3521,7 +3576,7 @@ function speciesPhotoBox(entry, name, f, t) {
     fetchStock(entry, name).then((found) => {
       if (!found || !speciesView || speciesView.name !== shownFor || (f && f.photo)) return;
       box.replaceChildren(el('img', { src: found.src, alt: name, loading: 'lazy' }));
-      credit.replaceChildren(document.createTextNode('Photo from Wikipedia. It may be a different color form. '),
+      credit.replaceChildren(document.createTextNode('Photo from ' + (found.from || 'Wikipedia') + (found.credit ? ' (' + found.credit + ')' : '') + '. It may be a different color form. '),
         found.page ? el('a', { href: found.page, target: '_blank', rel: 'noopener noreferrer', text: 'Credits' }) : '');
     });
   }
