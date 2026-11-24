@@ -1211,7 +1211,7 @@ function toast(message) {
 }
 
 // ---------- Navigation ----------
-const VIEWS = ['setup', 'home', 'results', 'water', 'tank', 'species', 'dream', 'fishcheck', 'misses', 'ask'];
+const VIEWS = ['setup', 'home', 'results', 'water', 'tank', 'species', 'dream', 'fishcheck', 'misses', 'ask', 'backup'];
 let currentView = 'home';
 let openTankId = '';
 let editingSize = false;
@@ -1305,6 +1305,7 @@ function showView(name) {
   if (name === 'fishcheck') renderFishCheck();
   if (name === 'misses') renderMisses();
   if (name === 'ask') renderAsk();
+  if (name === 'backup') renderBackup();
   window.scrollTo(0, 0);
 }
 
@@ -1681,6 +1682,10 @@ function renderHome() {
   updateBadge();
   const misses = loadMisses();
   const usageN = loadUsage().length;
+  missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => { restorePending = null; showView('backup'); } },
+    featureIcon('info'),
+    el('strong', { text: 'Back up or restore \u00b7 ' + lastBackupText() }),
+    chevron()));
   if (usageN) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
     featureIcon('info'),
     el('strong', { text: 'Usage log: ' + usageN + ' AI calls' }),
@@ -1689,6 +1694,111 @@ function renderHome() {
     featureIcon('info'),
     el('strong', { text: misses.length + (misses.length === 1 ? ' unmatched species to review' : ' unmatched species to review') }),
     chevron()));
+}
+
+// ---------- Back up and restore ----------
+// One file holds every tank, its fish, water log, reminders, equipment and progress photos.
+const LASTBACKUP_KEY = 'schooled.lastbackup';
+function lastBackupText() {
+  let at = 0;
+  try { at = Number(localStorage.getItem(LASTBACKUP_KEY)) || 0; } catch (err) { at = 0; }
+  if (!at) return 'Never backed up';
+  const days = Math.floor((Date.now() - at) / DAY_MS);
+  return days <= 0 ? 'Backed up today' : 'Last backup ' + days + (days === 1 ? ' day ago' : ' days ago');
+}
+async function buildBackup() {
+  const photos = [];
+  for (const t of state.tanks) {
+    try { (await PhotoDB.list(t.id)).forEach((x) => photos.push({ id: x.id, tank: x.tank, date: x.date, note: x.note || '', data: x.data })); } catch (err) { /* photos are optional */ }
+  }
+  return { app: 'schooled', format: 1, saved: new Date().toISOString(), state: { setupDone: true, activeId: state.activeId, tanks: state.tanks }, photos };
+}
+async function saveBackupFile() {
+  const text = JSON.stringify(await buildBackup());
+  const name = 'schooled-backup-' + todayISO() + '.json';
+  const file = new File([text], name, { type: 'application/json' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Schooled backup' }); markBackup(); return; }
+  } catch (err) {
+    if (err && err.name === 'AbortError') return; // the person closed the share sheet
+  }
+  const url = URL.createObjectURL(file);
+  const link = el('a', { href: url, download: name });
+  document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  markBackup();
+}
+function markBackup() {
+  try { localStorage.setItem(LASTBACKUP_KEY, String(Date.now())); } catch (err) { /* optional */ }
+  toast('Backup saved. Keep the file somewhere safe, like email or cloud storage.');
+  if (currentView === 'backup') renderBackup();
+}
+// Reads a backup file and checks it. Returns { tanks, photos, saved } or throws.
+async function readBackupFile(file) {
+  if (!file) throw new Error('none');
+  if (file.size > 150 * 1024 * 1024) throw new Error('big');
+  let raw;
+  try { raw = JSON.parse(await file.text()); } catch (err) { throw new Error('bad'); }
+  if (!raw || raw.app !== 'schooled' || !raw.state || !Array.isArray(raw.state.tanks)) throw new Error('bad');
+  const tanks = [];
+  raw.state.tanks.slice(0, MAX_TANKS).forEach((r) => {
+    const t = cleanTank(r);
+    if (t && !tanks.some((x) => x.id === t.id)) tanks.push(t);
+  });
+  if (!tanks.length) throw new Error('empty');
+  const ids = tanks.map((t) => t.id);
+  const photos = (Array.isArray(raw.photos) ? raw.photos : []).filter((x) => x && typeof x.id === 'string' && ids.indexOf(x.tank) !== -1 && typeof x.data === 'string' && x.data.startsWith('data:image/'))
+    .map((x) => ({ id: x.id.slice(0, 40), tank: x.tank, date: /^\d{4}-\d{2}-\d{2}$/.test(x.date) ? x.date : todayISO(), note: typeof x.note === 'string' ? x.note.slice(0, 80) : '', data: x.data }));
+  return { tanks, photos, activeId: ids.indexOf(raw.state.activeId) !== -1 ? raw.state.activeId : ids[0], saved: typeof raw.saved === 'string' ? raw.saved.slice(0, 10) : '' };
+}
+async function applyBackup(b) {
+  for (const t of state.tanks) { try { await PhotoDB.delTank(t.id); } catch (err) { /* ignore */ } }
+  state.tanks = b.tanks; state.activeId = b.activeId; state.setupDone = true;
+  const ok = saveState();
+  let lost = 0;
+  for (const x of b.photos) { try { await PhotoDB.add(x); } catch (err) { lost++; } }
+  return { ok, lost };
+}
+let restorePending = null;
+function renderBackup() {
+  const body = $('backup-body');
+  body.replaceChildren();
+  const tn = state.tanks.length;
+  body.append(el('h1', { text: 'Back up and restore' }),
+    el('p', { class: 'muted', text: 'Your tanks live only on this phone. Save a backup file before you switch phones, clear your browser data or delete the app, then restore it on the new phone.' }),
+    el('div', { class: 'card' },
+      el('h2', { text: 'Save a backup' }),
+      el('p', { class: 'muted small', text: lastBackupText() + (tn ? '. ' + tn + (tn === 1 ? ' tank' : ' tanks') + ' with their fish, water logs, reminders, equipment and progress photos.' : '.') }),
+      el('button', { type: 'button', class: 'btn primary', text: 'Save backup file', disabled: tn ? null : '', onclick: () => { saveBackupFile().catch(() => toast("Couldn't make the backup file.")); } })));
+  const fileIn = el('input', { type: 'file', accept: '.json,application/json', hidden: '' });
+  fileIn.addEventListener('change', async () => {
+    const f = fileIn.files && fileIn.files[0];
+    fileIn.value = '';
+    if (!f) return;
+    try { restorePending = await readBackupFile(f); renderBackup(); }
+    catch (err) {
+      restorePending = null;
+      toast(err.message === 'big' ? 'That file is too large to be a Schooled backup.' : err.message === 'empty' ? 'That backup has no tanks in it.' : "That doesn't look like a Schooled backup file.");
+    }
+  });
+  const rcard = el('div', { class: 'card' }, el('h2', { text: 'Restore from a backup' }));
+  if (restorePending) {
+    const b = restorePending;
+    rcard.append(el('p', { text: 'Found ' + b.tanks.length + (b.tanks.length === 1 ? ' tank' : ' tanks') + ' and ' + b.photos.length + (b.photos.length === 1 ? ' photo' : ' photos') + (b.saved ? ', saved ' + b.saved : '') + '.' }),
+      el('p', { class: 'muted small', text: tn ? 'Restoring replaces the ' + tn + (tn === 1 ? ' tank' : ' tanks') + ' on this phone. Save a backup first if you want to keep them.' : 'This phone has no tanks yet, so nothing will be replaced.' }),
+      el('div', { class: 'row photo-actions' },
+        el('button', { type: 'button', class: 'btn primary', text: 'Restore', onclick: async () => {
+          const r = await applyBackup(b);
+          restorePending = null;
+          toast(r.ok ? (r.lost ? 'Restored, but ' + r.lost + ' photos did not fit.' : 'Backup restored.') : 'Restored for now, but this phone is out of storage.');
+          showView('home');
+        } }),
+        el('button', { type: 'button', class: 'btn', text: 'Cancel', onclick: () => { restorePending = null; renderBackup(); } })));
+  } else {
+    rcard.append(el('p', { class: 'muted small', text: 'Choose a backup file you saved earlier. You will see what is in it before anything changes.' }),
+      el('button', { type: 'button', class: 'btn primary', text: 'Choose backup file', onclick: () => fileIn.click() }));
+  }
+  body.append(rcard, fileIn);
 }
 
 function heroBtn(title, sub, icon, alt, onclick) {
@@ -4143,6 +4253,7 @@ if ($('fishcheck-video')) $('fishcheck-video').addEventListener('change', (event
   if (file) startFishCheck(file, true);
 });
 $('fishcheck-back').addEventListener('click', () => goBack(() => (fishCheckFrom === 'tank' && getTank(openTankId) ? showTank(openTankId) : showView('home'))));
+$('backup-back').addEventListener('click', () => goBack(() => showView('home')));
 $('misses-back').addEventListener('click', () => goBack(() => showView('home')));
 
 // ---------- Get Schooled (ask about a tank) ----------
