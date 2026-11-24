@@ -1786,6 +1786,62 @@ function gearSuggestions(t) {
   return out;
 }
 
+// ---------- Curated gear picks ----------
+// Real models only, hand-checked against maker and retailer spec pages (November 2026).
+// Sizes are the makers' own ratings; no prices. Kinds with no verified model simply show no picks.
+const GEAR_PICKS_CHECKED = 'November 2026';
+const GEAR_DISCLAIMER = 'Product names and models are suggested for compatibility reference only; Schooled is not affiliated with or endorsed by these brands.';
+const AQUACLEAR = [[20, 5, 20, 100], [30, 10, 30, 150], [50, 20, 50, 200], [70, 40, 70, 300], [110, 60, 110, 500]]; // model, min gal, max gal, GPH
+const FLUVAL07 = [[107, 10, 30], [207, 20, 45], [307, 40, 70], [407, 50, 100]];
+const JAGER = [[5, 7, 25], [7, 16, 50], [16, 26, 75], [26, 40, 100], [40, 53, 125], [53, 79, 150], [79, 106, 200], [106, 159, 250], [159, 264, 300]]; // min gal, max gal, watts
+const OCTO = [['110-INT', 75], ['150-INT', 120], ['200-INT', 160]]; // model, largest tank Bulk Reef Supply recommends
+
+function gearPicks(kind, t) {
+  const gal = tankGallons(t) || 0;
+  const salt = t.type === 'Saltwater';
+  const fresh = t.type === 'Freshwater';
+  const out = [];
+  const P = (tier, name, spec) => out.push({ tier, name, spec });
+  const g = Math.round(gal);
+  if (kind === 'Filter' && gal > 0) {
+    const ac = AQUACLEAR.find((m) => gal >= m[1] && gal * 1.25 <= m[2]) || AQUACLEAR.find((m) => gal >= m[1] && gal <= m[2]); // a little headroom when there is a bigger model
+    if (ac) P('Starter', 'AquaClear ' + ac[0], 'Hang-on filter. Rated ' + ac[1] + ' to ' + ac[2] + ' gal, up to ' + ac[3] + ' GPH.');
+    const fl = FLUVAL07.find((m) => gal >= m[1] && gal * 1.25 <= m[2]) || FLUVAL07.find((m) => gal >= m[1] && gal <= m[2]);
+    if (fl) P('Popular', 'Fluval ' + fl[0], 'Canister filter. Rated ' + fl[1] + ' to ' + fl[2] + ' gal.');
+    if (gal >= 60 && gal <= 400) P('Step up', 'Fluval FX6', 'Large canister filter. Rated up to 400 gal, 925 GPH pump.');
+  } else if (kind === 'Heater' && gal > 0) {
+    const h = JAGER.find((m) => gal > m[0] && gal <= m[1]) || (gal <= 5 ? JAGER[0] : null);
+    if (h) P('Popular', 'EHEIM Jäger TruTemp ' + h[2] + 'W', 'Rated ' + h[0] + ' to ' + h[1] + ' gal by the maker. Go up a size if your room runs cold.');
+  } else if (kind === 'Test kit') {
+    if (fresh) P('Popular', 'API Freshwater Master Test Kit', 'Liquid tests for pH, high range pH, ammonia, nitrite and nitrate. About 800 tests.');
+    if (salt) P('Popular', 'Red Sea Reef Foundation Pro', 'Titration tests for calcium, alkalinity (KH) and magnesium.');
+  } else if (kind === 'Water conditioner') {
+    P('Popular', 'Seachem Prime', 'Removes chlorine and chloramine, detoxifies ammonia, nitrite and nitrate. 5 mL (one capful) treats 50 gal of new water.');
+  } else if (kind === 'Light' && gal > 0) {
+    if (salt) {
+      if (gal <= 30) P('Popular', 'Kessil A160WE Tuna Blue', 'Compact 40 W reef light. Covers about 12 to 24 in across.');
+      else P('Step up', 'Kessil A360XE Tuna Blue', '90 W reef light. Covers about 24 x 24 in, so plan one per 24 x 24 in.');
+    } else {
+      const sz = gal <= 12 ? ['15 to 24 in', '22 W'] : gal <= 35 ? ['24 to 34 in', '32 W'] : gal <= 50 ? ['36 to 48 in', '46 W'] : ['48 to 60 in', '59 W'];
+      P('Popular', 'Fluval Plant 3.0 LED (' + sz[0] + ')', sz[1] + ', 6500K full spectrum with app control. Sold by tank length, so match yours.');
+    }
+  } else if (kind === 'Pump or wavemaker' && salt && gal >= 10 && gal <= 132) {
+    P('Starter', 'Tunze Nanostream 6045', '400 to 1,175 GPH with a manual flow slider. Rated for about 10 to 135 gal.');
+    P('Step up', 'Tunze Nanostream 6055', '250 to 1,450 GPH, speed controllable. Rated for about 10 to 135 gal.');
+  } else if (kind === 'Protein skimmer' && salt && gal > 0) {
+    const sk = OCTO.find((m) => gal <= m[1]);
+    if (sk) P('Popular', 'Reef Octopus Classic ' + sk[0], 'In-sump skimmer, so you need a sump. Bulk Reef Supply recommends it up to ' + sk[1] + ' gal.');
+  } else if (kind === 'Auto top-off' && salt && gal > 0) {
+    if (gal <= 66) P('Starter', 'Tunze Osmolator 3 Nano', 'Run-dry protection. Suggested by Bulk Reef Supply for tanks up to 66 gal.');
+    if (gal <= 100) P('Popular', 'Tunze Osmolator Universal 3155', 'Optical sensor with a float-switch backup. Best under about 100 gal.');
+  } else if (kind === 'Substrate' && !salt) {
+    const amt = gal > 0 ? 'About ' + g + ' lb for a 1 in bed, ' + g * 2 + ' lb for 2 in.' : 'About 1 lb per gal for a 1 in bed.';
+    P('Popular', 'CaribSea Eco-Planted', amt);
+    P('Popular', 'Fluval Plant & Shrimp Stratum', amt);
+  }
+  return out.slice(0, 3);
+}
+
 const gearState = { kind: 'Filter', name: '', note: '', skipOpen: false };
 
 function renderGear() {
@@ -1828,13 +1884,18 @@ function renderGear() {
 
   // Recommended gear: its own collapsible card, a row you swipe sideways.
   $('tank-ideas-count').textContent = sugg.length ? String(sugg.length) : '';
-  const ip = [el('p', { class: 'muted small', text: 'Based on ' + t.type.toLowerCase() + (tankGallons(t) ? ', ' + Math.round(tankGallons(t)) + ' gallons' : '') + (t.fish.length ? ' and what you keep in it' : '') + '. General guidance, so check the label on any product you buy.' })];
+  const anyPicks = sugg.some((s) => gearPicks(s.kind, t).length);
+  const ip = [el('p', { class: 'muted small gear-disclaimer', text: GEAR_DISCLAIMER + (anyPicks ? ' Sizes are the makers\' ratings, last checked ' + GEAR_PICKS_CHECKED + '.' : '') }), el('p', { class: 'muted small', text: 'Based on ' + t.type.toLowerCase() + (tankGallons(t) ? ', ' + Math.round(tankGallons(t)) + ' gallons' : '') + (t.fish.length ? ' and what you keep in it' : '') + '. General guidance, so check the label on any product you buy.' })];
   if (!sugg.length) ip.push(el('p', { class: 'muted small', text: t.gear.length ? 'You have the basics covered.' : 'No ideas right now.' }));
-  else ip.push(el('div', { class: 'idea-row' }, ...sugg.map((s) => el('div', { class: 'idea-card gear-idea' },
+  else ip.push(el('div', { class: 'idea-row' }, ...sugg.map((s) => { const picks = gearPicks(s.kind, t); return el('div', { class: 'idea-card gear-idea' + (picks.length ? ' has-picks' : '') },
     el('div', { class: 'gear-main' }, el('strong', { text: s.title }), el('span', { class: 'sub', text: s.why })),
+    picks.length ? el('div', { class: 'pick-list' },
+      el('span', { class: 'sub pick-hint', text: 'Tap the one you own:' }),
+      ...picks.map((p) => el('button', { type: 'button', class: 'pick', 'aria-label': 'I have ' + p.name, onclick: () => { gearState.kind = s.kind; gearState.name = p.name; gearState.note = ''; $('tank-gear').open = true; renderGear(); toast('Filled in. Tap Add equipment to save it.'); } },
+        el('span', { class: 'pick-tier', text: p.tier }), el('strong', { text: p.name }), el('span', { class: 'sub', text: p.spec })))) : null,
     el('div', { class: 'idea-actions' },
       el('button', { type: 'button', class: 'btn small', text: 'I have this', onclick: () => { gearState.kind = s.kind; gearState.name = ''; $('tank-gear').open = true; renderGear(); $('gear-name').focus(); } }),
-      el('button', { type: 'button', class: 'btn link small-link', 'aria-label': 'Hide the idea ' + s.title, text: 'Hide', onclick: () => { t.gearSkip.push(s.title); t.gearSkip = t.gearSkip.slice(-30); saveState(); renderGear(); } }))))));
+      el('button', { type: 'button', class: 'btn link small-link', 'aria-label': 'Hide the idea ' + s.title, text: 'Hide', onclick: () => { t.gearSkip.push(s.title); t.gearSkip = t.gearSkip.slice(-30); saveState(); renderGear(); } }))); })));
   if (hiddenCount) ip.push(el('button', { type: 'button', class: 'btn link', text: 'Show ' + hiddenCount + ' hidden idea' + (hiddenCount === 1 ? '' : 's'), onclick: () => { t.gearSkip = []; saveState(); renderGear(); } }));
   $('tank-ideas-body').replaceChildren(...ip);
 }
