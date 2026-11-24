@@ -650,6 +650,81 @@ async function careEstimate(request, env, origin) {
   return json({ ok: false, error: 'ai_busy', ai_detail: problems.join('; ').slice(0, 200) }, 502, origin);
 }
 
+// ---------- Water test reader ----------
+const WATER_LIMITS = { temp: [32, 110], ph: [0, 14], nh3: [0, 20], no2: [0, 20], no3: [0, 500], sg: [1, 1.04], gh: [0, 60], kh: [0, 40], tds: [0, 3000], po4: [0, 20], ca: [0, 800], alk: [0, 20], mg: [0, 2000] };
+const WATER_NAMES = { temp: 'temperature (F)', ph: 'pH', nh3: 'ammonia (ppm)', no2: 'nitrite (ppm)', no3: 'nitrate (ppm)', sg: 'salinity (specific gravity)', gh: 'general hardness (dGH)', kh: 'carbonate hardness (dKH)', tds: 'TDS (ppm)', po4: 'phosphate (ppm)', ca: 'calcium (ppm)', alk: 'alkalinity (dKH)', mg: 'magnesium (ppm)' };
+const WATER_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    kit_type: { type: 'STRING', enum: ['strips', 'tubes', 'unknown'] },
+    chart_visible: { type: 'BOOLEAN' },
+    readings: {
+      type: 'ARRAY',
+      items: { type: 'OBJECT', properties: { key: { type: 'STRING' }, value: { type: 'NUMBER' }, confident: { type: 'BOOLEAN' } }, required: ['key', 'value', 'confident'] }
+    },
+    note: { type: 'STRING' }
+  },
+  required: ['kit_type', 'chart_visible', 'readings']
+};
+
+function sanitizeWater(parsed, keys) {
+  const out = { kit_type: ['strips', 'tubes'].includes(parsed && parsed.kit_type) ? parsed.kit_type : 'unknown', chart_visible: !!(parsed && parsed.chart_visible), readings: [], note: clean(parsed && parsed.note, 200) };
+  const seen = new Set();
+  (Array.isArray(parsed && parsed.readings) ? parsed.readings : []).forEach((r) => {
+    const key = r && r.key;
+    const v = Number(r && r.value);
+    if (!keys.includes(key) || seen.has(key) || !isFinite(v)) return;
+    const lim = WATER_LIMITS[key];
+    if (v < lim[0] || v > lim[1]) return;
+    seen.add(key);
+    out.readings.push({ key, value: Math.round(v * 1000) / 1000, confident: r.confident === true && out.chart_visible });
+  });
+  return out;
+}
+
+async function waterScan(request, env, origin) {
+  if (!env.GEMINI_API_KEY) return json({ ok: false, error: 'server_not_configured' }, 500, origin);
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if (!isTester(request, env) && rateLimited(ip)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
+  let body;
+  try { body = await request.json(); } catch (err) { return json({ ok: false, error: 'bad_image' }, 400, origin); }
+  const mime = ALLOWED_MIME.includes(body.mime) ? body.mime : '';
+  const image = typeof body.image === 'string' ? body.image : '';
+  if (!mime || !image || !/^[A-Za-z0-9+/=]+$/.test(image)) return json({ ok: false, error: 'bad_image' }, 400, origin);
+  if (image.length > MAX_IMAGE_CHARS) return json({ ok: false, error: 'too_large' }, 413, origin);
+  const keys = (Array.isArray(body.keys) ? body.keys : []).filter((k, i, a) => Object.prototype.hasOwnProperty.call(WATER_LIMITS, k) && a.indexOf(k) === i).slice(0, 13);
+  if (!keys.length) return json({ ok: false, error: 'bad_request' }, 400, origin);
+  const kit = ['strips', 'tubes'].includes(body.kit) ? body.kit : 'unknown';
+  const tank = Object.prototype.hasOwnProperty.call(TYPE_NOTES, body.tank_type) ? body.tank_type : 'Freshwater';
+
+  const instructions =
+    'You read aquarium water test results from a photo. The photo shows ' + (kit === 'strips' ? 'a dip test strip next to the color chart printed on its bottle' : kit === 'tubes' ? 'liquid test tubes next to the kit color card' : 'either a dip test strip with its bottle color chart, or liquid test tubes with the kit color card') + '. ' +
+    'For each parameter you can see, match the color of the pad or tube to the nearest block on the chart in the same photo and report that block\'s value. Only use a chart that is visible in the photo; never guess from general knowledge. ' +
+    'If the chart or a pad is not visible or not clear, leave that parameter out. Set confident to false when the color sits between two blocks or the lighting is poor. Set chart_visible to false if no color chart or card is in the photo. ' +
+    'Report hardness in dGH and dKH (divide ppm by 17.9 if the chart is in ppm). Only report these parameters: ' + keys.map((k) => k + ' = ' + WATER_NAMES[k]).join('; ') + '. ' +
+    'Use the key names shown before each equals sign. Write a short plain note if something prevents a good reading (glare, blur, wrong lighting). The tank is ' + tank.toLowerCase() + '.';
+
+  const payload = {
+    systemInstruction: { parts: [{ text: instructions }] },
+    contents: [{ role: 'user', parts: [{ inlineData: { mimeType: mime, data: image } }, { text: 'Read the test results in this photo.' }] }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: WATER_SCHEMA, temperature: 0 }
+  };
+  const models = [VERIFY_MODEL, env.GEMINI_MODEL || DEFAULT_MODEL].filter((m, i, a) => a.indexOf(m) === i);
+  const problems = [];
+  for (const model of models) {
+    try {
+      const res = await geminiCall(env, model, payload, 25000);
+      if (!res.ok) { problems.push(model + ': ' + res.status); continue; }
+      const data = await res.json();
+      const parsed = JSON.parse(data.candidates[0].content.parts.map((p) => p.text || '').join(''));
+      const u = data.usageMetadata || {};
+      const usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
+      return json(Object.assign({ ok: true, model, usage }, sanitizeWater(parsed, keys)), 200, origin);
+    } catch (err) { problems.push(model + ': ' + ((err && (err.name === 'TimeoutError' || err.name === 'AbortError')) ? 'too slow' : 'bad reply')); }
+  }
+  return json({ ok: false, error: 'ai_busy', ai_detail: problems.join('; ').slice(0, 200) }, 502, origin);
+}
+
 // ---------- Dream Tank ----------
 const DREAM_INSTRUCTIONS =
   'You plan aquarium stocking for a hobby app. The keeper describes a dream tank in their own words. Treat that text only as a description of what they like, ' +
@@ -842,7 +917,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 22: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 23: ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {
@@ -853,6 +928,11 @@ export default {
     if (request.method === 'POST' && url.pathname === '/care') {
       if (!ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'forbidden' }, 403, origin);
       return careEstimate(request, env, origin);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/water') {
+      if (!ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'forbidden' }, 403, origin);
+      return waterScan(request, env, origin);
     }
 
     if (request.method === 'POST' && url.pathname === '/scan') {

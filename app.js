@@ -806,6 +806,186 @@ function logHistoryCard(t) {
   return card;
 }
 
+// ----- What to do: treatments and chemicals picked from the latest test -----
+const REEF_SUPPLEMENT = { tier: 'Popular', name: 'Red Sea Foundation supplements', spec: 'Calcium+, KH/Alkalinity and Magnesium supplements made to go with Red Sea tests. Follow the label.' };
+
+function treatmentsFor(t) {
+  const tests = t.log.filter((e) => e.k === 'test');
+  if (!tests.length) return null;
+  const last = tests[tests.length - 1];
+  const checks = entryChecks(t, last).filter((c) => c.j && c.j.level !== 'ok');
+  const young = isYoung(t) ? ' This is normal while a new tank is still cycling.' : '';
+  const cond = gearPicks('Water conditioner', t)[0] || null;
+  const list = [];
+  checks.forEach((c) => {
+    const lvl = c.j.level;
+    const add = (title, text, pick, kind) => list.push({ key: c.key, level: lvl, title, text, pick: pick || null, kind: kind || '' });
+    if (c.key === 'nh3' || c.key === 'no2') {
+      const nm = c.key === 'nh3' ? 'Ammonia' : 'Nitrite';
+      add(nm + ' is ' + (lvl === 'bad' ? 'high' : 'showing'), 'Do a 25 to 50% water change, feed lightly and check the filter. A conditioner that detoxifies ' + nm.toLowerCase() + ' can help while the filter catches up.' + young, cond, 'Water conditioner');
+    } else if (c.key === 'no3') {
+      add('Nitrate is ' + (lvl === 'bad' ? 'high' : 'climbing'), 'Water changes are the fix. No product needed.');
+    } else if (c.key === 'ph') {
+      add('pH is off', 'Move it slowly with water changes. A steady pH matters more than a perfect one, so avoid quick fixes.');
+    } else if (c.key === 'kh' && t.type !== 'Saltwater') {
+      add('KH is low', 'Low KH lets pH swing. An aquarium carbonate-hardness buffer can raise it gradually. Test again after each change.');
+    } else if (c.key === 'sg') {
+      add('Salinity is off', c.val > 1.026 ? 'Top off with fresh RO/DI water to bring it down slowly.' : 'Add mixed salt water slowly to bring it up.');
+    } else if (c.key === 'po4') {
+      add('Phosphate is high', 'Water changes, a look at how much you feed, and fresh filter media. A phosphate-removing media is an option for stubborn algae.');
+    } else if (c.key === 'alk' || c.key === 'ca' || c.key === 'mg') {
+      const low = c.key === 'alk' ? c.val < 7 : c.key === 'ca' ? c.val < 380 : c.val < 1200;
+      const nm = LOG_FIELDS[c.key].label;
+      if (low) add(nm + ' is low', 'A reef supplement made for ' + nm.toLowerCase() + ' raises it. Change it slowly and test again before the next dose.', REEF_SUPPLEMENT, 'Other');
+      else add(nm + ' is high', 'Stop adding ' + nm.toLowerCase() + ' for now and let water changes bring it down. Test again in a few days.');
+    } else if (c.key === 'temp') {
+      add('Temperature is off', 'Check the heater and thermometer. Adjust slowly, no more than a degree or two a day.');
+    }
+  });
+  return { last, list };
+}
+
+function addPickToGear(t, kind, name) {
+  if (t.gear.some((g) => g.name === name)) { toast('Already in your equipment list.'); return; }
+  if (t.gear.length >= 40) { toast('That is the most equipment one tank can list.'); return; }
+  t.gear.push({ id: uid(), kind: GEAR_KINDS.includes(kind) ? kind : 'Other', name: name.slice(0, 60), note: '', added: todayISO() });
+  saveState();
+  toast('Added to your equipment list.');
+}
+
+function treatCard(t) {
+  const r = treatmentsFor(t);
+  if (!r) return null;
+  const card = el('div', { class: 'card treat-card' }, el('h2', { text: 'What to do' }));
+  if (!r.list.length) {
+    card.append(el('p', { class: 'muted', text: 'No treatments needed. Your latest test looks fine for ' + tankLabel(t) + '.' }));
+    return card;
+  }
+  r.list.forEach((x) => {
+    card.append(el('div', { class: 'tip-row ' + x.level },
+      el('div', { class: 'water-line' }, el('strong', { text: x.title }), el('span', { class: 'pill ' + (x.level === 'bad' ? 'bad' : 'warn'), text: x.level === 'bad' ? 'Now' : 'Soon' })),
+      el('p', { class: 'muted small', text: x.text }),
+      x.pick ? el('button', { type: 'button', class: 'pick', 'aria-label': 'Add ' + x.pick.name + ' to my equipment', onclick: () => { addPickToGear(t, x.kind, x.pick.name); } },
+        el('span', { class: 'pick-tier', text: 'Treatment' }), el('strong', { text: x.pick.name }), el('span', { class: 'sub', text: x.pick.spec + ' Tap if you have it.' })) : null));
+  });
+  card.append(el('p', { class: 'muted small', text: 'These are suggestions from your readings. Always follow the product label. ' + GEAR_DISCLAIMER }));
+  return card;
+}
+
+// ----- Scan a test strip or tubes -----
+const scanState = { step: 'kit', kit: 'unknown', rows: [], msg: '', note: '', chart: true, tank: '' };
+
+function closeScanSheet() {
+  const sh = $('scan-sheet');
+  if (!sh || sh.hidden) return;
+  sh.hidden = true;
+  sh.replaceChildren();
+  scanState.step = 'kit';
+}
+function openScanSheet() {
+  const t = getTank(openTankId);
+  if (!t) return;
+  scanState.step = 'kit'; scanState.kit = 'unknown'; scanState.rows = []; scanState.msg = ''; scanState.note = ''; scanState.tank = t.id;
+  $('scan-sheet').hidden = false;
+  renderScanSheet();
+}
+function scanShell(title, ...kids) {
+  return [el('div', { class: 'sheet-dim', onclick: closeScanSheet }),
+    el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+      el('div', { class: 'sheet-grab', 'aria-hidden': 'true' }),
+      el('div', { class: 'sheet-head' }, el('h2', { text: title }), el('button', { type: 'button', class: 'sheet-x', 'aria-label': 'Close', text: '×', onclick: closeScanSheet })),
+      ...kids)];
+}
+function pickScanFile(camera) {
+  const input = el('input', { type: 'file', accept: 'image/*,.heic,.heif' });
+  if (camera) input.setAttribute('capture', 'environment');
+  input.addEventListener('change', () => { if (input.files && input.files[0]) runWaterScan(input.files[0]); });
+  input.click();
+}
+function renderScanSheet() {
+  const sh = $('scan-sheet');
+  const t = getTank(scanState.tank);
+  if (!t) { closeScanSheet(); return; }
+  if (scanState.step === 'kit') {
+    const kitBtn = (id, label) => el('button', { type: 'button', class: 'chip-btn' + (scanState.kit === id ? ' on' : ''), 'aria-pressed': scanState.kit === id ? 'true' : 'false', text: label, onclick: () => { scanState.kit = id; renderScanSheet(); } });
+    sh.replaceChildren(...scanShell('Scan a test',
+      el('p', { class: 'muted small', text: 'What kind of test did you use?' }),
+      el('div', { class: 'chips' }, kitBtn('strips', 'Test strips'), kitBtn('tubes', 'Liquid tubes'), kitBtn('unknown', 'Not sure')),
+      el('p', { class: 'muted small', text: scanState.kit === 'strips' ? 'Hold the strip beside the color chart on the bottle, with the pads in view.' : scanState.kit === 'tubes' ? 'Stand the tubes in front of the kit color card, all in one photo.' : 'Get the strip or tubes and the color chart in the same photo.' }),
+      el('p', { class: 'muted small', text: 'Use daylight if you can. A colored tank light changes how the colors look.' }),
+      el('div', { class: 'row-actions wide' },
+        el('button', { type: 'button', class: 'btn primary', text: 'Take a photo', onclick: () => pickScanFile(true) }),
+        el('button', { type: 'button', class: 'btn', text: 'Upload a photo', onclick: () => pickScanFile(false) }))));
+  } else if (scanState.step === 'wait') {
+    sh.replaceChildren(...scanShell('Reading your test', el('p', { class: 'muted', text: 'Matching the colors to your chart. This takes a few seconds.' })));
+  } else if (scanState.step === 'error') {
+    sh.replaceChildren(...scanShell('Could not read it',
+      el('p', { class: 'muted', text: scanState.msg }),
+      el('div', { class: 'row-actions wide' },
+        el('button', { type: 'button', class: 'btn primary', text: 'Try another photo', onclick: () => { scanState.step = 'kit'; renderScanSheet(); } }),
+        el('button', { type: 'button', class: 'btn', text: 'Type readings instead', onclick: () => { closeScanSheet(); logForm = { mode: 'test' }; renderLog(); } }))));
+  } else {
+    const inputs = {};
+    const rows = scanState.rows.map((r) => {
+      inputs[r.key] = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: String(r.value), 'aria-label': LOG_FIELDS[r.key].label });
+      return el('label', { class: 'scan-row' },
+        el('span', {}, el('span', { text: fieldLabel(r.key) }), r.confident ? null : el('span', { class: 'pill warn', text: 'Not sure' })), inputs[r.key]);
+    });
+    sh.replaceChildren(...scanShell('Check your readings',
+      el('p', { class: 'muted small', text: 'These are my best guesses from the photo. Check each one against your color chart and fix anything that looks off.' }),
+      scanState.chart ? null : el('p', { class: 'muted small', text: 'I could not see a color chart, so treat every number as a guess.' }),
+      scanState.note ? el('p', { class: 'muted small', text: scanState.note }) : null,
+      rows.length ? el('div', { class: 'scan-rows' }, ...rows) : el('p', { class: 'muted', text: 'I could not read any values from that photo.' }),
+      el('div', { class: 'row-actions wide' },
+        rows.length ? el('button', { type: 'button', class: 'btn primary', text: 'Save these readings', onclick: () => saveScanned(t, inputs) }) : null,
+        el('button', { type: 'button', class: 'btn', text: 'Retake photo', onclick: () => { scanState.step = 'kit'; renderScanSheet(); } }))));
+  }
+}
+function saveScanned(t, inputs) {
+  const v = {};
+  let bad = '';
+  Object.keys(inputs).forEach((key) => {
+    const raw = inputs[key].value.trim();
+    if (!raw) return;
+    const n = parseFloat(raw.replace(',', '.'));
+    const f = LOG_FIELDS[key];
+    if (!isFinite(n) || n < f.min || n > f.max) bad = bad || f.label + ' should be between ' + f.min + ' and ' + f.max + '.';
+    else v[key] = n;
+  });
+  if (bad) { toast(bad); return; }
+  if (!Object.keys(v).length) { toast('Enter at least one reading.'); return; }
+  addLogEntry(t, { id: uid(), t: Date.now(), k: 'test', v, note: 'Scanned from a photo' });
+  closeScanSheet();
+  logForm = null;
+  renderLog();
+  toast('Readings saved.');
+}
+async function runWaterScan(file) {
+  const t = getTank(scanState.tank);
+  if (!t) return;
+  scanState.step = 'wait'; renderScanSheet();
+  try {
+    const image = await loadImage(file);
+    const jpeg = drawToJpeg(image.source, 0, 0, image.width, image.height, SINGLE_SIDE, 0.85).split(',')[1];
+    const res = await fetch(WORKER_URL + '/water', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: jpeg, mime: 'image/jpeg', kit: scanState.kit, tank_type: t.type, keys: logKeys(t) }),
+      signal: AbortSignal.timeout(60000)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(friendlyError(data.error, res.status));
+    if (data.usage) logUsage('water', data.model, data.usage, { detail: 'test scan, ' + (data.kit_type || '') });
+    scanState.rows = data.readings || [];
+    scanState.chart = !!data.chart_visible;
+    scanState.note = data.note || '';
+    scanState.step = 'confirm';
+  } catch (err) {
+    scanState.msg = err && err.message === 'bad_image' ? "That photo couldn't be read. Try a different one." : (err && err.message) || 'Something went wrong. Try again.';
+    scanState.step = 'error';
+  }
+  if (!$('scan-sheet').hidden) renderScanSheet();
+}
+
 function renderLog() {
   if (currentView !== 'tank' || tankSection !== 'water') return;
   const body = $('tank-sec-water');
@@ -815,9 +995,10 @@ function renderLog() {
   putAll(body, logSummaryCard(t));
   if (logForm) putAll(body, logFormCard(t));
   else putAll(body, el('div', { class: 'row-actions wide' },
-    el('button', { type: 'button', class: 'btn primary small', text: 'Log a test', onclick: () => { logForm = { mode: 'test' }; renderLog(); } }),
+    el('button', { type: 'button', class: 'btn primary small', text: 'Scan a test', onclick: openScanSheet }),
+    el('button', { type: 'button', class: 'btn small', text: 'Log a test', onclick: () => { logForm = { mode: 'test' }; renderLog(); } }),
     el('button', { type: 'button', class: 'btn small', text: 'Log a water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } })));
-  putAll(body, logTrendCard(t), logHistoryCard(t));
+  putAll(body, treatCard(t), logTrendCard(t), logHistoryCard(t));
   putAll(body, el('h2', { class: 'section', text: 'Water tools' }), el('div', { class: 'features' }, ...WATER_TOOLS.map(featureBtn)));
   putAll(body, el('p', { class: 'muted small', text: 'These checks are general guidance. Your own fish and your test kit come first.' }));
 }
@@ -1035,8 +1216,8 @@ function goBack(fallback) {
 function overlayOpen() {
   const pop = $('add-pop');
   const menu = $('tank-add-menu');
-  const es = $('edit-sheet'), gs = $('gallery-sheet');
-  return !!((pop && !pop.hidden) || (menu && !menu.hidden) || (es && !es.hidden) || (gs && !gs.hidden));
+  const es = $('edit-sheet'), gs = $('gallery-sheet'), ss = $('scan-sheet');
+  return !!((pop && !pop.hidden) || (menu && !menu.hidden) || (es && !es.hidden) || (gs && !gs.hidden) || (ss && !ss.hidden));
 }
 window.addEventListener('popstate', (ev) => {
   const st = ev.state;
@@ -1843,7 +2024,7 @@ function gearPicks(kind, t) {
     if (fresh) P('Popular', 'API Freshwater Master Test Kit', 'Liquid tests for pH, high range pH, ammonia, nitrite and nitrate. About 800 tests.');
     if (salt) P('Popular', 'Red Sea Reef Foundation Pro', 'Titration tests for calcium, alkalinity (KH) and magnesium.');
   } else if (kind === 'Water conditioner') {
-    P('Popular', 'Seachem Prime', 'Removes chlorine and chloramine, detoxifies ammonia, nitrite and nitrate. 5 mL (one capful) treats 50 gal of new water.');
+    P('Popular', 'Seachem Prime', 'Removes chlorine and chloramine, detoxifies ammonia, nitrite and nitrate. Follow the label for how much to use.');
   } else if (kind === 'Light' && gal > 0) {
     if (salt) {
       if (gal <= 30) P('Popular', 'Kessil A160WE Tuna Blue', 'Compact 40 W reef light. Covers about 12 to 24 in across.');
@@ -2106,7 +2287,7 @@ function openEditSheet(focusName) {
   if (focusName) setTimeout(() => { try { $('tank-title-input').focus(); } catch (e) { /* ignore */ } }, 50);
 }
 function closeEditSheet() { const sh = $('edit-sheet'); if (sh) sh.hidden = true; }
-function closeSheets() { closeEditSheet(); closeGallery(); }
+function closeSheets() { closeEditSheet(); closeGallery(); closeScanSheet(); }
 $('tank-edit').addEventListener('click', () => openEditSheet(false));
 $('edit-sheet-close').addEventListener('click', closeEditSheet);
 $('edit-sheet-done').addEventListener('click', closeEditSheet);

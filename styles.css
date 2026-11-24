@@ -1113,3 +1113,12 @@ body { min-height: 100vh; min-height: 100dvh; }
 
 .water-rec { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line); }
 #water-recs .pick { max-width: 420px; }
+
+/* Water scan + treatments */
+.scan-rows { display: flex; flex-direction: column; gap: 8px; }
+.scan-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 700; }
+.scan-row .pill { margin-left: 8px; }
+.scan-row input { width: 110px; min-height: 44px; box-sizing: border-box; padding: 0 12px; border: 1.5px solid #B9CFEA; border-radius: 12px; font: inherit; font-size: 16px; text-align: right; color: inherit; }
+.tip-row { display: flex; flex-direction: column; gap: 6px; padding: 12px; margin-top: 10px; border-radius: 14px; background: var(--bg, #EEF5FC); }
+.tip-row p { margin: 0; }
+.treat-card .pick { max-width: 100%; }
