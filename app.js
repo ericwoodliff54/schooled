@@ -1142,7 +1142,7 @@ function defaultState() {
 }
 
 let migrated = false;
-const GEAR_KINDS = ['Filter', 'Heater', 'Light', 'Pump or wavemaker', 'Protein skimmer', 'Air pump', 'CO2 system', 'Fan or chiller', 'Auto top-off', 'Test kit', 'Water conditioner', 'Substrate', 'Other'];
+const GEAR_KINDS = ['Filter', 'Heater', 'Light', 'Pump or wavemaker', 'Protein skimmer', 'Air pump', 'CO2 system', 'Fan or chiller', 'Auto top-off', 'Test kit', 'Water conditioner', 'Substrate', 'Surface skimmer', 'Fertilizer', 'Gravel vacuum', 'Other'];
 const BACKUP_KEY = 'schooled.v1.bak';
 function loadState() {
   let st = loadFrom(STORE_KEY);
@@ -2006,6 +2006,12 @@ function gearSuggestions(t) {
     add('Auto top-off', 'Auto top-off', 'Keeps salinity steady by replacing evaporated water with fresh RO/DI water.');
     add('Fan or chiller', 'Cooling fan', 'Small clip-on fans stop summer heat spikes, which stress corals.');
   }
+  if (!salt) {
+    if (gal >= 20) add('Pump or wavemaker', 'Powerhead or wavemaker', 'Moves water into dead spots so waste reaches the filter and plant food reaches every corner. Filter flow plus powerhead of about ' + Math.round(gal * 5) + ' to ' + Math.round(gal * 8) + ' gallons per hour is a good start' + (inverts ? ', but keep it gentle and guard the intake if you have shrimp or fry.' : '.') + (gal > 75 ? ' Two, placed at opposite ends, move water more evenly in a big tank.' : ''));
+    if (gal >= 10 && ft !== 'sponge') add('Surface skimmer', 'Surface skimmer', 'Pulls the oily film off the top of the water into the filter. Clearer water, better gas exchange and more light for plants.');
+    if (plants) add('Fertilizer', 'Plant fertilizer', 'Liquid fertilizer feeds leaf plants from the water. Heavy root feeders like swords and crypts also like root tabs in the substrate.');
+    add('Gravel vacuum', 'Gravel vacuum or water changer', 'Lifts waste out of the substrate while you take water out. A hose that reaches the sink makes weekly water changes quick' + (gal >= 40 ? ', and a bigger tank is worth the longer hose.' : '.'));
+  }
   if (!salt && inverts) add('Fan or chiller', 'Cooling fan', 'Shrimp are sensitive to heat. Small clip-on fans help in summer if your room runs warm.');
   if (brackish) add('Test kit', 'Hydrometer or refractometer', 'Brackish tanks need a salinity reading too.');
   if (ft === 'sponge' || ft === 'undergravel') add('Air pump', 'Air pump', 'Drives the ' + ft + ' filter. Pick one rated above your tank size, with an air line and a check valve.');
@@ -2023,6 +2029,8 @@ const FLUVAL07 = [[107, 10, 30], [207, 20, 45], [307, 40, 70], [407, 50, 100]];
 const JAGER = [[5, 7, 25], [7, 16, 50], [16, 26, 75], [26, 40, 100], [40, 53, 125], [53, 79, 150], [79, 106, 200], [106, 159, 250], [159, 264, 300]]; // min gal, max gal, watts
 const TIDAL = [['35', 35, 130], ['55', 55, 250], ['75', 75, 350], ['110', 110, 450]]; // model, max gal, GPH (Seachem)
 const HYDRO_SPONGE = [['I', 10], ['II', 20], ['III', 30], ['IV', 80], ['V', 120]]; // size, max gal (Aquarium Technology)
+const FLUVAL_E = [[50, 15], [100, 30], [200, 65], [300, 100]]; // Fluval E heater: watts, max gal (maker)
+const COOP_LED = [[3, 12, 13], [7, 16, 0], [12, 20, 0], [20, 24, 0], [45, 36, 0], [9999, 48, 50]]; // Easy Plant LED: max gal, length in, watts (Aquarium Co-Op chart; 13 W for 12 in, 50 W for 48 in)
 const FLUVAL_CO2 = [['Mini Pressurized CO2 Kit (20 g)', 15], ['Pressurized CO2 Kit (45 g)', 30], ['Pressurized CO2 Kit (95 g)', 50]]; // kit, max gal
 const KORALIA = [['Nano 240', 10, 15, 240], ['Nano 425', 15, 30, 425], ['Nano 565', 20, 40, 565]]; // model, min salt gal, max salt gal, GPH (Hydor)
 const CURVE = [['5', 55], ['7', 90]]; // Bubble Magus Curve, BRS heavy-bioload rating in gal
@@ -2047,6 +2055,10 @@ function gearPicks(kind, t) {
     if (fl) P('Popular', 'Fluval ' + fl[0], 'Canister filter. Rated ' + fl[1] + ' to ' + fl[2] + ' gal.');
     const td = ft && ft !== 'hob' ? null : TIDAL.find((m) => gal <= m[1] && gal * 1.25 <= m[1]) || TIDAL.find((m) => gal <= m[1]);
     if (td) P('Popular', 'Seachem Tidal ' + td[0], 'Hang-on filter with an adjustable flow dial. Rated up to ' + td[1] + ' gal, ' + td[2] + ' GPH.');
+    if (fresh && (ft === 'sponge' || (!ft && gal <= 55))) {
+      const cs = gal <= 10 ? 'Nano' : gal <= 30 ? 'Medium' : 'Large';
+      P('Budget', 'Aquarium Co-Op Easy Flow Sponge Filter (' + cs + ')', 'Sponge filter that runs on an air pump. Retailers list the nano for up to 10 gal, medium for 10 to 30 and large for 30 to 55+. Safe for fry and shrimp.');
+    }
     const sp = ft === 'sponge' ? (HYDRO_SPONGE.find((m) => gal <= m[1]) || null) : null;
     if (sp) P('Budget', 'Hydro-Sponge ' + sp[0], 'Sponge filter that runs off an air pump. Sold for up to ' + sp[1] + ' gal.');
     if ((!ft || ft === 'canister') && gal >= 20 && gal <= 150) P('Budget', gal <= 100 ? 'Penn-Plax Cascade Pro 1000 (III)' : 'Penn-Plax Cascade 1200', gal <= 100 ? 'Canister filter, 350 GPH. The maker rates it for up to 100 gal.' : 'Canister filter, 315 GPH. The maker rates it for up to 150 gal.');
@@ -2054,6 +2066,8 @@ function gearPicks(kind, t) {
   } else if (kind === 'Heater' && gal > 0) {
     const aq = AQUEON.find((m) => gal <= m[1]);
     if (aq) P('Budget', 'Aqueon Pro Adjustable ' + aq[0] + 'W', 'Shatterproof plastic body with an electronic thermostat. Rated up to ' + aq[1] + ' gal by the maker.');
+    const fe = FLUVAL_E.find((m) => gal <= m[1]);
+    if (fe) P('Popular', 'Fluval E ' + fe[0] + 'W', 'Electronic heater with a digital display of the real water temperature and a built-in guard. Rated up to ' + fe[1] + ' gal by the maker, freshwater or saltwater.');
     const h = JAGER.find((m) => gal > m[0] && gal <= m[1]) || (gal <= 5 ? JAGER[0] : null);
     if (h) P('Popular', 'EHEIM Jäger TruTemp ' + h[2] + 'W', 'Rated ' + h[0] + ' to ' + h[1] + ' gal by the maker. Go up a size if your room runs cold.');
     const fh = FINNEX_HMA.find((m) => gal <= m[1]);
@@ -2070,6 +2084,7 @@ function gearPicks(kind, t) {
   } else if (kind === 'Water conditioner') {
     P('Budget', 'API Tap Water Conditioner', 'Removes chlorine, chloramine and heavy metals. Follow the label for how much to add per gallon.');
     P('Popular', 'Seachem Prime', 'Removes chlorine and chloramine, detoxifies ammonia, nitrite and nitrate. Follow the label for how much to use.');
+    P('Popular', 'Aquarium Co-Op Easy Dechlorinator', 'Dechlorinator from Aquarium Co-Op. Follow the label for how much to use.');
     P('Pro', 'Fritz Complete', 'A conditioner that retailers recommend for sensitive tanks such as shrimp. Follow the label for how much to use.');
   } else if (kind === 'Light' && gal > 0) {
     if (salt) {
@@ -2086,6 +2101,8 @@ function gearPicks(kind, t) {
       P('Popular', 'Fluval Plant 3.0 LED (' + sz[0] + ')', sz[1] + ', 6500K full spectrum with app control. Sold by tank length, so match yours.');
       const fl = gal <= 12 ? '20' : gal <= 20 ? '24' : gal <= 35 ? '30' : gal <= 50 ? '36' : '48';
       P('Popular', 'Finnex Planted+ 24/7 (' + fl + ' in)', 'Automated sunrise to sunset on a built-in controller. Sold by tank length (20, 24, 30, 36, 48 in), so match yours.');
+      const cl = COOP_LED.find((m) => gal <= m[0]);
+      P('Popular', 'Aquarium Co-Op Easy Plant LED (' + cl[1] + ' in)', 'Plant light with an inline remote, adjustable brightness and sliding brackets for in-between tank lengths. Runs ' + (cl[2] ? cl[2] + ' W' : '13 W on the 12 in up to 50 W on the 48 in') + '. Sold by tank length.');
       if (gal <= 30) P('Pro', 'Kessil A160WE Tuna Sun', 'Compact 40 W light for planted tanks. Covers about 12 to 24 in across.');
       else if (gal <= 90) P('Pro', 'Kessil A360X Tuna Sun', '90 W light for planted tanks. Covers up to 24 x 24 in, so plan one per 20 to 24 in of tank length.');
     }
@@ -2098,6 +2115,28 @@ function gearPicks(kind, t) {
     else P('Popular', 'Tunze Turbelle Stream 6125', '3,150 GPH at 22 W. Bulk Reef Supply lists it for 105 to 525 gal. Plan on two or more for even flow.');
     if (gal <= 50) P('Pro', 'EcoTech VorTech MP10', 'Wireless-ready, programmable wavemaker. Maker rates it for 2.5 to 50+ gal and glass up to 0.375 in thick.');
     else P('Pro', 'EcoTech VorTech MP40', 'Wireless-ready, programmable wavemaker. Maker rates it for 50 to 500+ gal and glass up to 0.75 in thick.');
+  } else if (kind === 'Pump or wavemaker' && !salt && gal >= 20 && gal <= 300) {
+    P('Budget', 'Aquarium Co-Op Power Head', '211 GPH at 10 W. Fits the Co-Op sponge filter or runs on its own to add circulation. Extra-long cord.');
+    if (gal <= 75) P('Budget', 'Marineland Maxi-Jet 400', 'Powerhead, 110 GPH, 8 W, with a suction-cup mount. Works in freshwater or saltwater.');
+    P('Popular', 'Marineland Maxi-Jet 600', 'Powerhead at 160 GPH, or 750 GPH with the circulation-pump kit. 8 W, freshwater or saltwater.');
+    P('Pro', 'Innovative Marine AquaGadget WaveLink AIO', 'Digital-controlled powerhead, 165 to 1,500 GPH. Magnetic mount for glass up to 15 mm. Freshwater or saltwater.');
+  } else if (kind === 'Surface skimmer' && !salt && gal >= 10) {
+    if (ft === 'hob' && gal <= 50) P('Budget', 'Fluval AC Surface Skimmer', 'Slides onto the intake of AquaClear and Fluval AC20, AC30 and AC50 power filters, so only if that is your filter. No power cord.');
+    if (gal <= 105) P('Popular', 'Fluval SK400 Surface Skimmer', 'Powered skimmer, 400 L/h (about 105 GPH) at about 3 W, with an intake dial. The maker lists it for tanks up to 400 L (105 gal).');
+    P('Pro', 'Sicce Shark Mini Skim 350 Plus', 'Powered surface skimmer sold for freshwater tanks. Takes floating plant debris, dust and biofilm.');
+  } else if (kind === 'Fertilizer' && !salt) {
+    P('Budget', 'Aquarium Co-Op Easy Green', 'All-in-one liquid fertilizer. Safe for fish, shrimp and snails. Follow the label for how much to dose.');
+    P('Budget', 'Seachem Flourish', 'Liquid plant supplement with trace elements and micronutrients. Follow the label for how much to dose.');
+    P('Popular', 'Aquarium Co-Op Easy Root Tabs', 'Substrate tabs for root feeders such as Amazon swords and cryptocoryne. Push them into the gravel near the roots.');
+    P('Popular', 'Fluval Plant Gro+', 'Liquid fertilizer that adds macro and micro nutrients. Follow the label for how much to dose.');
+    P('Pro', 'Aquarium Co-Op Easy Iron', 'Iron supplement to bring out the color of red plants. Pair it with a base fertilizer.');
+    P('Pro', 'Aquarium Co-Op Easy Potassium', 'Potassium supplement for heavy potassium feeders such as java fern and anubias. Pair it with a base fertilizer.');
+  } else if (kind === 'Gravel vacuum' && !salt) {
+    P('Budget', 'Python Pro-Clean Gravel Washer', 'Gravel washer on a 6 ft hose that separates debris from the gravel while you siphon. Good for small to medium tanks.');
+    P('Budget', 'Fluval EasyVac Gravel Cleaner', 'Narrow oval tube for tight spots, with quick-start priming and a gravel guard so it does not clog.');
+    P('Popular', 'Python No Spill Clean and Fill (' + (gal >= 75 ? '50' : '25') + ' ft)', 'Hose, gravel tube and faucet adapter in one kit, so you drain and refill without a bucket. ' + (gal >= 75 ? 'The longer hose reaches a far sink.' : 'Also sold in 50 and 75 ft lengths.'));
+    P('Pro', 'Fluval ProVac Gravel Cleaner', 'Plug-in powered cleaner with an LED spotlight and a dual-density filter pad. It filters as it cleans.');
+    P('Pro', 'EHEIM Quick Vac Pro', 'Battery-powered cleaner on 4 AA batteries, no hose or bucket. A good fit for small tanks and between water changes.');
   } else if (kind === 'Protein skimmer' && salt && gal > 0 && gal <= 450 && (!ft || ft === 'sump')) {
     const sk = OCTO.find((m) => gal <= m[1]);
     const cv = CURVE.find((m) => gal <= m[1]);
@@ -2111,11 +2150,15 @@ function gearPicks(kind, t) {
     if (gal <= 66) P('Popular', 'Tunze Osmolator 3 Nano', 'Optical sensor, run-dry protection and an adjustable safety timer. Suggested by Bulk Reef Supply for tanks up to 66 gal.');
     if (gal <= 100) P('Pro', 'Tunze Osmolator Universal 3155', 'Tunze\'s flagship top-off, with an optical sensor and a float-switch backup. Best under about 100 gal.');
   } else if (kind === 'Air pump') {
+    P('Popular', gal <= 20 ? 'Aquarium Co-Op Air Pump with Battery Backup (single outlet)' : 'Aquarium Co-Op Air Pump with Battery Backup (dual outlet)', gal <= 20 ? 'Built-in battery switches on in a power cut. One outlet, 1.1 L/min, 1.2 W, with adjustable air flow.' : 'Built-in battery switches on in a power cut. Two outlets, 1.6 L/min, 2.1 W, with adjustable air flow.');
     if (gal <= 20) P('Popular', 'Active Aqua AAPA3.2L', 'One outlet, 3.2 L/min, 2 W. Runs one air stone or a small sponge filter.');
     if (gal > 10 && gal <= 75) P('Popular', 'Active Aqua AAPA7.8L', 'Two outlets, 7.8 L/min, 3 W. Runs a couple of stones or sponge filters.');
     if (gal > 40) P('Popular', 'Active Aqua AAPA15L', 'Four outlets, 15 L/min, 6 W. For bigger tanks or several stones and filters.');
   } else if (kind === 'CO2 system' && fresh && gal > 0) {
     const co = FLUVAL_CO2.find((m) => gal <= m[1]);
+    P('Budget', 'Aquarium Co-Op Aquario Neo CO2 Diffuser', 'Diffuser only. Pair it with a regulator and a CO2 tank.');
+    P('Budget', 'Aquarium Co-Op CO2 Stainless Steel Check Valve', 'Check valve for a CO2 line. Stops water from backing up toward the regulator.');
+    P('Pro', 'Aquarium Co-Op CO2 Regulator Expansion Manifold', 'Add-on for a CO2 regulator, sold by Aquarium Co-Op.');
     if (co) P('Popular', 'Fluval ' + co[0], 'Complete kit with regulator and diffuser. Made for planted tanks up to ' + co[1] + ' gal.');
   } else if (kind === 'Fan or chiller' && gal > 0) {
     if (gal <= 50) P('Budget', 'Hygger Aquarium Chiller Cooling Fan (HG051)', 'Clip-on fans that take a few degrees off in hot rooms. Sold for tanks up to about 50 gal, so check your glass thickness.');
@@ -2126,13 +2169,15 @@ function gearPicks(kind, t) {
   } else if (kind === 'Substrate' && !salt) {
     const amt = gal > 0 ? 'About ' + g + ' lb for a 1 in bed, ' + g * 2 + ' lb for 2 in.' : 'About 1 lb per gal for a 1 in bed.';
     P('Budget', 'CaribSea Eco-Complete', 'Black planted-tank gravel, no soil. ' + amt);
+    P('Popular', 'Fluval Plant and Shrimp Stratum', 'Volcanic soil from Mount Aso, 3 to 5 mm grains that help hold a neutral to slightly acidic pH. Sold in 8.8 lb (4 kg) bags. Good for shrimp.');
+    P('Pro', 'Fluval Bio-Stratum', 'Finer 1 to 3 mm grains infused with nitrifying bacteria, made for small tanks and fine roots. Sold in 8.8 lb bags. Shrimp keepers should use the standard Stratum.');
     P('Popular', 'Seachem Flourite', 'Porous clay gravel that does not change pH and is not replaced. A 7 kg bag makes about a 2 in bed in a 10 gal tank' + (gal > 10 ? ', so about ' + Math.ceil(gal / 10) + ' bags for yours.' : '.'));
     P('Pro', 'ADA Aqua Soil Amazonia', 'Nutrient-rich plant soil that softens water and lowers pH. About one 9 L bag per 15 gal' + (gal > 15 ? ', so about ' + Math.ceil(gal / 15) + ' bags for yours.' : '.') + ' Best for demanding plants, and not for hard-water fish.');
   }
-  const rank = { Budget: 0, Popular: 1, Pro: 2 };
-  const first = ['Budget', 'Popular', 'Pro'].map((tr) => out.find((x) => x.tier === tr)).filter(Boolean);
-  const rest = out.filter((x) => first.indexOf(x) === -1);
-  return first.concat(rest).slice(0, 3).sort((a, b) => rank[a.tier] - rank[b.tier]);
+  // Up to three per tier, with Aquarium Co-Op and Fluval listed first inside each tier.
+  const fav = (x) => (/Aquarium Co-Op|Fluval/.test(x.name) ? 0 : 1);
+  const byTier = (tr) => out.filter((x) => x.tier === tr).sort((a, b) => fav(a) - fav(b)).slice(0, 3);
+  return byTier('Budget').concat(byTier('Popular'), byTier('Pro'));
 }
 
 const WATER_KINDS = ['Water conditioner', 'Test kit'];
