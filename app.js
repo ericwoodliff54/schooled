@@ -1680,19 +1680,35 @@ function renderTank() {
 
   const list = $('tank-list');
   list.replaceChildren();
-  t.fish.forEach((f) => {
+  const rowFor = (f) => {
     const sci = usableScientific(lookupSpecies(f.name));
-    list.append(
-      el('div', { class: 'item' },
-        rowAvatar(f),
-        el('button', { type: 'button', class: 'row-main', 'aria-label': 'Details for ' + f.name, onclick: () => showSpecies(f.name, t.id) },
-          el('span', { class: 'name', text: f.name }),
-          sci ? el('span', { class: 'sub sci', text: sci }) : null),
-        el('button', { type: 'button', class: 'round', 'aria-label': 'One fewer ' + f.name, text: '\u2212', onclick: () => changeCount(t, f, -1) }),
-        el('span', { class: 'count', text: String(f.count) }),
-        el('button', { type: 'button', class: 'round', 'aria-label': 'One more ' + f.name, text: '+', onclick: () => changeCount(t, f, 1) })
-      )
-    );
+    return el('div', { class: 'item' },
+      rowAvatar(f),
+      el('button', { type: 'button', class: 'row-main', 'aria-label': 'Details for ' + f.name, onclick: () => showSpecies(f.name, t.id) },
+        el('span', { class: 'name', text: f.name }),
+        sci ? el('span', { class: 'sub sci', text: sci }) : null),
+      el('button', { type: 'button', class: 'round', 'aria-label': 'One fewer ' + f.name, text: '\u2212', onclick: () => changeCount(t, f, -1) }),
+      el('span', { class: 'count', text: String(f.count) }),
+      el('button', { type: 'button', class: 'round', 'aria-label': 'One more ' + f.name, text: '+', onclick: () => changeCount(t, f, 1) }));
+  };
+  const salt = t.type === 'Saltwater';
+  const second = salt ? { key: 'coral', title: 'Corals', kinds: ['coral'], empty: 'No corals yet.' } : { key: 'plant', title: 'Plants', kinds: ['plant'], empty: 'No plants yet.' };
+  const groups = [{ key: 'fish', title: 'Fish', kinds: ['fish'], empty: 'No fish yet.' }, second];
+  const taken = new Set(groups.flatMap((g) => g.kinds));
+  const others = t.fish.filter((f) => !taken.has(rosterKind(f)));
+  if (others.length) groups.push({ key: 'other', title: 'Invertebrates and others', kinds: null, empty: '' });
+  groups.forEach((g) => {
+    const items = g.kinds ? t.fish.filter((f) => g.kinds.includes(rosterKind(f))) : others;
+    const total = items.reduce((sum, f) => sum + f.count, 0);
+    const det = el('details', { class: 'card group-card', 'data-group': g.key },
+      el('summary', { class: 'group-sum' },
+        el('span', { class: 'group-thumb' }, items.length ? rowAvatar(items[0]) : kindAvatar(g.kinds ? g.kinds[0] : 'invert')),
+        el('span', { class: 'group-text' }, el('strong', { text: g.title }), el('span', { text: total ? total + ' in your tank' : 'None yet' })),
+        chevron()),
+      el('div', { class: 'group-body' }, ...(items.length ? items.map(rowFor) : [el('p', { class: 'muted small', text: g.empty + ' Tap Scan / Add to start.' })])));
+    if (groupOpen[g.key]) det.open = true;
+    det.addEventListener('toggle', () => { groupOpen[g.key] = det.open; });
+    list.append(det);
   });
   const ins = $('tank-insights');
   const strip = summaryStrip(t);
@@ -1993,7 +2009,6 @@ function changeCount(tank, fish, delta) {
   if (currentView === 'species') renderSpecies(); else renderTank();
 }
 
-$('tank-back').addEventListener('click', () => goBack(() => showView('home')));
 
 function openEditSheet(focusName) {
   if (!getTank(openTankId)) return;
@@ -2907,6 +2922,7 @@ function stockBar(t) {
 }
 
 let mateShowAll = false;
+const groupOpen = {};
 let mateOpen = false; // the Compatibility pill stays collapsed until tapped
 function iconSvg(paths, size) {
   return svgEl('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' }, ...paths.map((d) => svgEl('path', { d })));
@@ -2956,7 +2972,7 @@ function mateCheckCard(t) {
     : el('span', { class: 'pill ' + (bad ? 'bad' : 'warn'), text: r.issues.length + (r.issues.length === 1 ? ' thing to look at' : ' things to look at') });
   const shown = mateShowAll ? r.issues : r.issues.slice(0, 5);
   const card = el('div', { class: 'card' },
-    el('div', { class: 'card-head' }, el('h2', { text: 'Compatibility' }), chip));
+    el('div', { class: 'card-head' }, el('h2', { text: 'Compatibility' }), el('span', { class: 'card-head-right' }, chip, el('button', { type: 'button', class: 'btn small', id: 'compat-hide', text: 'Hide', onclick: () => { mateOpen = false; renderTank(); } }))));
   if (!t.fish.length) card.append(el('p', { class: 'muted small', text: 'Add fish and I will check how they get along.' }));
   else if (!r.issues.length) card.append(el('p', { class: 'muted small', text: cleared ? 'You cleared everything I flagged.' : (r.checked ? 'No problems found between the ' + r.checked + ' kinds I could check.' : 'None of these names are in the species list yet, so nothing could be checked.') }));
   shown.forEach((i) => card.append(
