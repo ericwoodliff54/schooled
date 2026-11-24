@@ -1647,7 +1647,7 @@ function renderHome() {
     putAll(body, ...state.tanks.map(homeTankCard));
     const at = activeTank();
     const due = dueTasks();
-    const addBtn = el('button', { type: 'button', class: 'btn small add-pill', 'aria-label': 'Add a care reminder', onclick: () => showTank(at.id, 'care') }, featureIcon('plus'), 'Add');
+    const addBtn = el('button', { type: 'button', class: 'btn small add-pill add-grad', 'aria-label': 'Add a care reminder', onclick: () => showTank(at.id, 'care') }, featureIcon('plus'), 'Add');
     if (due.length) {
       const card = el('div', { class: 'card' }, el('div', { class: 'card-head' }, el('h2', { text: 'Due now' }), addBtn));
       due.slice(0, 5).forEach((d) => card.append(el('div', { class: 'due-row' },

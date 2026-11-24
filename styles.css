@@ -1233,3 +1233,8 @@ body { min-height: 100vh; min-height: 100dvh; }
 .ask-msg.me .ask-img { margin-left: auto; }
 /* Get Schooled button: top right of the tank photo, same style as the settings gear */
 .hero-gear.hero-ask { top: 12px; bottom: auto; }
+
+/* Home add buttons (+ New Tank, care reminders + Add): same feel as the At Your LFS? icon tile */
+.btn.add-pill.add-grad { background: linear-gradient(135deg, #2F8CFF, #1A63C7); color: #fff; border-color: transparent; box-shadow: 0 6px 14px -6px rgba(26, 99, 199, 0.8); padding: 0 16px 0 12px; }
+.btn.add-pill.add-grad svg { stroke: #fff; stroke-width: 2.4; }
+.btn.add-pill.add-grad:active { background: linear-gradient(135deg, #1A63C7, #0A2E5C); }
