@@ -2128,6 +2128,21 @@ function gearPicks(kind, t) {
 const WATER_KINDS = ['Water conditioner', 'Test kit'];
 const gearState = { kind: 'Filter', name: '', note: '', skipOpen: false };
 
+const gearOpenKinds = new Set();
+// Turn a pick's spec sentence into small tags (size, flow, power) plus one short note.
+function pickTags(spec) {
+  const tags = [];
+  let m = /(\d[\d,.]*)\s*(?:to|-)\s*(\d[\d,.]*)\+?\s*gal\b/.exec(spec);
+  if (m) tags.push(m[1] + '–' + m[2] + ' gal');
+  else if ((m = /up to (\d[\d,.]*)\s*gal\b/i.exec(spec))) tags.push('≤ ' + m[1] + ' gal');
+  else if ((m = /(\d[\d,.]*) gal\b/.exec(spec))) tags.push('≤ ' + m[1] + ' gal');
+  if ((m = /(\d[\d,]*)(?:\s*to\s*[\d,]+)? GPH/.exec(spec))) tags.push(m[1] + ' GPH');
+  if ((m = /(\d+)\s?W\b/.exec(spec))) tags.push(m[1] + ' W');
+  const sentences = spec.split(/(?<=\.)\s+/).filter((x) => !/^(Rated|Sold (for|from)|Maker rates|Hydor rates|Bulk Reef Supply (sizes|lists|recommends)|Suggested by|Made for|Recommended)/.test(x));
+  const note = (sentences[0] || '').replace(/\.$/, '');
+  return { tags: tags.slice(0, 3), note: note.length > 90 ? note.slice(0, 87).replace(/\s+\S*$/, '') + '…' : note };
+}
+
 function renderGear() {
   const t = getTank(openTankId);
   const body = $('tank-gear-body');
@@ -2158,8 +2173,11 @@ function renderGear() {
 
   const skipped = t.gearSkip;
   const equip = gearSuggestions(t).filter((s) => WATER_KINDS.indexOf(s.kind) === -1); // chemicals and tests live on the Water page
-  const sugg = equip.filter((s) => !t.gear.some((g) => g.kind === s.kind) && skipped.indexOf(s.title) === -1);
-  const hiddenCount = equip.filter((s) => !t.gear.some((g) => g.kind === s.kind) && skipped.indexOf(s.title) !== -1).length;
+  const isOwned = (s) => t.gear.some((g) => g.kind === s.kind);
+  const hiddenCount = equip.filter((s) => !isOwned(s) && skipped.indexOf(s.title) !== -1).length;
+  const needed = equip.filter((s) => !isOwned(s) && skipped.indexOf(s.title) === -1);
+  const covered = equip.filter(isOwned);
+  const sugg = needed.concat(covered); // what is still missing stays on top, owned goes to the end
 
   const parts = [
     mine.length ? el('div', { class: 'gear-list' }, ...mine) : el('p', { class: 'muted small', text: 'Nothing logged yet. Add the filter, heater, light and anything else on this tank.' }),
@@ -2167,21 +2185,41 @@ function renderGear() {
   ];
   body.replaceChildren(...parts);
 
-  // Recommended gear: its own collapsible card, a row you swipe sideways.
-  $('tank-ideas-count').textContent = sugg.length ? String(sugg.length) : '';
-  const anyPicks = sugg.some((s) => gearPicks(s.kind, t).length);
-  const ip = [el('p', { class: 'muted small gear-disclaimer', text: GEAR_DISCLAIMER + (anyPicks ? ' Sizes are the makers\' ratings, last checked ' + GEAR_PICKS_CHECKED + '.' : '') }), el('p', { class: 'muted small', text: 'Based on ' + t.type.toLowerCase() + (tankGallons(t) ? ', ' + Math.round(tankGallons(t)) + ' gallons' : '') + (t.fish.length ? ' and what you keep in it' : '') + '. General guidance, so check the label on any product you buy.' })];
-  if (!sugg.length) ip.push(el('p', { class: 'muted small', text: t.gear.length ? 'You have the basics covered.' : 'No ideas right now.' }));
-  else ip.push(el('div', { class: 'idea-row' }, ...sugg.map((s) => { const picks = gearPicks(s.kind, t); return el('div', { class: 'idea-card gear-idea' + (picks.length ? ' has-picks' : '') },
-    el('div', { class: 'gear-main' }, el('strong', { text: s.title }), el('span', { class: 'sub', text: s.why })),
-    picks.length ? el('div', { class: 'pick-list' },
-      el('span', { class: 'sub pick-hint', text: 'Tap the one you own:' }),
-      ...picks.map((p) => el('button', { type: 'button', class: 'pick', 'aria-label': 'I have ' + p.name, onclick: () => { gearState.kind = s.kind; gearState.name = p.name; gearState.note = ''; $('tank-gear').open = true; renderGear(); toast('Filled in. Tap Add equipment to save it.'); } },
-        el('span', { class: 'pick-tier', text: p.tier }), el('strong', { text: p.name }), el('span', { class: 'sub', text: p.spec })))) : null,
-    el('div', { class: 'idea-actions' },
-      el('button', { type: 'button', class: 'btn small', text: 'I have this', onclick: () => { gearState.kind = s.kind; gearState.name = ''; $('tank-gear').open = true; renderGear(); $('gear-name').focus(); } }),
-      el('button', { type: 'button', class: 'btn link small-link', 'aria-label': 'Hide the idea ' + s.title, text: 'Hide', onclick: () => { t.gearSkip.push(s.title); t.gearSkip = t.gearSkip.slice(-30); saveState(); renderGear(); } }))); })));
-  if (hiddenCount) ip.push(el('button', { type: 'button', class: 'btn link', text: 'Show ' + hiddenCount + ' hidden idea' + (hiddenCount === 1 ? '' : 's'), onclick: () => { t.gearSkip = []; saveState(); renderGear(); } }));
+  // Recommended gear: its own collapsible card, a vertical list of accordions.
+  $('tank-ideas-count').textContent = needed.length ? String(needed.length) : '';
+  const gl = tankGallons(t);
+  const ip = [el('p', { class: 'muted small gear-lead', text: 'Tailored for your ' + (gl ? Math.round(gl) + ' gal ' : '') + t.type.toLowerCase() + ' tank' + (t.fish.length ? ' and what is in it' : '') + '.' })];
+  if (!sugg.length) ip.push(el('p', { class: 'muted small', text: 'No ideas right now.' }));
+  else ip.push(el('div', { class: 'gear-acc-list' }, ...sugg.map((s) => {
+    const picks = gearPicks(s.kind, t);
+    const owned = isOwned(s);
+    const hm = /about (\d+) to (\d+) watts/i.exec(s.why);
+    const hint = hm ? hm[1] + '\u2013' + hm[2] + ' W' : '';
+    const d = el('details', { class: 'gear-acc' + (owned ? ' owned' : '') });
+    if (gearOpenKinds.has(s.kind) && !owned) d.open = true;
+    d.addEventListener('toggle', () => { if (d.open) gearOpenKinds.add(s.kind); else gearOpenKinds.delete(s.kind); });
+    const sum = el('summary', null,
+      el('span', { class: 'gear-acc-title' }, el('strong', { text: s.kind }), hint ? el('span', { class: 'gear-acc-hint', text: hint }) : null),
+      owned ? el('span', { class: 'owned-pill', text: '✓ Owned' }) : (picks.length ? el('span', { class: 'gear-acc-count', text: picks.length + (picks.length === 1 ? ' pick' : ' picks') }) : null),
+      owned ? null : el('button', { type: 'button', class: 'gear-x', 'aria-label': 'Dismiss ' + s.kind, text: '×', onclick: (e) => { e.preventDefault(); e.stopPropagation(); t.gearSkip.push(s.title); t.gearSkip = t.gearSkip.slice(-30); saveState(); renderGear(); } }));
+    d.appendChild(sum);
+    const body2 = el('div', { class: 'gear-acc-body' }, el('p', { class: 'sub gear-why', text: s.why }));
+    picks.forEach((p) => {
+      const pt = pickTags(p.spec);
+      body2.appendChild(el('button', { type: 'button', class: 'gpick tier-' + p.tier.toLowerCase(), 'aria-label': 'Add ' + p.name + ' to my equipment', title: p.spec, onclick: () => { gearState.kind = s.kind; addPickToGear(t, s.kind, p.name); renderGear(); } },
+        el('span', { class: 'gpick-main' },
+          el('span', { class: 'tier-pill', text: p.tier }),
+          el('strong', { text: p.name }),
+          pt.tags.length ? el('span', { class: 'gpick-tags' }, ...pt.tags.map((x) => el('span', { class: 'gtag', text: x }))) : null,
+          pt.note ? el('span', { class: 'sub gpick-note', text: pt.note }) : null),
+        el('span', { class: 'gpick-add', 'aria-hidden': 'true', text: '+ Add' })));
+    });
+    body2.appendChild(el('button', { type: 'button', class: 'btn link small-link gpick-other', text: picks.length ? 'I have a different one' : 'I have one', onclick: () => { gearState.kind = s.kind; gearState.name = ''; $('tank-gear').open = true; renderGear(); $('gear-name').focus(); } }));
+    d.appendChild(body2);
+    return d;
+  })));
+  if (hiddenCount) ip.push(el('button', { type: 'button', class: 'btn link', text: 'Show ' + hiddenCount + ' dismissed idea' + (hiddenCount === 1 ? '' : 's'), onclick: () => { t.gearSkip = []; saveState(); renderGear(); } }));
+  ip.push(el('p', { class: 'gear-foot', text: GEAR_DISCLAIMER + ' Check the label on anything you buy.' + (sugg.some((s) => gearPicks(s.kind, t).length) ? ' Sizes are the makers\' ratings, last checked ' + GEAR_PICKS_CHECKED + '.' : '') }));
   $('tank-ideas-body').replaceChildren(...ip);
 }
 

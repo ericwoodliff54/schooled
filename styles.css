@@ -1143,3 +1143,36 @@ body { min-height: 100vh; min-height: 100dvh; }
 .log-latest[open] .group-sum .chev { transform: rotate(90deg); }
 .log-latest-body { padding: 0 16px 14px; }
 .treat-card .water-line .btn { flex: none; }
+
+/* Recommended gear: vertical accordions */
+.gear-lead { margin: 0 0 8px; font-size: 14px; }
+.gear-acc-list { display: flex; flex-direction: column; gap: 8px; }
+.gear-acc { border: 1px solid var(--line); border-radius: 14px; background: #fff; overflow: hidden; }
+.gear-acc > summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 14px; min-height: 48px; cursor: pointer; box-sizing: border-box; }
+.gear-acc > summary::-webkit-details-marker { display: none; }
+.gear-acc > summary::after { content: ''; flex: none; width: 8px; height: 8px; margin: 0 4px 3px 2px; border-right: 2px solid #5B6B7F; border-bottom: 2px solid #5B6B7F; transform: rotate(45deg); transition: transform 0.15s; }
+.gear-acc[open] > summary::after { transform: rotate(-135deg); margin-bottom: -3px; }
+.gear-acc-title { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.gear-acc-title strong { font-size: 15px; }
+.gear-acc-hint { font-size: 12px; color: #5B6B7F; font-weight: 600; }
+.gear-acc-count { font-size: 12px; color: #5B6B7F; white-space: nowrap; }
+.owned-pill { font-size: 12px; font-weight: 800; color: #166534; background: #DCFCE7; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.gear-acc.owned { background: #F8FBF9; }
+.gear-x { flex: none; width: 32px; height: 32px; border-radius: 999px; border: 0; background: transparent; color: #5B6B7F; font-size: 22px; line-height: 1; cursor: pointer; }
+.gear-x:active { background: var(--mist, #EEF5FC); }
+.gear-acc-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.gear-why { margin: 0 0 2px; font-size: 13px; overflow-wrap: break-word; }
+.gpick { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; box-sizing: border-box; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: #fff; color: inherit; font: inherit; min-height: 52px; cursor: pointer; }
+.gpick:active { background: var(--mist, #EEF5FC); }
+.gpick-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; overflow-wrap: break-word; }
+.gpick-main strong { font-size: 14px; }
+.gpick-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.gtag { font-size: 11px; font-weight: 700; color: #475569; background: #F1F5F9; border-radius: 6px; padding: 2px 6px; }
+.gpick-note { font-size: 12px; }
+.gpick-add { flex: none; font-size: 12px; font-weight: 800; color: #0F766E; border: 1.5px solid #99D5CC; border-radius: 999px; padding: 5px 10px; }
+.tier-pill { font-size: 10.5px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; }
+.tier-budget .tier-pill { color: #475569; background: #E8EDF2; }
+.tier-popular .tier-pill { color: #0F766E; background: #DDF3F0; }
+.tier-pro .tier-pill { color: #4338CA; background: #E7E8FB; }
+.gpick-other { align-self: flex-start; }
+.gear-foot { margin: 12px 0 0; font-size: 11px; line-height: 1.4; color: #7A8794; }
