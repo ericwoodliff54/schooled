@@ -2016,7 +2016,10 @@ const HYDRO_SPONGE = [['I', 10], ['II', 20], ['III', 30], ['IV', 80], ['V', 120]
 const FLUVAL_CO2 = [['Mini Pressurized CO2 Kit (20 g)', 15], ['Pressurized CO2 Kit (45 g)', 30], ['Pressurized CO2 Kit (95 g)', 50]]; // kit, max gal
 const KORALIA = [['Nano 240', 10, 15, 240], ['Nano 425', 15, 30, 425], ['Nano 565', 20, 40, 565]]; // model, min salt gal, max salt gal, GPH (Hydor)
 const CURVE = [['5', 55], ['7', 90]]; // Bubble Magus Curve, BRS heavy-bioload rating in gal
-const REGAL = [['Regal 150INT', 100], ['Regal 200SSS', 150], ['Regal 250INT', 250]]; // Reef Octopus, BRS heavy-bioload rating in gal
+const REGAL = [['Regal 150INT', 100], ['Regal 200SSS', 150], ['Regal 250INT', 250], ['Regal 300INT', 450]]; // Reef Octopus, BRS heavy-bioload rating in gal
+const AQUEON = [[50, 20], [100, 30], [150, 55], [200, 75], [300, 100]]; // Aqueon Pro: watts, max gal (maker)
+const FINNEX_HMA = [[50, 20], [100, 30], [150, 60], [200, 80], [300, 100], [500, 120]]; // watts, max gal
+const FINNEX_TH = [[300, 40, 80], [500, 70, 130], [800, 140, 265]]; // heating tube only: watts, min gal, max gal
 const OCTO = [['110-INT', 75], ['150-INT', 120], ['200-INT', 160]]; // model, largest tank Bulk Reef Supply recommends
 
 function gearPicks(kind, t) {
@@ -2036,37 +2039,62 @@ function gearPicks(kind, t) {
     if (td) P('Popular', 'Seachem Tidal ' + td[0], 'Hang-on filter with an adjustable flow dial. Rated up to ' + td[1] + ' gal, ' + td[2] + ' GPH.');
     const sp = ft === 'sponge' ? (HYDRO_SPONGE.find((m) => gal <= m[1]) || null) : null;
     if (sp) P('Budget', 'Hydro-Sponge ' + sp[0], 'Sponge filter that runs off an air pump. Sold for up to ' + sp[1] + ' gal.');
+    if ((!ft || ft === 'canister') && gal >= 20 && gal <= 150) P('Budget', gal <= 100 ? 'Penn-Plax Cascade Pro 1000 (III)' : 'Penn-Plax Cascade 1200', gal <= 100 ? 'Canister filter, 350 GPH. The maker rates it for up to 100 gal.' : 'Canister filter, 315 GPH. The maker rates it for up to 150 gal.');
     if ((!ft || ft === 'canister') && gal >= 60 && gal <= 400) P('Pro', 'Fluval FX6', 'Large canister filter. Rated up to 400 gal, 925 GPH pump.');
   } else if (kind === 'Heater' && gal > 0) {
+    const aq = AQUEON.find((m) => gal <= m[1]);
+    if (aq) P('Budget', 'Aqueon Pro Adjustable ' + aq[0] + 'W', 'Shatterproof plastic body with an electronic thermostat. Rated up to ' + aq[1] + ' gal by the maker.');
     const h = JAGER.find((m) => gal > m[0] && gal <= m[1]) || (gal <= 5 ? JAGER[0] : null);
     if (h) P('Popular', 'EHEIM Jäger TruTemp ' + h[2] + 'W', 'Rated ' + h[0] + ' to ' + h[1] + ' gal by the maker. Go up a size if your room runs cold.');
+    const fh = FINNEX_HMA.find((m) => gal <= m[1]);
+    const ft2 = FINNEX_TH.find((m) => gal >= m[1] && gal <= m[2]);
+    if (fh) P('Pro', 'Finnex HMA-S ' + fh[0] + 'W titanium', 'Titanium heater with a plastic guard and an attached controller. Sold for up to ' + fh[1] + ' gal.');
+    else if (ft2) P('Pro', 'Finnex TH-' + ft2[0] + ' titanium tube', 'Titanium heating tube for ' + ft2[1] + ' to ' + ft2[2] + ' gal. It has no thermostat, so pair it with a separate controller such as the Finnex HC-820M.');
   } else if (kind === 'Test kit') {
     if (fresh) P('Popular', 'API Freshwater Master Test Kit', 'Liquid tests for pH, high range pH, ammonia, nitrite and nitrate. About 800 tests.');
-    if (salt) P('Popular', 'Red Sea Reef Foundation Pro', 'Titration tests for calcium, alkalinity (KH) and magnesium.');
+    if (salt) {
+      P('Budget', 'Salifert KH/Alkalinity and Calcium kits', 'Single-parameter liquid kits sold separately. Cheap ways to watch the two numbers that drift fastest in a reef.');
+      P('Popular', 'Red Sea Reef Foundation Pro', 'Titration tests for calcium, alkalinity (KH) and magnesium. About 75 calcium and alkalinity tests and 100 magnesium tests.');
+      P('Pro', 'Hanna Marine Alkalinity Checker (HI772)', 'Handheld colorimeter that reads alkalinity in dKH, so you are not judging a color by eye. Reagents are sold separately.');
+    }
   } else if (kind === 'Water conditioner') {
+    P('Budget', 'API Tap Water Conditioner', 'Removes chlorine, chloramine and heavy metals. Follow the label for how much to add per gallon.');
     P('Popular', 'Seachem Prime', 'Removes chlorine and chloramine, detoxifies ammonia, nitrite and nitrate. Follow the label for how much to use.');
+    P('Pro', 'Fritz Complete', 'A conditioner that retailers recommend for sensitive tanks such as shrimp. Follow the label for how much to use.');
   } else if (kind === 'Light' && gal > 0) {
     if (salt) {
-      if (gal <= 30) P('Popular', 'Kessil A160WE Tuna Blue', 'Compact 40 W reef light. Covers about 12 to 24 in across.');
-      else P('Pro', 'Kessil A360XE Tuna Blue', '90 W reef light. Covers about 24 x 24 in, so plan one per 24 x 24 in.');
+      if (gal <= 15) P('Budget', 'Kessil A80 Tuna Blue', 'Nano reef light, 15 W. Covers about 20 x 20 in, enough for most soft coral nanos and fish-only tanks.');
+      if (gal <= 30) P('Popular', 'Kessil A160WE Tuna Blue', 'Compact 40 W reef light. Covers about 12 to 24 in across, depending on mounting height.');
+      else P('Popular', 'Kessil A360XE Tuna Blue', '90 W reef light. Covers about 24 x 24 in, which suits LPS and soft corals. Plan one per 24 x 24 in.');
+      if (gal > 30 && gal <= 90) P('Pro', 'Kessil A500X', '185 W reef light with an adjustable beam angle, made for SPS-heavy reefs.');
+      else if (gal > 90) P('Pro', 'Kessil A500X', '185 W reef light with an adjustable beam angle, made for SPS-heavy reefs. Plan more than one over a big tank.');
+      else if (gal > 15) P('Pro', 'Kessil A360XE Tuna Blue', '90 W reef light. Covers about 24 x 24 in. Two per 24 x 24 in suits SPS.');
     } else {
+      const nl = gal <= 12 ? 12 : gal <= 20 ? 18 : gal <= 35 ? 30 : gal <= 50 ? 36 : 48;
+      P('Budget', 'NICREW SkyLED Plus (' + nl + ' in)', 'Budget 24-hour LED with an automatic sunrise and sunset cycle. Sold from 12 to 60 in, so match your tank length. Fine for easy plants.');
       const sz = gal <= 12 ? ['15 to 24 in', '22 W'] : gal <= 35 ? ['24 to 34 in', '32 W'] : gal <= 50 ? ['36 to 48 in', '46 W'] : ['48 to 60 in', '59 W'];
       P('Popular', 'Fluval Plant 3.0 LED (' + sz[0] + ')', sz[1] + ', 6500K full spectrum with app control. Sold by tank length, so match yours.');
       const fl = gal <= 12 ? '20' : gal <= 20 ? '24' : gal <= 35 ? '30' : gal <= 50 ? '36' : '48';
       P('Popular', 'Finnex Planted+ 24/7 (' + fl + ' in)', 'Automated sunrise to sunset on a built-in controller. Sold by tank length (20, 24, 30, 36, 48 in), so match yours.');
+      if (gal <= 30) P('Pro', 'Kessil A160WE Tuna Sun', 'Compact 40 W light for planted tanks. Covers about 12 to 24 in across.');
+      else if (gal <= 90) P('Pro', 'Kessil A360X Tuna Sun', '90 W light for planted tanks. Covers up to 24 x 24 in, so plan one per 20 to 24 in of tank length.');
     }
-  } else if (kind === 'Pump or wavemaker' && salt && gal >= 10 && gal <= 132) {
+  } else if (kind === 'Pump or wavemaker' && salt && gal >= 10 && gal <= 500) {
     const kr = KORALIA.find((m) => gal >= m[1] && gal <= m[2]) || (gal > 30 && gal <= 40 ? KORALIA[2] : null);
     if (kr) P('Budget', 'Hydor Koralia ' + kr[0], 'Small propeller pump, ' + kr[3] + ' GPH at 3.5 W, with a ball joint to aim it. Rated for about ' + kr[1] + ' to ' + kr[2] + ' gal of saltwater. Flow is fixed.');
-    P('Popular', 'Tunze Nanostream 6045', '400 to 1,175 GPH with a manual flow slider. Rated for about 10 to 135 gal.');
+    else if (gal > 40) P('Budget', 'Hydor Koralia Evolution 1500', 'Propeller pump, 1,500 GPH. Hydor rates each one for about 55 to 90 gal of saltwater, so a ' + g + ' gal tank wants about ' + Math.ceil(gal / 90) + ' placed around the tank. Flow is fixed.');
+    if (gal <= 135) P('Popular', 'Tunze Nanostream 6045', '400 to 1,175 GPH with a manual flow slider. Rated for about 10 to 135 gal.');
+    else if (gal <= 265) P('Popular', 'Tunze Turbelle Nanostream 6095', 'Controllable DC propeller pump, 528 to 2,510 GPH. Bulk Reef Supply lists it for 25 to 265 gal. Plan on two or more for even flow.');
+    else P('Popular', 'Tunze Turbelle Stream 6125', '3,150 GPH at 22 W. Bulk Reef Supply lists it for 105 to 525 gal. Plan on two or more for even flow.');
     if (gal <= 50) P('Pro', 'EcoTech VorTech MP10', 'Wireless-ready, programmable wavemaker. Maker rates it for 2.5 to 50+ gal and glass up to 0.375 in thick.');
-    else if (gal <= 500) P('Pro', 'EcoTech VorTech MP40', 'Wireless-ready, programmable wavemaker. Maker rates it for 50 to 500+ gal and glass up to 0.75 in thick.');
-  } else if (kind === 'Protein skimmer' && salt && gal > 0 && (!ft || ft === 'sump')) {
+    else P('Pro', 'EcoTech VorTech MP40', 'Wireless-ready, programmable wavemaker. Maker rates it for 50 to 500+ gal and glass up to 0.75 in thick.');
+  } else if (kind === 'Protein skimmer' && salt && gal > 0 && gal <= 450 && (!ft || ft === 'sump')) {
     const sk = OCTO.find((m) => gal <= m[1]);
     const cv = CURVE.find((m) => gal <= m[1]);
     if (cv) P('Budget', 'Bubble Magus Curve ' + cv[0], 'In-sump skimmer. Bulk Reef Supply sizes it for about ' + cv[1] + ' gal with a heavy fish load, more with a light one.');
     if (sk) P('Popular', 'Reef Octopus Classic ' + sk[0], 'In-sump skimmer, so you need a sump. Bulk Reef Supply recommends it up to ' + sk[1] + ' gal.');
-    const rg = REGAL.find((m) => gal <= m[1]);
+    else if (gal <= 250) P('Popular', 'Reef Octopus Regal 250SSS', 'Space-saving in-sump skimmer with a VarioS-6 DC pump. Bulk Reef Supply sizes it for about 250 gal with a heavy fish load.');
+    const rg = REGAL.find((m) => m[1] >= gal * 1.5) || REGAL.find((m) => gal <= m[1]);
     if (rg) P('Pro', 'Reef Octopus ' + rg[0], 'In-sump skimmer with a controllable DC pump. Bulk Reef Supply sizes it for about ' + rg[1] + ' gal with a heavy fish load.');
   } else if (kind === 'Auto top-off' && salt && gal > 0) {
     if (gal <= 50) P('Budget', 'AutoAqua Smart ATO Nano G2', 'Hang-on unit with an optical sensor and a built-in pump. Has run-dry protection and an overflow timer. Made for tanks up to 50 gal.');
@@ -2087,10 +2115,14 @@ function gearPicks(kind, t) {
     else if (gal <= 340) P('Pro', 'JBJ Arctica 1/3 HP', 'Inline titanium chiller. Recommended up to 340 gal, wants 480 to 2,400 GPH of flow.');
   } else if (kind === 'Substrate' && !salt) {
     const amt = gal > 0 ? 'About ' + g + ' lb for a 1 in bed, ' + g * 2 + ' lb for 2 in.' : 'About 1 lb per gal for a 1 in bed.';
-    P('Popular', 'CaribSea Eco-Planted', amt);
-    P('Popular', 'Fluval Plant & Shrimp Stratum', amt);
+    P('Budget', 'CaribSea Eco-Complete', 'Black planted-tank gravel, no soil. ' + amt);
+    P('Popular', 'Seachem Flourite', 'Porous clay gravel that does not change pH and is not replaced. A 7 kg bag makes about a 2 in bed in a 10 gal tank' + (gal > 10 ? ', so about ' + Math.ceil(gal / 10) + ' bags for yours.' : '.'));
+    P('Pro', 'ADA Aqua Soil Amazonia', 'Nutrient-rich plant soil that softens water and lowers pH. About one 9 L bag per 15 gal' + (gal > 15 ? ', so about ' + Math.ceil(gal / 15) + ' bags for yours.' : '.') + ' Best for demanding plants, and not for hard-water fish.');
   }
-  return out.slice(0, 3);
+  const rank = { Budget: 0, Popular: 1, Pro: 2 };
+  const first = ['Budget', 'Popular', 'Pro'].map((tr) => out.find((x) => x.tier === tr)).filter(Boolean);
+  const rest = out.filter((x) => first.indexOf(x) === -1);
+  return first.concat(rest).slice(0, 3).sort((a, b) => rank[a.tier] - rank[b.tier]);
 }
 
 const WATER_KINDS = ['Water conditioner', 'Test kit'];
