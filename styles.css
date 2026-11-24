@@ -1183,7 +1183,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 /* S logo watermark: pinned behind the cards so content scrolls over it */
 .watermark {
   position: fixed; inset: 0; z-index: 0;
-  background: url("logo-watermark.png") center / min(78vw, 400px) auto no-repeat;
+  background: url("logo-watermark.png") center / min(100vw, 560px) auto no-repeat;
   opacity: 0.2;
   filter: saturate(1);
   pointer-events: none;
