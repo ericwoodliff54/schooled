@@ -1,11 +1,5 @@
 name: Offline ID fingerprints
 
-# Run it by hand: Actions tab, "Offline ID fingerprints", Run workflow.
-# Collects photos that allow commercial use (iNaturalist, Wikimedia Commons), turns them into fingerprints with
-# two free image models (small and large), and writes a report card on how well offline ID would work.
-# No AI calls, no cost. A full run takes roughly 1.5 to 3 hours; a test run of 40 species takes a few minutes.
-# Results: the report shows on the run's page; files (report, coverage, credits, fingerprints) are under Artifacts.
-
 on:
   workflow_dispatch:
     inputs:
@@ -37,3 +31,26 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install image tools
+        run: |
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet timm pillow numpy requests
+      - name: Collect photos and make fingerprints
+        run: |
+          python offline_fingerprints.py \
+            --limit "${{ inputs.species }}" \
+            --per "${{ inputs.photos }}" \
+            --kinds "${{ inputs.kinds }}" \
+            --water "${{ inputs.water }}" \
+            --models "${{ inputs.models }}" \
+            --seed "${{ inputs.seed }}" \
+            --max-minutes 300
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-id-report
+          path: offline-out/
+          retention-days: 30
