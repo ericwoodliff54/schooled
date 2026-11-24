@@ -1574,7 +1574,7 @@ const TANK_TOOLS = [
   { icon: 'chat', color: 'blue', title: 'Ask the tank', text: 'Ask questions about this tank', soon: true }
 ];
 const FEATURES = [
-  { icon: 'star', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you want, fish and plants included', go: () => showView('dream') },
+  { icon: 'sparkle', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you dream of, we\'ll bring it to life!', go: () => showView('dream') },
   { icon: 'drop', color: 'aqua', title: 'Water care', text: 'Conditioner and test kit picks for your tank', go: () => showView('water') }
 ];
 const FEATURE_ICONS = {
@@ -1588,6 +1588,8 @@ const FEATURE_ICONS = {
   chat: ['M4 5h16v11H9l-5 4z'],
   scan: ['M4 8V5a1 1 0 0 1 1-1h3', 'M16 4h3a1 1 0 0 1 1 1v3', 'M20 16v3a1 1 0 0 1-1 1h-3', 'M8 20H5a1 1 0 0 1-1-1v-3', 'M8 12c1.5-2 4-2 6 0-2 2-4.5 2-6 0z', 'M14 12l2-1.2v2.4z'],
   plus: ['M12 5v14', 'M5 12h14'],
+  lfs: ['M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8', 'M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8', 'M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16', 'M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16', 'M7 12c2-2.6 5.2-3 7.6-1.2L17 9.5v5l-2.4-1.3C12.2 15 9 14.6 7 12z', 'M10 11.6h.01'],
+  sparkle: ['M12 3.5l1.6 4.2 4.2 1.6-4.2 1.6L12 15.1l-1.6-4.2-4.2-1.6 4.2-1.6z', 'M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z', 'M5.5 15.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z'],
   info: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z', 'M12 11v5', 'M12 7.5v.5']
 };
 function featureIcon(name) {
@@ -1666,8 +1668,8 @@ function renderHome() {
       putAll(body, card);
     }
   }
-  putAll(body, heroBtn('At the fish store?', 'Photograph one fish and see if it fits your tank', 'fish', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
-  putAll(body, heroBtn('Dream a tank', 'Picture the tank you want, fish and plants included', 'star', true, () => showView('dream')));
+  putAll(body, heroBtn('At Your LFS?', 'Photograph one fish and see if it fits your tank', 'lfs', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
+  putAll(body, heroBtn('Dream Tank', 'Picture the tank you dream of, we\'ll bring it to life!', 'sparkle', true, () => showView('dream')));
   updateBadge();
   const misses = loadMisses();
   const usageN = loadUsage().length;
@@ -1687,7 +1689,7 @@ function heroBtn(title, sub, icon, alt, onclick) {
   ic.setAttribute('height', '28');
   return el('button', { type: 'button', class: 'hero' + (alt ? ' alt' : ''), onclick },
     el('span', {}, el('strong', { text: title }), el('small', { text: sub })),
-    el('span', { class: 'hero-icon' }, ic));
+    el('span', { class: 'hero-icon tile-' + icon }, ic));
 }
 
 
@@ -2197,7 +2199,14 @@ function renderGear() {
     const hint = hm ? hm[1] + '\u2013' + hm[2] + ' W' : '';
     const d = el('details', { class: 'gear-acc' + (owned ? ' owned' : '') });
     if (gearOpenKinds.has(s.kind) && !owned) d.open = true;
-    d.addEventListener('toggle', () => { if (d.open) gearOpenKinds.add(s.kind); else gearOpenKinds.delete(s.kind); });
+    d.addEventListener('toggle', () => {
+      if (d.open) {
+        // Only one category open at a time: close any other open one.
+        gearOpenKinds.clear(); gearOpenKinds.add(s.kind);
+        const list = d.parentNode;
+        if (list) list.querySelectorAll('details.gear-acc[open]').forEach((o) => { if (o !== d) o.open = false; });
+      } else gearOpenKinds.delete(s.kind);
+    });
     const sum = el('summary', null,
       el('span', { class: 'gear-acc-title' }, el('strong', { text: s.kind }), hint ? el('span', { class: 'gear-acc-hint', text: hint }) : null),
       owned ? el('span', { class: 'owned-pill', text: '✓ Owned' }) : (picks.length ? el('span', { class: 'gear-acc-count', text: picks.length + (picks.length === 1 ? ' pick' : ' picks') }) : null),
