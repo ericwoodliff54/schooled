@@ -303,9 +303,9 @@ const STYLES = {
   Saltwater: ['Reef', 'Fish only (FOWLR)', 'Nano reef', 'Predator', 'Seahorse', 'Other'],
   Brackish: ['Community', 'Puffer', 'Other']
 };
-const WATER_SOURCES = ['city', 'well', 'ro'];
-const WATER_NAMES = { city: 'City water', well: 'Well water', ro: 'RO / filtered' };
-const WATER_SHORT = { city: 'City', well: 'Well', ro: 'RO / filtered' };
+const FILTER_TYPES = [['hob', 'Hang-on-back (HOB)'], ['canister', 'Canister'], ['sump', 'Sump'], ['sponge', 'Sponge'], ['internal', 'Internal'], ['undergravel', 'Undergravel'], ['other', 'Other']];
+const FILTER_KEYS = FILTER_TYPES.map((x) => x[0]);
+const FILTER_SHORT = { hob: 'HOB', canister: 'Canister', sump: 'Sump', sponge: 'Sponge', internal: 'Internal', undergravel: 'Undergravel', other: 'Other' };
 const SIZE_PRESETS = {
   gallons: [5, 10, 15, 20, 29, 40, 55, 75, 90, 125, 150, 180, 220, 300],
   liters: [20, 40, 60, 100, 150, 200, 300, 400, 500, 700, 1000]
@@ -321,7 +321,7 @@ function uid() {
 function newTank(partial) {
   return Object.assign({
     id: uid(), name: '', size: '', unit: 'gallons', type: 'Freshwater', style: '',
-    water: 'city', zip: '', photo: '', started: '', notes: '', fish: [], log: [], tasks: [], gear: [], gearSkip: [], dismissed: []
+    filter: '', photo: '', started: '', notes: '', fish: [], log: [], tasks: [], gear: [], gearSkip: [], dismissed: []
   }, partial || {});
 }
 
@@ -347,8 +347,7 @@ function cleanTank(raw) {
   t.unit = raw.unit === 'liters' ? 'liters' : 'gallons';
   t.type = TYPES.includes(raw.type) ? raw.type : 'Freshwater';
   t.style = typeof raw.style === 'string' && STYLES[t.type].includes(raw.style) ? raw.style : '';
-  t.water = WATER_SOURCES.includes(raw.water) ? raw.water : 'city';
-  t.zip = typeof raw.zip === 'string' && /^\d{5}$/.test(raw.zip) ? raw.zip : '';
+  t.filter = FILTER_KEYS.includes(raw.filter) ? raw.filter : '';
   t.photo = typeof raw.photo === 'string' && raw.photo.startsWith('data:image/') ? raw.photo : '';
   t.started = typeof raw.started === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.started) ? raw.started : '';
   t.notes = typeof raw.notes === 'string' ? raw.notes.slice(0, 400) : '';
@@ -1397,23 +1396,14 @@ function fillSetupForm() {
   $('setup-skip').textContent = first ? 'Skip for now' : 'Cancel';
   $('tank-name').value = '';
   $('tank-size').value = '';
-  $('tank-zip').value = '';
+  $('tank-filter').value = '';
   document.querySelector('input[name="unit"][value="gallons"]').checked = true;
   document.querySelector('input[name="type"][value="Freshwater"]').checked = true;
-  document.querySelector('input[name="water"][value="city"]').checked = true;
   fillStyleSelect('Freshwater', '');
   setupPhoto = '';
   renderSetupPhoto();
   $('setup-error').hidden = true;
-  syncZipField();
 }
-
-function syncZipField() {
-  const water = document.querySelector('input[name="water"]:checked').value;
-  $('zip-field').hidden = water !== 'city';
-}
-
-document.querySelectorAll('input[name="water"]').forEach((r) => r.addEventListener('change', syncZipField));
 document.querySelectorAll('input[name="type"]').forEach((r) => r.addEventListener('change', () => {
   fillStyleSelect(document.querySelector('input[name="type"]:checked').value, '');
 }));
@@ -1442,9 +1432,8 @@ $('setup-form').addEventListener('submit', (event) => {
   const sizeRaw = $('tank-size').value.trim();
   const unit = document.querySelector('input[name="unit"]:checked').value;
   const type = document.querySelector('input[name="type"]:checked').value;
-  const water = document.querySelector('input[name="water"]:checked').value;
   const style = $('tank-style').value;
-  const zip = $('tank-zip').value.trim();
+  const filter = $('tank-filter').value;
   const err = $('setup-error');
 
   const size = Number(sizeRaw);
@@ -1452,12 +1441,6 @@ $('setup-form').addEventListener('submit', (event) => {
     err.textContent = 'Enter your tank size as a number, like 29, or leave it blank.';
     err.hidden = false;
     $('tank-size').focus();
-    return;
-  }
-  if (water === 'city' && zip && !/^\d{5}$/.test(zip)) {
-    err.textContent = 'ZIP code should be 5 digits, or leave it blank.';
-    err.hidden = false;
-    $('tank-zip').focus();
     return;
   }
   if (state.tanks.length >= MAX_TANKS) {
@@ -1469,7 +1452,7 @@ $('setup-form').addEventListener('submit', (event) => {
   const tank = newTank({
     name, size: sizeRaw ? String(size) : '', unit, type,
     style: STYLES[type].includes(style) ? style : '',
-    water, zip: water === 'city' ? zip : '', photo: setupPhoto
+    filter: FILTER_KEYS.includes(filter) ? filter : '', photo: setupPhoto
   });
   state.tanks.push(tank);
   if (!state.activeId || first) state.activeId = tank.id;
@@ -1557,15 +1540,14 @@ function kindTotals(t) {
 
 
 const WATER_TOOLS = [
-  { icon: 'drop', color: 'aqua', title: 'Tap water', text: 'What your tap water means for this tank', go: () => { state.activeId = openTankId; saveState(); waterFrom = 'tank'; showView('water'); } },
-  { icon: 'strip', color: 'orange', title: 'Test strip reader', text: 'Photograph a strip and read your water', soon: true }
+  { icon: 'drop', color: 'aqua', title: 'Water care', text: 'Conditioner and test kit picks for this tank', go: () => { state.activeId = openTankId; saveState(); waterFrom = 'tank'; showView('water'); } },
 ];
 const TANK_TOOLS = [
   { icon: 'chat', color: 'blue', title: 'Ask the tank', text: 'Ask questions about this tank', soon: true }
 ];
 const FEATURES = [
   { icon: 'star', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you want, fish and plants included', go: () => showView('dream') },
-  { icon: 'drop', color: 'aqua', title: 'Tap water', text: 'What your tap water means for your tank', go: () => showView('water') }
+  { icon: 'drop', color: 'aqua', title: 'Water care', text: 'Conditioner and test kit picks for your tank', go: () => showView('water') }
 ];
 const FEATURE_ICONS = {
   fish: KIND_ICONS.fish,
@@ -1683,19 +1665,7 @@ function heroBtn(title, sub, icon, alt, onclick) {
 
 // ---------- Water ----------
 function renderWater() {
-  const text = $('water-tap-text');
   const t = activeTank();
-  if (!t) {
-    text.textContent = 'Add a tank on Home to get tap water info.';
-  } else if (t.water === 'well') {
-    text.textContent = 'You use well water, so the best starting point is a test strip on your tap water. Tap water lookup is for city water.';
-  } else if (t.water === 'ro') {
-    text.textContent = 'You use RO or filtered water, so a test strip after you add minerals back is the best starting point. Tap water lookup is for city water.';
-  } else if (t.zip) {
-    text.textContent = 'ZIP ' + t.zip + ': hardness lookup and conditioner advice are coming in a later update.';
-  } else {
-    text.textContent = 'Add your ZIP code on your tank page to get tap water info in a later update.';
-  }
   renderWaterRecs(t);
 }
 
@@ -1709,7 +1679,7 @@ function renderWaterRecs(t) {
   if (t.type === 'Saltwater' && !items.some((s) => s.kind === 'Water conditioner')) items.push({ kind: 'Water conditioner', title: 'Water conditioner', why: 'Treats tap or RO/DI top-off water before it goes into mixed salt water.' });
   const anyPicks = items.some((s) => gearPicks(s.kind, t).length);
   const parts = [el('p', { class: 'muted small gear-disclaimer', text: GEAR_DISCLAIMER + (anyPicks ? ' Last checked ' + GEAR_PICKS_CHECKED + '.' : '') })];
-  if (t.water === 'city') parts.push(el('p', { class: 'muted small', text: t.zip ? 'City water (ZIP ' + t.zip + '). Most city supplies use chlorine or chloramine, so pick a conditioner that handles both.' : 'City water. Most city supplies use chlorine or chloramine, so pick a conditioner that handles both.' }));
+  parts.push(el('p', { class: 'muted small', text: 'Tap water often has chlorine or chloramine in it, so use a conditioner that handles both whenever you add water.' }));
   items.forEach((s) => {
     const have = t.gear.some((g) => g.kind === s.kind);
     const picks = gearPicks(s.kind, t);
@@ -1853,7 +1823,7 @@ function renderTank() {
 
   const typeGroups = [{ options: TYPES.map((x) => ({ value: x, text: x })) }];
   const styleGroups = [{ options: [{ value: '', text: 'Not set' }, ...STYLES[t.type].map((x) => ({ value: x, text: x }))] }];
-  const waterGroups = [{ options: WATER_SOURCES.map((x) => ({ value: x, text: WATER_NAMES[x] })) }];
+  const filterGroups = [{ options: [{ value: '', text: 'Not set' }, ...FILTER_TYPES.map((x) => ({ value: x[0], text: x[1] }))] }];
   $('tank-pills').replaceChildren(
     sizePill(t),
     pillSelect('Type', t.type, typeGroups, t.type, (v) => {
@@ -1863,14 +1833,9 @@ function renderTank() {
       renderTank();
     }),
     pillSelect('Style', t.style || 'Not set', styleGroups, t.style, (v) => { t.style = v; saveState(); renderTank(); }),
-    pillSelect('Water', WATER_SHORT[t.water], waterGroups, t.water, (v) => { t.water = v; saveState(); renderTank(); }),
+    pillSelect('Filtration', t.filter ? FILTER_SHORT[t.filter] : 'Not set', filterGroups, t.filter, (v) => { t.filter = v; saveState(); renderTank(); }),
     datePill(t)
   );
-
-  $('tank-zip-row').hidden = t.water !== 'city';
-  const zipInput = $('tank-zip-edit');
-  if (document.activeElement !== zipInput) zipInput.value = t.zip;
-  $('tank-zip-error').hidden = true;
 
   const notes = $('tank-notes');
   if (document.activeElement !== notes) notes.value = t.notes;
@@ -1967,8 +1932,23 @@ function gearSuggestions(t) {
   const add = (kind, title, why) => out.push({ kind, title, why });
   const sizeTxt = gal ? ' for about ' + Math.round(gal) + ' gallons' : '';
 
-  add('Filter', 'Filter' + sizeTxt,
-    gal ? 'Look for a filter rated for ' + Math.round(gal * (heavy ? 1.5 : 1)) + ' gallons or more' + (heavy ? ' (you have big or messy fish)' : '') + '. Flow of about ' + Math.round(gal * (salt ? 5 : 4)) + ' gallons per hour is a good start.' : 'Add your tank size on the tank page and I can suggest a size.');
+  const ft = t.filter || '';
+  const rated = gal ? Math.round(gal * (heavy ? 1.5 : 1)) : 0;
+  const flow = gal ? Math.round(gal * (salt ? 5 : 4)) : 0;
+  const FT = { hob: 'Hang-on-back filter', canister: 'Canister filter', internal: 'Internal filter', sponge: 'Sponge filter', undergravel: 'Undergravel filter', sump: 'Sump and return pump' };
+  if (ft === 'sump') {
+    add('Filter', FT.sump + sizeTxt, 'The sump holds your skimmer, heater and filter media. Size the return pump for roughly ' + (gal ? Math.round(gal * 5) + ' gallons per hour' : '4 to 6 times your tank volume per hour') + ' after it loses some flow to height.');
+  } else if (ft === 'sponge') {
+    add('Filter', FT.sponge + sizeTxt, 'Pick a sponge filter rated for ' + (gal ? Math.round(gal) + ' gallons or more' : 'your tank size') + '. It runs on an air pump and is gentle on fry, shrimp and bettas.');
+  } else if (ft === 'undergravel') {
+    add('Filter', FT.undergravel + sizeTxt, 'Plates under the gravel, lifted by an air pump or powerhead. Keep the gravel layer even, and expect plants with deep roots to struggle.');
+  } else if (ft) {
+    add('Filter', FT[ft] ? FT[ft] + sizeTxt : 'Filter' + sizeTxt,
+      gal ? 'Look for one rated for ' + rated + ' gallons or more' + (heavy ? ' (you have big or messy fish)' : '') + '. Flow of about ' + flow + ' gallons per hour is a good start.' : 'Add your tank size on the tank page and I can suggest a size.');
+  } else {
+    add('Filter', 'Filter' + sizeTxt,
+      gal ? 'Look for a filter rated for ' + rated + ' gallons or more' + (heavy ? ' (you have big or messy fish)' : '') + '. Flow of about ' + flow + ' gallons per hour is a good start.' : 'Add your tank size on the tank page and I can suggest a size.');
+  }
   if (!coolFish) {
     add('Heater', 'Heater' + sizeTxt,
       gal ? 'About ' + Math.round(gal * 3) + ' to ' + Math.round(gal * 5) + ' watts keeps most tanks steady. A second small heater is a good backup in bigger tanks.' : 'Most tropical tanks want 3 to 5 watts per gallon.');
@@ -1985,12 +1965,13 @@ function gearSuggestions(t) {
   if (salt) {
     add('Light', corals ? 'Reef light' : 'Saltwater light', corals ? 'Corals need a reef-grade light with blue and white channels you can dim.' : 'A basic LED is fine for fish-only. Reef-grade if you add corals later.');
     add('Pump or wavemaker', 'Powerhead or wavemaker', corals ? 'Corals like random, gentle flow across the whole tank. Aim for about ' + (gal ? Math.round(gal * 20) : 20 + ' times the tank volume') + ' gallons per hour in total.' : 'Moves water so waste does not settle.');
-    if (gal >= 20 || corals) add('Protein skimmer', 'Protein skimmer', 'Pulls waste out before it breaks down. Pick one rated above your tank size.');
+    if (gal >= 20 || corals) add('Protein skimmer', 'Protein skimmer', ft && ft !== 'sump' ? 'Pulls waste out before it breaks down. With no sump, look for a hang-on-back or in-tank skimmer rated above your tank size.' : 'Pulls waste out before it breaks down. Pick one rated above your tank size.');
     add('Auto top-off', 'Auto top-off', 'Keeps salinity steady by replacing evaporated water with fresh RO/DI water.');
     add('Fan or chiller', 'Cooling fan', 'Small clip-on fans stop summer heat spikes, which stress corals.');
   }
   if (brackish) add('Test kit', 'Hydrometer or refractometer', 'Brackish tanks need a salinity reading too.');
-  if (inverts && !salt) add('Air pump', 'Sponge filter or air pump', 'Shrimp and snails do best with gentle flow, and a sponge filter keeps babies from being sucked in.');
+  if (ft === 'sponge' || ft === 'undergravel') add('Air pump', 'Air pump', 'Drives the ' + ft + ' filter. Pick one rated above your tank size, with an air line and a check valve.');
+  else if (inverts && !salt && ft !== 'sump') add('Air pump', 'Sponge filter or air pump', 'Shrimp and snails do best with gentle flow, and a sponge filter keeps babies from being sucked in.');
   return out;
 }
 
@@ -2011,12 +1992,13 @@ function gearPicks(kind, t) {
   const out = [];
   const P = (tier, name, spec) => out.push({ tier, name, spec });
   const g = Math.round(gal);
+  const ft = t.filter || '';
   if (kind === 'Filter' && gal > 0) {
-    const ac = AQUACLEAR.find((m) => gal >= m[1] && gal * 1.25 <= m[2]) || AQUACLEAR.find((m) => gal >= m[1] && gal <= m[2]); // a little headroom when there is a bigger model
+    const ac = ft && ft !== 'hob' ? null : AQUACLEAR.find((m) => gal >= m[1] && gal * 1.25 <= m[2]) || AQUACLEAR.find((m) => gal >= m[1] && gal <= m[2]); // a little headroom when there is a bigger model
     if (ac) P('Starter', 'AquaClear ' + ac[0], 'Hang-on filter. Rated ' + ac[1] + ' to ' + ac[2] + ' gal, up to ' + ac[3] + ' GPH.');
-    const fl = FLUVAL07.find((m) => gal >= m[1] && gal * 1.25 <= m[2]) || FLUVAL07.find((m) => gal >= m[1] && gal <= m[2]);
+    const fl = ft && ft !== 'canister' ? null : FLUVAL07.find((m) => gal >= m[1] && gal * 1.25 <= m[2]) || FLUVAL07.find((m) => gal >= m[1] && gal <= m[2]);
     if (fl) P('Popular', 'Fluval ' + fl[0], 'Canister filter. Rated ' + fl[1] + ' to ' + fl[2] + ' gal.');
-    if (gal >= 60 && gal <= 400) P('Step up', 'Fluval FX6', 'Large canister filter. Rated up to 400 gal, 925 GPH pump.');
+    if ((!ft || ft === 'canister') && gal >= 60 && gal <= 400) P('Step up', 'Fluval FX6', 'Large canister filter. Rated up to 400 gal, 925 GPH pump.');
   } else if (kind === 'Heater' && gal > 0) {
     const h = JAGER.find((m) => gal > m[0] && gal <= m[1]) || (gal <= 5 ? JAGER[0] : null);
     if (h) P('Popular', 'EHEIM Jäger TruTemp ' + h[2] + 'W', 'Rated ' + h[0] + ' to ' + h[1] + ' gal by the maker. Go up a size if your room runs cold.');
@@ -2036,7 +2018,7 @@ function gearPicks(kind, t) {
   } else if (kind === 'Pump or wavemaker' && salt && gal >= 10 && gal <= 132) {
     P('Starter', 'Tunze Nanostream 6045', '400 to 1,175 GPH with a manual flow slider. Rated for about 10 to 135 gal.');
     P('Step up', 'Tunze Nanostream 6055', '250 to 1,450 GPH, speed controllable. Rated for about 10 to 135 gal.');
-  } else if (kind === 'Protein skimmer' && salt && gal > 0) {
+  } else if (kind === 'Protein skimmer' && salt && gal > 0 && (!ft || ft === 'sump')) {
     const sk = OCTO.find((m) => gal <= m[1]);
     if (sk) P('Popular', 'Reef Octopus Classic ' + sk[0], 'In-sump skimmer, so you need a sump. Bulk Reef Supply recommends it up to ' + sk[1] + ' gal.');
   } else if (kind === 'Auto top-off' && salt && gal > 0) {
@@ -2306,16 +2288,6 @@ $('tank-notes').addEventListener('change', () => {
   const t = getTank(openTankId);
   if (!t) return;
   t.notes = $('tank-notes').value.slice(0, 400);
-  saveState();
-});
-
-$('tank-zip-edit').addEventListener('change', () => {
-  const t = getTank(openTankId);
-  if (!t) return;
-  const v = $('tank-zip-edit').value.trim();
-  if (v && !/^\d{5}$/.test(v)) { $('tank-zip-error').hidden = false; return; }
-  $('tank-zip-error').hidden = true;
-  t.zip = v;
   saveState();
 });
 

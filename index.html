@@ -68,19 +68,18 @@
         </div>
       </div>
 
-      <div class="field">
-        <span class="label" id="water-label">Where does your water come from?</span>
-        <div class="seg3" role="radiogroup" aria-labelledby="water-label">
-          <label class="choice"><input type="radio" name="water" value="city" checked><span>City</span></label>
-          <label class="choice"><input type="radio" name="water" value="well"><span>Well</span></label>
-          <label class="choice"><input type="radio" name="water" value="ro"><span>RO / filtered</span></label>
-        </div>
-      </div>
-
-      <label class="field" id="zip-field">
-        <span class="label">ZIP code (US)</span>
-        <input id="tank-zip" type="text" inputmode="numeric" maxlength="5" placeholder="32065" autocomplete="postal-code">
-        <span class="hint">Used to look up your tap water. It stays on your phone.</span>
+      <label class="field">
+        <span class="label">Filtration</span>
+        <select id="tank-filter" class="select">
+          <option value="">Not set</option>
+          <option value="hob">Hang-on-back (HOB)</option>
+          <option value="canister">Canister</option>
+          <option value="sump">Sump</option>
+          <option value="sponge">Sponge</option>
+          <option value="internal">Internal</option>
+          <option value="undergravel">Undergravel</option>
+          <option value="other">Other</option>
+        </select>
       </label>
 
       <p id="setup-error" class="error" role="alert" hidden></p>
@@ -125,11 +124,6 @@
       <input id="tank-photo-gallery-input" type="file" accept="image/*,.heic,.heif,.avif,.webp,.bmp,.gif,.tif,.tiff" hidden>
       <label class="field"><span class="label">Tank name</span><input id="tank-title-input" class="title-input" type="text" maxlength="40" placeholder="Tank name" aria-label="Tank name" autocomplete="off"></label>
       <div id="tank-pills" class="pills sheet-grid"></div>
-      <label class="field" id="tank-zip-row" hidden>
-        <span class="label">ZIP code for tap water</span>
-        <input id="tank-zip-edit" type="text" inputmode="numeric" maxlength="5" placeholder="32065" autocomplete="postal-code">
-        <span class="error small" id="tank-zip-error" role="alert" hidden>ZIP code should be 5 digits.</span>
-      </label>
       <label class="field"><span class="label">Notes</span>
         <textarea id="tank-notes" class="textarea" maxlength="400" rows="3" placeholder="Filter, lights, fertilizer, anything you want to remember"></textarea></label>
       <button type="button" id="edit-sheet-done" class="btn primary big">Done</button>
@@ -165,14 +159,10 @@
     </div>
   </section>
 
-  <!-- Tap water -->
+  <!-- Water care -->
   <section id="view-water" class="view" hidden>
     <button type="button" id="water-back" class="btn link back">&larr; Back</button>
-    <h1>Tap water</h1>
-    <div class="card" id="water-tap">
-      <h2>Your tap water</h2>
-      <p class="muted" id="water-tap-text"></p>
-    </div>
+    <h1>Water care</h1>
     <div class="card" id="water-recs">
       <h2>Recommended for your water</h2>
       <div id="water-recs-body"></div>
