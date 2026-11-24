@@ -3697,6 +3697,7 @@ async function runFish(deep) {
       }
       const hit = resolveSpecies(r.common_name, r.scientific_name, 'fish check', r.kind);
       fishCheck.name = hit ? hit.n : r.common_name;
+      fishCheck.userPick = false;
       fishCheck.count = hit && hit.c && hit.c.s > 1 ? hit.c.s : (r.care_estimate && r.care_estimate.min_group > 1 ? r.care_estimate.min_group : 1);
     }
   } catch (err) {
@@ -3739,7 +3740,7 @@ async function pickFish(index) {
   const crop = drawToJpeg(fc.image.source, r.x, r.y, r.w, r.h, SINGLE_SIDE, 0.85);
   fc.images = [crop.split(',')[1]];
   fc.picker.active = index;
-  fc.result = null; fc.name = ''; fc.count = 1; fc.error = ''; fc.deep = false;
+  fc.result = null; fc.name = ''; fc.count = 1; fc.error = ''; fc.deep = false; fc.userPick = false;
   await runFish(false);
 }
 
@@ -3909,8 +3910,11 @@ function renderFishCheck() {
   const entry = lookupSpecies(fc.name);
   // A photo alone can't settle the look-alike groups (two rainbowfish, neon vs cardinal and so on), so never say "Confident" for those.
   const group = entry && entry.g && DB.groups[entry.g] ? DB.groups[entry.g] : null;
-  const switched = canonKey(fc.name) !== canonKey(r.common_name);
-  const conf = isGenericName(r.common_name) ? Math.min(r.confidence, 0.6) : (group && group.h ? Math.min(r.confidence, 0.85) : r.confidence);
+  // "Your pick" only when the keeper tapped a different name, not when the app matched the AI's answer by its scientific name.
+  const switched = !!fc.userPick && canonKey(fc.name) !== canonKey(r.common_name);
+  let conf = isGenericName(r.common_name) ? Math.min(r.confidence, 0.6) : (group && group.h ? Math.min(r.confidence, 0.85) : r.confidence);
+  // The AI's common name is not one we know (matched only by scientific name or genus): treat it as unsure.
+  if (entry && !lookupSpecies(r.common_name)) conf = Math.min(conf, 0.75);
   const sure = switched ? ['Your pick', 'ok'] : conf >= 0.95 ? ['Confident', 'ok'] : conf >= 0.8 ? ['Likely', 'warn'] : ['Not sure', 'bad'];
   const card = el('div', { class: 'card dream-result' });
   card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), el('span', { class: 'pill ' + sure[1], text: sure[0] })));
@@ -3935,7 +3939,7 @@ function renderFishCheck() {
         const chunk = chunks.find((ch) => ch.label.toLowerCase().split(/[\s\/(]/)[0] === fw) || chunks.find((ch) => ch.label.toLowerCase().indexOf(fw) >= 0);
         const desc = chunk ? chunk.text : (hit && hit.s ? hit.s : '');
         return el('button', { type: 'button', class: 'lookalike', 'aria-label': 'Switch to ' + x, onclick: () => {
-          fc.name = x; const h2 = lookupSpecies(x); fc.count = h2 && h2.c && h2.c.s > 1 ? h2.c.s : 1; renderFishCheck();
+          fc.name = x; fc.userPick = true; const h2 = lookupSpecies(x); fc.count = h2 && h2.c && h2.c.s > 1 ? h2.c.s : 1; renderFishCheck();
         } }, el('strong', { text: x }), desc ? el('span', { text: desc }) : null);
       })));
   }

@@ -23,7 +23,7 @@ for l in read_lines('groups.txt'):
     if hard.strip() == '1': groups[gid]['h'] = 1
 
 species, errors = [], []
-for fn in ['species_fresh_fish.txt', 'species_fresh_other.txt', 'species_salt.txt', 'species_more_fresh.txt', 'species_more_salt.txt', 'species_batch3.txt', 'species_batch4.txt', 'species_batch5.txt', 'species_batch6.txt', 'species_batch7.txt']:
+for fn in ['species_fresh_fish.txt', 'species_fresh_other.txt', 'species_salt.txt', 'species_more_fresh.txt', 'species_more_salt.txt', 'species_batch3.txt', 'species_batch4.txt', 'species_batch5.txt', 'species_batch6.txt', 'species_batch7.txt', 'species_batch8.txt', 'species_batch9.txt', 'species_batch10.txt', 'species_batch11.txt']:
     for i, l in enumerate(read_lines(fn), 1):
         parts = l.split('|')
         if len(parts) != 6:
@@ -41,7 +41,7 @@ for fn in ['species_fresh_fish.txt', 'species_fresh_other.txt', 'species_salt.tx
 # care data: one row per species, keyed by common name
 by_name = {e['n']: e for e in species}
 care_seen = set()
-for fn in ['care_fresh_fish.txt', 'care_fresh_other.txt', 'care_salt.txt', 'care_more_fresh.txt', 'care_more_salt.txt', 'care_batch3.txt', 'care_batch4.txt', 'care_batch5.txt', 'care_batch6.txt', 'care_batch7.txt']:
+for fn in ['care_fresh_fish.txt', 'care_fresh_other.txt', 'care_salt.txt', 'care_more_fresh.txt', 'care_more_salt.txt', 'care_batch3.txt', 'care_batch4.txt', 'care_batch5.txt', 'care_batch6.txt', 'care_batch7.txt', 'care_batch8.txt', 'care_batch9.txt', 'care_batch10.txt', 'care_batch11.txt']:
     for i, l in enumerate(read_lines(fn), 1):
         p = l.split('|')
         if len(p) != 12:
@@ -68,7 +68,7 @@ for e in species:
     if e['n'] not in care_seen: errors.append('no care row for "' + e['n'] + '"')
 
 # specific diet text (optional per species, shown instead of the generic Diet label)
-for i, l in enumerate(read_lines('diet.txt') + read_lines('diet_more.txt') + read_lines('diet_batch7.txt'), 1):
+for i, l in enumerate(read_lines('diet.txt') + read_lines('diet_more.txt') + read_lines('diet_batch7.txt') + read_lines('diet_batch8.txt') + read_lines('diet_batch9.txt'), 1):
     name, _, text = l.partition('|')
     e = by_name.get(name.strip())
     if not e or 'c' not in e: errors.append(f'diet.txt:{i}: no species with care named "{name}"'); continue
@@ -106,7 +106,7 @@ names = {'f': [], 's': [], 'b': []}
 for e in species:
     for c in e['w']:
         if c in names and e['n'] not in ('Aquarium Plant',): names[c].append(e['n'])
-worker_db = {'g': {g: {'n': groups[g]['n'], 'tip': groups[g]['tip'], 'm': members[g]} for g in groups}, 'k': lookup, 'nm': names}
+worker_db = {'g': {g: dict({'n': groups[g]['n'], 'tip': groups[g]['tip'], 'm': members[g]}, **({'h': 1} if groups[g].get('h') else {})) for g in groups}, 'k': lookup, 'nm': names}
 blob = json.dumps(worker_db, ensure_ascii=False, separators=(',', ':'))
 wp = os.path.join(ROOT, 'schooled-worker.js')
 w = open(wp, encoding='utf-8').read()
