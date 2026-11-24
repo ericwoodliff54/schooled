@@ -73,7 +73,7 @@ const TYPE_NOTES = {
 };
 
 // Test-only: lets the close-up check look up what separates the candidate species. Search works from text, not from the photo.
-const GROUND_NOTE = 'You may use Google Search to check which visible features separate the candidate species (and their look-alikes) in reliable aquarium or biology sources. ' +
+const GROUND_NOTE = 'For every entry where two or more species are plausible, you must run a Google Search first to check which visible features separate the candidate species (and their look-alikes) in reliable aquarium or biology sources. ' +
   'Search cannot see the picture, so judge the picture yourself and use search only to confirm which features matter. Do not change an answer unless the picture matches the searched features.';
 const GROUND_JSON_NOTE = ' Reply with only one JSON object shaped {"items":[{"index":0,"common_name":"","scientific_name":"","confidence":0.0,"alternatives":[]}]} and nothing else.';
 const VERIFY_PROMPT =

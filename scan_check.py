@@ -133,6 +133,7 @@ def main():
 
     photo_cache, results, sent, sent_verify = {}, [], 0, 0
     sent_ground, searches = 0, 0
+    gstat = {'no_field': 0, 'plain_json': 0, 'failed': 0}
     for ti in range(a.tanks):
         ttype = 'Saltwater' if ti % 3 == 2 and len(pool['Saltwater']) >= per else 'Freshwater'
         if len(pool[ttype]) < per:
@@ -198,6 +199,12 @@ def main():
                     if a.ground:
                         gchk = call_verify(a.worker, key, [m for f, m in pairs], items, ttype, ground=True)
                         sent_ground += 1
+                        if not gchk.get('ok', True) or gchk.get('error'):
+                            gstat['failed'] += 1
+                        elif 'ground' not in gchk:
+                            gstat['no_field'] += 1
+                        elif (gchk.get('ground') or {}).get('plain_json'):
+                            gstat['plain_json'] += 1
                         searches += len((gchk.get('ground') or {}).get('queries') or [])
                         for f, m in pairs:
                             f['g_said'], f['g_matched'] = None, None
@@ -232,10 +239,10 @@ def main():
         print('Tank %d: %d of %d found' % (ti + 1, len(row['hits']), len(truth)))
         time.sleep(delay)
 
-    write_report(a, results, sent, sent_verify, db, sent_ground, searches)
+    write_report(a, results, sent, sent_verify, db, sent_ground, searches, gstat)
 
 
-def write_report(a, results, sent, sent_verify, db, sent_ground=0, searches=0):
+def write_report(a, results, sent, sent_verify, db, sent_ground=0, searches=0, gstat=None):
     ok = [r for r in results if 'found' in r]
     total = sum(len(r['truth']) for r in ok)
     hits = sum(len(r['hits']) for r in ok)
@@ -297,6 +304,7 @@ def write_report(a, results, sent, sent_verify, db, sent_ground=0, searches=0):
                   '| Species found (recall) | %d of %d (%s) | %d of %d (%s) |' % (hits, total, pct(hits, total), gh, total, pct(gh, total)),
                   '| Answers not in the tank | %d | %d |' % (extras, gx), '',
                   'Searches the model ran: %d across %d checks.' % (searches, sent_ground), '',
+                  'Search diagnostics: %d checks came back with no search information at all (worker not updated, or test key not accepted), %d fell back to plain JSON because Google rejected search with the format, %d failed.' % ((gstat or {}).get('no_field', 0), (gstat or {}).get('plain_json', 0), (gstat or {}).get('failed', 0)), '',
                   '**Search made it right (%d):** %s' % (len(better), '; '.join(better) or 'none'), '',
                   '**Search made it wrong (%d):** %s' % (len(worse), '; '.join(worse) or 'none'), '']
     lines += ['', '## Cost', '', '%d scans plus %d zoom-in checks. A first look costs about 0.55 cents and a zoom-in check roughly 0.3 cents, so this run cost about %.1f cents.' % (sent, sent_verify, sent * 0.55 + sent_verify * 0.3)]
