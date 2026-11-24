@@ -1,0 +1,39 @@
+name: Offline ID fingerprints
+
+# Run it by hand: Actions tab, "Offline ID fingerprints", Run workflow.
+# Collects photos that allow commercial use (iNaturalist, Wikimedia Commons), turns them into fingerprints with
+# two free image models (small and large), and writes a report card on how well offline ID would work.
+# No AI calls, no cost. A full run takes roughly 1.5 to 3 hours; a test run of 40 species takes a few minutes.
+# Results: the report shows on the run's page; files (report, coverage, credits, fingerprints) are under Artifacts.
+
+on:
+  workflow_dispatch:
+    inputs:
+      species:
+        description: 'How many species (0 = all; try 40 first as a quick test)'
+        default: '40'
+      photos:
+        description: 'Photos per species (more = better, slower)'
+        default: '30'
+      kinds:
+        description: 'Only these kinds, comma separated (fish, coral, plant, invert, shrimp, snail). Blank = all'
+        default: ''
+      water:
+        description: 'f = freshwater only, s = saltwater only, blank = both'
+        default: ''
+      models:
+        description: 'Which models to compare (small, large)'
+        default: 'small,large'
+      seed:
+        description: 'Same number = same species picked in a partial run'
+        default: '7'
+
+permissions:
+  contents: read
+
+jobs:
+  fingerprints:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
