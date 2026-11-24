@@ -2960,7 +2960,7 @@ function summaryStrip(t) {
   const pill = canOpen
     ? el('button', { type: 'button', class: 'compat-pill', 'aria-expanded': String(open), onclick: () => { mateOpen = !open; renderTank(); } }, ...inner)
     : el('div', { class: 'compat-pill static' }, ...inner);
-  return { row: el('div', { class: 'sum-stack' }, stock, pill), showMates: open };
+  return { row: el('div', { class: 'sum-stack' }, stock, el('div', { class: 'compat-wrap' + (open ? ' open' : '') }, pill, open ? mateCheckCard(t) : null)), showMates: false };
 }
 function mateCheckCard(t) {
   const all = tankCheck(t).issues;
@@ -2971,8 +2971,7 @@ function mateCheckCard(t) {
     ? el('span', { class: 'pill ok', text: cleared ? 'Cleared' : 'All clear' })
     : el('span', { class: 'pill ' + (bad ? 'bad' : 'warn'), text: r.issues.length + (r.issues.length === 1 ? ' thing to look at' : ' things to look at') });
   const shown = mateShowAll ? r.issues : r.issues.slice(0, 5);
-  const card = el('div', { class: 'card' },
-    el('div', { class: 'card-head' }, el('h2', { text: 'Compatibility' }), el('span', { class: 'card-head-right' }, chip, el('button', { type: 'button', class: 'btn small', id: 'compat-hide', text: 'Hide', onclick: () => { mateOpen = false; renderTank(); } }))));
+  const card = el('div', { class: 'compat-body' });
   if (!t.fish.length) card.append(el('p', { class: 'muted small', text: 'Add fish and I will check how they get along.' }));
   else if (!r.issues.length) card.append(el('p', { class: 'muted small', text: cleared ? 'You cleared everything I flagged.' : (r.checked ? 'No problems found between the ' + r.checked + ' kinds I could check.' : 'None of these names are in the species list yet, so nothing could be checked.') }));
   shown.forEach((i) => card.append(
