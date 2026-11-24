@@ -332,6 +332,7 @@ function cleanFish(list) {
     .map((f) => {
       const item = { name: f.name.trim().slice(0, 60), count: Math.min(999, Math.max(1, Math.round(Number(f.count)) || 1)) };
       if (KIND_LIST.includes(f.kind)) item.kind = f.kind;
+      if (typeof f.photo === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(f.photo) && f.photo.length < 600000) item.photo = f.photo;
       return item;
     });
 }
@@ -1352,7 +1353,7 @@ function ensureTank() {
   return t;
 }
 
-function addToTank(tank, name, count, mode, kind) {
+function addToTank(tank, name, count, mode, kind, photo) {
   let clean = name.trim().slice(0, 60);
   if (!clean) return '';
   const hit = lookupSpecies(clean);
@@ -1362,12 +1363,15 @@ function addToTank(tank, name, count, mode, kind) {
   if (existing) {
     const before = existing.count;
     if (kind && !existing.kind) existing.kind = kind;
+    if (photo && !existing.photo) existing.photo = photo;
     if (mode === 'add') existing.count = Math.min(999, existing.count + count);
     else if (mode === 'scan') existing.count = Math.max(existing.count, count); // a scan can only add or confirm, never lower
     else existing.count = count;
     return existing.count > before ? 'raised' : 'same';
   }
-  tank.fish.push(kind && KIND_LIST.includes(kind) ? { name: clean, count, kind } : { name: clean, count });
+  const row = kind && KIND_LIST.includes(kind) ? { name: clean, count, kind } : { name: clean, count };
+  if (photo) row.photo = photo;
+  tank.fish.push(row);
   return 'new';
 }
 
@@ -2582,6 +2586,28 @@ function drawToJpeg(source, sx, sy, sw, sh, maxSide, quality) {
   return canvas.toDataURL('image/jpeg', quality);
 }
 
+// A small square picture of one fish, cut from the scan photo, to use as its icon in the tank.
+// box is [ymin, xmin, ymax, xmax] from 0 to 1000; without a box the middle of the photo is used.
+const FISH_THUMB_SIDE = 240;
+function fishThumb(image, box) {
+  try {
+    if (!image || !image.source || !image.width) return '';
+    const W = image.width, H = image.height;
+    let cx = W / 2, cy = H / 2, side = Math.min(W, H);
+    if (Array.isArray(box) && box.length === 4) {
+      const x1 = box[1] / 1000 * W, x2 = box[3] / 1000 * W, y1 = box[0] / 1000 * H, y2 = box[2] / 1000 * H;
+      if (Math.min(x2 - x1, y2 - y1) < 40) return ''; // too small in the photo to make a useful icon
+      cx = (x1 + x2) / 2; cy = (y1 + y2) / 2;
+      side = Math.min(Math.max(x2 - x1, y2 - y1) * 1.15, W, H);
+    }
+    const sx = Math.max(0, Math.min(W - side, cx - side / 2)), sy = Math.max(0, Math.min(H - side, cy - side / 2));
+    return drawToJpeg(image.source, sx, sy, side, side, FISH_THUMB_SIDE, 0.8);
+  } catch (err) { return ''; }
+}
+function biggestBox(boxes) {
+  return (boxes || []).slice().sort((a, b) => (b[2] - b[0]) * (b[3] - b[1]) - (a[2] - a[0]) * (a[3] - a[1]))[0] || null;
+}
+
 // The first, cheap request: one sharp picture of the whole tank.
 function makeSingle(image) {
   const sharp = drawToJpeg(image.source, 0, 0, image.width, image.height, SINGLE_SIDE, 0.8);
@@ -2998,6 +3024,7 @@ async function startScan(file, append, note, force) {
       }
     }
     if (qualityTip) pending.tips = pending.tips ? pending.tips + ' ' + qualityTip : qualityTip;
+    pending.species.forEach((sp) => { if (!sp.thumb && sp.boxes && sp.boxes.length) sp.thumb = fishThumb(image, biggestBox(sp.boxes)); });
     if (!pending.error && pending.species.length) {
       if (scanCache.size >= 6) scanCache.delete(scanCache.keys().next().value);
       scanCache.set(cacheKey, { t: Date.now(), species: JSON.stringify(pending.species), tips: pending.tips });
@@ -3190,8 +3217,9 @@ $('save-scan').addEventListener('click', () => {
   if (!pending) return;
   const target = getTank(pending.tankId) || ensureTank();
   const out = { new: 0, raised: 0, same: 0 };
-  pending.species.forEach((sp) => { const r = addToTank(target, sp.name, sp.count, 'scan', sp.kind); if (r) out[r] += 1; });
-  saveState();
+  const before = new Set(target.fish.filter((f) => f.photo).map((f) => f));
+  pending.species.forEach((sp) => { const r = addToTank(target, sp.name, sp.count, 'scan', sp.kind, sp.thumb || ''); if (r) out[r] += 1; });
+  if (!saveState()) { target.fish.forEach((f) => { if (f.photo && !before.has(f)) delete f.photo; }); saveState(); }
   pending = null;
   showTank(target.id);
   const bits = [];
@@ -4040,8 +4068,12 @@ function renderFishCheck() {
   if (box) card.append(el('h2', { class: 'dream-list-h', text: 'Tank mates' }), box);
   const buttons = el('div', { class: 'row photo-actions' });
   if (t) buttons.append(el('button', { type: 'button', class: 'btn primary', text: 'Add to ' + tankLabel(t), onclick: () => {
-    addToTank(t, fc.name, fc.count, 'add', r.kind);
-    saveState();
+    const active = fc.picker && fc.picker.items[fc.picker.active];
+    const thumb = fishThumb(fc.image, (active && active.box) || r.main_box || null);
+    const had = t.fish.find((f) => canonKey(f.name) === canonKey(lookupSpecies(fc.name) ? lookupSpecies(fc.name).n : fc.name));
+    const hadPhoto = !!(had && had.photo);
+    addToTank(t, fc.name, fc.count, 'add', r.kind, thumb);
+    if (!saveState() && !hadPhoto) { const row = t.fish.find((f) => canonKey(f.name) === canonKey(lookupSpecies(fc.name) ? lookupSpecies(fc.name).n : fc.name)); if (row) delete row.photo; saveState(); }
     toast('Added ' + fc.count + ' ' + fc.name + ' to ' + tankLabel(t) + '.');
     renderFishCheck();
   } }));
