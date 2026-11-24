@@ -53,7 +53,7 @@ const PROMPT =
   'Plants and corals matter as much as fish: list every clearly visible kind of plant or macroalgae (kind "plant") and coral (kind "coral"), and crabs, anemones, clams, urchins, starfish and worms (kind "invert"). ' +
   'Name plants and corals by the common hobby name, for example Amazon Sword, Java Fern, Cryptocoryne, Vallisneria, Anubias, Ludwigia, Hornwort, Java Moss, Hammer Coral, Torch Coral, Zoanthids, Mushroom Coral, Acropora, Montipora, Green Star Polyps, Xenia. ' +
   'If you can only tell the group, give the group name (for example Stem Plant). Count separate plants or colonies; a carpet, mat or dense stand counts as 1. ' +
-  'For each fish, coral or invertebrate entry also give "boxes": up to 3 tight bounding boxes around the clearest, largest individuals, each as [ymin, xmin, ymax, xmax] in whole numbers from 0 to 1000 relative to the whole image, where 0,0 is the top left. Give no boxes for plants. ' +
+  'For each fish, coral, invertebrate or plant entry also give "boxes": up to 3 tight bounding boxes around the clearest, largest individuals (for a plant, its clearest leaves or clump, with the leaf shape and edges showing), each as [ymin, xmin, ymax, xmax] in whole numbers from 0 to 1000 relative to the whole image, where 0,0 is the top left. ' +
   'Only list what you can actually see clearly. If the photo is very dark, blurry or reflective, list fewer things with low confidence rather than guessing; never list a plant, coral or fish you cannot see. ' +
   'Glass and the water surface act like mirrors, so the same fish can appear twice. A reflection is usually dimmer, mirrored or cut off, sits against a glass pane or just under the waterline, and copies the position and pose of a real fish. Never count reflections as extra fish: count each real fish once, and when you cannot tell a reflection from a real fish, count the lower number. ' +
   'Set too_far to true if many fish are too small or far away to identify reliably. ' +
@@ -74,7 +74,7 @@ const TYPE_NOTES = {
 
 const VERIFY_PROMPT =
   'You are double-checking species names in an aquarium. Each numbered entry has one image: a montage of close-up crops of the same kind of animal, ' +
-  'side by side, cut from a larger photo. For each entry decide the most likely species or hobby trade name. ' +
+  'side by side, cut from a larger photo. The entries can be fish, corals, invertebrates or plants. For each entry decide the most likely species or hobby trade name. For a plant, go by leaf shape, leaf edges, size, color, stem or rhizome and how it grows (rosette, stem, carpet, attached to wood). For a coral, go by polyp shape, skeleton shape and color. ' +
   'Give the best guess the pictures support. Use confidence 0.85 or higher only when the features that tell the species apart are clearly visible. ' +
   'If the crops are small, blurry or unclear, say so with a lower confidence. If the crops do not show the named animal at all, use the name "Unidentified" with confidence below 0.3. ' +
   'If the keeper lists the species in this tank and the crops could be one of them, prefer a name from that list. ' +
@@ -206,7 +206,7 @@ function cleanSci(value) {
 
 // Bounding boxes from the AI are [ymin, xmin, ymax, xmax] from 0 to 1000. Keep only sensible ones.
 function cleanBoxes(list, kind) {
-  if (kind === 'plant' || !Array.isArray(list)) return [];
+  if (!Array.isArray(list)) return [];
   const out = [];
   for (const b of list) {
     if (!Array.isArray(b) || b.length !== 4) continue;

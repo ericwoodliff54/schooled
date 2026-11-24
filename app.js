@@ -2668,7 +2668,7 @@ function applyResult(data, mode) {
 const VERIFY_MAX = 6;
 function needsVerify(sp) {
   const group = sp.group && DB.groups[sp.group];
-  if (!(sp.kind === 'fish' || sp.kind === 'coral' || sp.kind === 'invert' || group)) return false;
+  if (!(sp.kind === 'fish' || sp.kind === 'coral' || sp.kind === 'invert' || sp.kind === 'plant' || group)) return false;
   if (!sp.boxes || !sp.boxes.length) return false;
   return sp.confidence < 0.9 || !!(group && group.h) || !lookupSpecies(sp.name);
 }
@@ -2866,7 +2866,7 @@ async function startScan(file, append, note) {
 
     const targets = pending.species.filter(needsVerify).sort((a, b) => a.confidence - b.confidence).slice(0, VERIFY_MAX);
     if (targets.length) {
-      pending.loadingNote = 'Zooming in on the fish that are hard to tell apart\u2026';
+      pending.loadingNote = 'Zooming in on the ones that are hard to tell apart\u2026';
       renderResults();
       try {
         const montages = targets.map((sp) => makeMontage(image, sp.boxes));
