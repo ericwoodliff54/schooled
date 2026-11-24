@@ -24,7 +24,9 @@ COMMONS = 'https://commons.wikimedia.org/w/api.php'
 INAT_LICENSES = {'cc0', 'cc-by', 'cc-by-sa'}
 COMMONS_OK = re.compile(r'^(cc0|cc-zero|public domain|pd\b|pd-|cc by(-sa)? \d)', re.I)
 COMMONS_BAD = re.compile(r'\b(nc|nd|non-?commercial|noderiv)', re.I)
-BAD_WORDS = re.compile(r'\b(drawing|illustration|diagram|map|stamp|skeleton|painting|print|plate|logo|cartoon|sketch|specimen label|fossil|egg|larva|fry|herbarium|preserved)\b', re.I)
+BAD_WORDS = re.compile(r'\b(drawing|illustration|diagram|map|stamp|skeleton|painting|print|plate|logo|cartoon|sketch|specimen|specimens|fossil|egg|larva|fry|herbarium|preserved|museum|museo|nmnh|ypm|mnhn|holotype|paratype|syntype|dead|catch|fishing|market|cooked|fried|dish)\b', re.I)
+# Words that mark a color variety rather than the plain species (used to pick which entry gets the species photos)
+VARIETY_WORDS = re.compile(r'\b(albino|gold|golden|red|blue|black|white|platinum|snowflake|picasso|koi|marble|marbled|veil|veiltail|long ?fin|longfin|glofish|pineapple|lemon|green|orange|yellow|pink|purple|calico|leopard|electric|neon|powder|flame|sunset|mickey|wag|lionhead|telescope|pearlscale|oranda|ranchu|ryukin|bubble|crowntail|halfmoon|plakat|dragon|super|lightning|wyoming|balloon|dalmatian|lyretail|fancy|panda)\b', re.I)
 MODELS = {
     'small': 'mobilenetv3_large_100.ra_in1k',
     'large': 'vit_small_patch14_dinov2.lvd142m',
@@ -87,7 +89,8 @@ def inat_photos(api, taxon_id, want):
             break
         j = api.get_json(INAT + '/observations', {
             'taxon_id': taxon_id, 'quality_grade': 'research' if captive == 'false' else 'any', 'captive': captive,
-            'photo_license': ','.join(sorted(INAT_LICENSES)), 'photos': 'true', 'per_page': 60, 'order_by': 'votes'})
+            'photo_license': ','.join(sorted(INAT_LICENSES)), 'photos': 'true', 'per_page': 60, 'order_by': 'votes',
+            'term_id': 17, 'without_term_value_id': 19})  # leave out observations marked as dead
         for ob in j.get('results') or []:
             # captive observations cannot be research grade on iNaturalist; require community agreement instead
             if captive == 'true' and not (ob.get('community_taxon_id') == taxon_id or ob.get('quality_grade') == 'research'):
@@ -109,6 +112,7 @@ def commons_photos(api, query, must_contain, want):
         'gsrnamespace': 6, 'gsrlimit': 50, 'prop': 'imageinfo', 'iiprop': 'url|mime|size|extmetadata',
         'iiurlwidth': 500, 'iiextmetadatafilter': 'LicenseShortName|ImageDescription|Categories|Artist'})
     out = []
+    series_count = collections.Counter()
     for p in ((j.get('query') or {}).get('pages') or {}).values():
         ii = (p.get('imageinfo') or [None])[0]
         if not ii or ii.get('mime') not in ('image/jpeg', 'image/png') or (ii.get('width') or 0) < 400:
@@ -118,11 +122,16 @@ def commons_photos(api, query, must_contain, want):
         if not COMMONS_OK.search(lic) or COMMONS_BAD.search(lic):
             continue
         title = p.get('title', '')
-        if BAD_WORDS.search(title):
+        cats = str((meta.get('Categories') or {}).get('value', ''))
+        if BAD_WORDS.search(title) or BAD_WORDS.search(cats):
             continue
         text = norm_key(' '.join([title] + [str((meta.get(k) or {}).get('value', '')) for k in ('ImageDescription', 'Categories')]))
         if norm_key(must_contain) not in text:
             continue
+        series = re.sub(r'[\s_-]*\(?\d+\)?(\s*\(cropped\))?\.(jpe?g|png)$', '', title.lower())
+        if series_count[series] >= 2:  # several shots of one specimen would make the test too easy
+            continue
+        series_count[series] += 1
         out.append({'url': ii.get('thumburl') or ii.get('url'), 'source': 'Wikimedia Commons', 'license': lic,
                     'author': re.sub(r'<[^>]+>', '', str((meta.get('Artist') or {}).get('value', '')))[:120],
                     'page': ii.get('descriptionurl', '')})
@@ -174,11 +183,18 @@ def plan_classes(db, kinds, water, limit, rng):
     by_base = collections.defaultdict(list)
     for e in species:
         by_base[base_sci(e.get('s', ''))].append(e)
+    # When several entries share one scientific name, the plain one (no color word, shortest name) is the species
+    # and gets the iNaturalist photos; the others are varieties and are searched by their own name.
+    primary = {}
+    for b, group in by_base.items():
+        if b and len(group) > 1:
+            plain = [x for x in group if not VARIETY_WORDS.search(x['n']) and not re.search(r"['\"‘’]", x.get('s', ''))]
+            primary[b] = min(plain or group, key=lambda x: (len(x['n'].split()), len(x['n'])))['n']
     classes = []
     for e in species:
         b = base_sci(e.get('s', ''))
         shared = len(by_base[b]) > 1 if b else False
-        variety = shared or bool(re.search(r"['\"‘’]", e.get('s', '')))
+        variety = (shared and primary.get(b) != e['n']) or bool(re.search(r"['\"‘’]", e.get('s', '')))
         classes.append({'name': e['n'], 'kind': e['k'], 'water': e['w'], 'group': e.get('g', ''), 'base': b,
                         'variety': variety, 'shared_with': [x['n'] for x in by_base[b] if x is not e] if shared else []})
     if limit:
@@ -204,7 +220,7 @@ def dedupe(photos):
     return out
 
 
-def evaluate(emb, labels, names_list, classes, rng, holdout=0.2):
+def evaluate(emb, labels, names_list, classes, rng, aq_flags, holdout=0.2):
     """Hold back ~20% of each class (classes with 5+ photos), match each held-back photo to the nearest
     reference photo of every class, and score top-1 / top-3."""
     import numpy as np
@@ -236,6 +252,10 @@ def evaluate(emb, labels, names_list, classes, rng, holdout=0.2):
     truth = np.array([labels[i] for i in test])
     top1 = order[:, 0] == truth
     top3 = (order == truth[:, None]).any(axis=1)
+    # right species, any color variety (e.g. Picasso taken for Ocellaris)
+    same_species = np.array([bool(classes[t]['base']) and classes[o]['base'] == classes[t]['base'] for t, o in zip(truth, order[:, 0])])
+    sp1 = top1 | same_species
+    aq = np.array([aq_flags[i] for i in test], dtype=bool)
     conf = collections.Counter()
     per_group = collections.defaultdict(lambda: [0, 0, 0])
     per_kind = collections.defaultdict(lambda: [0, 0, 0])
@@ -247,7 +267,8 @@ def evaluate(emb, labels, names_list, classes, rng, holdout=0.2):
             bucket[key][2] += int(ok3)
         if not ok1:
             conf[(names_list[t], names_list[o[0]])] += 1
-    return {'n': len(test), 'top1': float(top1.mean()), 'top3': float(top3.mean()),
+    return {'n': len(test), 'top1': float(top1.mean()), 'top3': float(top3.mean()), 'species1': float(sp1.mean()),
+            'aq_n': int(aq.sum()), 'aq_top1': float(top1[aq].mean()) if aq.any() else None, 'aq_top3': float(top3[aq].mean()) if aq.any() else None,
             'per_group': dict(per_group), 'per_kind': dict(per_kind), 'confusions': conf.most_common(25)}
 
 
@@ -285,7 +306,7 @@ def main():
     dl.headers['User-Agent'] = UA
 
     feats = {k: [] for k in models}
-    labels, credits, coverage = [], [], []
+    labels, credits, coverage, aq_flags = [], [], [], []
     stopped_early = False
     for ci, c in enumerate(classes):
         if (time.time() - t0) / 60 > a.max_minutes:
@@ -318,6 +339,7 @@ def main():
                 for k in models:
                     feats[k].append(out[k].astype(np.float32))
             labels += [ci] * len(imgs)
+            aq_flags += ['aquarium' in p['source'] for p in kept]
             for p in kept:
                 credits.append([c['name'], p['source'], p['license'], p['author'], p['page']])
         srcs = collections.Counter(p['source'].split(' ')[0] for p in kept)
@@ -337,7 +359,7 @@ def main():
         lab = np.array(labels)
         np.savez_compressed(os.path.join(a.out, f'fingerprints_{k}.npz'), fingerprints=E.astype(np.float16), labels=lab,
                             names=np.array(names_list), model=np.array(models[k]))
-        results[k] = evaluate(E, labels, names_list, classes, random.Random(a.seed))
+        results[k] = evaluate(E, labels, names_list, classes, random.Random(a.seed), aq_flags)
         params = emb_model.models[k][2]
         dim = E.shape[1]
         n_cls = len(set(labels))
@@ -383,17 +405,20 @@ def write_report(a, classes, coverage, results, sizes, labels, stopped_early, mi
     L.append('## How well it recognizes held-back photos')
     L.append('')
     L.append('Each species with 5 or more photos had about 1 in 5 photos held back. Each held-back photo was matched '
-             'against all the rest. "Top 1" = the right species came first; "Top 3" = it was in the first three.')
+             'against all the rest. "Top 1" = the right species came first; "Top 3" = it was in the first three. '
+             '"Aquarium photos only" scores just the held-back photos taken in aquariums, the closest to real use in a store. '
+             'Model sizes are already the compressed size the app would download.')
     L.append('')
-    L.append('| Model | Photos tested | Top 1 | Top 3 | Model size | Offline pack (fingerprints) |')
-    L.append('|---|---|---|---|---|---|')
+    L.append('| Model | Photos tested | Top 1 | Top 3 | Right species, any variety | Aquarium photos only: top 1 / top 3 | App download (model + fingerprints) |')
+    L.append('|---|---|---|---|---|---|---|')
     for k, r in results.items():
         if not r:
-            L.append(f'| {k} | 0 | – | – | | |')
+            L.append(f'| {k} | 0 | – | – | – | – | |')
             continue
         s = sizes[k]
-        L.append(f'| {k} ({MODELS[k].split(".")[0]}) | {r["n"]} | {pct(r["top1"])} | {pct(r["top3"])} | '
-                 f'~{s["model_mb"]:.0f} MB (shrinks to about a quarter in the app) | {s["pack_centroids_mb"]:.2f} MB small / {s["pack_all_mb"]:.2f} MB full |')
+        aqs = f'{pct(r["aq_top1"])} / {pct(r["aq_top3"])} ({r["aq_n"]} photos)' if r['aq_top1'] is not None else '–'
+        L.append(f'| {k} ({MODELS[k].split(".")[0]}) | {r["n"]} | {pct(r["top1"])} | {pct(r["top3"])} | {pct(r["species1"])} | {aqs} | '
+                 f'~{s["model_mb"]:.0f} MB model + {s["pack_all_mb"]:.1f} MB fingerprints (or {s["pack_centroids_mb"]:.1f} MB trimmed) |')
     L.append('')
     best = max((k for k in results if results[k]), key=lambda k: results[k]['top1'], default=None)
     if best:
