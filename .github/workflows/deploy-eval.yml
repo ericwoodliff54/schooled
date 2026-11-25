@@ -1,0 +1,24 @@
+# Save this in GitHub as:  .github/workflows/deploy-eval.yml
+# Auto-deploys the schooled-eval worker whenever eval-worker.js or wrangler-eval.toml changes.
+name: Deploy eval worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "eval-worker.js"
+      - "wrangler-eval.toml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          # Use the same secret names your schooled-worker workflow already uses.
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --config wrangler-eval.toml
+
