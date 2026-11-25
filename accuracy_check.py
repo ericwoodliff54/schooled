@@ -111,6 +111,20 @@ def download(url):
     return None
 
 
+# Google list prices, dollars per million tokens (input, output including thinking). Used to cost a run from the tokens the Worker reports.
+PRICES = {'gemini-3.5-flash-lite': (0.30, 2.50), 'gemini-3.6-flash': (0.75, 3.75), 'gemini-3.7-flash': (0.75, 3.75), 'gemini-3.8-flash': (0.75, 3.75),
+          'gemini-3.5-flash': (1.50, 9.00), 'gemini-4-hydrogen': (1.50, 7.50)}
+RUN_COST = [0.0]
+
+
+def add_cost(data):
+    """Add the dollar cost of one Worker reply, counting a discarded first look when a second opinion ran."""
+    for model, u in ((data.get('model'), data.get('usage')), ((data.get('first_pass') or {}).get('model'), (data.get('first_pass') or {}).get('usage'))):
+        p = PRICES.get(model or '')
+        if p and u:
+            RUN_COST[0] += (u.get('input', 0) * p[0] + u.get('output', 0) * p[1]) / 1e6
+
+
 def call_worker(worker, key, image, mime, tank_type, variant='app'):
     headers = {'Origin': ORIGIN, 'Content-Type': 'application/json'}
     if key:
@@ -228,6 +242,7 @@ def main():
                 u = data.get('usage') or {}
                 usage_in += u.get('input', 0)
                 usage_out += u.get('output', 0)
+                add_cost(data)
                 models[data.get('model', '?')] += 1
                 hit, how = db.resolve(f.get('common_name'), f.get('scientific_name'))
                 conf = f.get('confidence') or 0
@@ -336,7 +351,7 @@ def write_report(a, db, results, sent, uin, uout, models):
         said = '; '.join('%s%s' % (r.get('answer', '') or '-', '' if r['verdict'] == 'correct' else ' (x)') for r in rs)
         lines.append('| %s | %d | %d | %s |' % (e[1], len(rs), sum(1 for r in rs if r['verdict'] == 'correct'), said))
     lines.append('')
-    lines += ['## Cost', '', '%d Worker calls. Tokens in: %d, out: %d. Models: %s. At the measured ~0.15 cents per Fish Check this run cost roughly %.1f cents.' % (sent, uin, uout, ', '.join('%s x%d' % kv for kv in models.items()) or '-', sent * 0.15), '',
+    lines += ['## Cost', '', '%d Worker calls. Tokens in: %d, out: %d. Models: %s. Cost from the tokens at list prices: %.1f cents in all, %.2f cents per photo.' % (sent, uin, uout, ', '.join('%s x%d' % kv for kv in models.items()) or '-', RUN_COST[0] * 100, RUN_COST[0] * 100 / max(1, sent)), '',
               'Photos come from Wikimedia Commons under free licenses; the links above lead to each photo page with its author and license.']
     os.makedirs(a.out, exist_ok=True)
     text = '\n'.join(lines) + '\n'
