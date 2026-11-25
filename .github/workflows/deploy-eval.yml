@@ -8,6 +8,7 @@ on:
     paths:
       - "eval-worker.js"
       - "wrangler-eval.toml"
+      - ".github/workflows/deploy-eval.yml"
   workflow_dispatch:
 
 jobs:
