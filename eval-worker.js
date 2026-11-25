@@ -100,9 +100,34 @@ async function callHydrogen(env, modelId, prompt, image, mime) {
 
 export default {
   async fetch(request, env) {
+    // Any unexpected crash still returns CORS headers, so the page shows the real error
+    // instead of a bare "Failed to fetch".
+    try {
+      return await handle(request, env);
+    } catch (err) {
+      return json({ ok: false, error: "Worker crashed: " + String(err?.message || err) }, 500);
+    }
+  },
+};
+
+async function handle(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
 
     const url = new URL(request.url);
+
+    // Health check: open https://<worker>/health in a browser to confirm it's live.
+    if (request.method === "GET" && (url.pathname === "/health" || url.pathname === "/")) {
+      return json({
+        ok: true,
+        worker: "schooled-eval",
+        secrets: {
+          ANTHROPIC_API_KEY: !!env.ANTHROPIC_API_KEY,
+          GEMINI_API_KEY: !!env.GEMINI_API_KEY,
+          EVAL_TOKEN: !!env.EVAL_TOKEN,
+        },
+      });
+    }
+
     if (request.method !== "POST" || url.pathname !== "/eval") {
       return json({ ok: false, error: "Use POST /eval" }, 404);
     }
@@ -154,5 +179,4 @@ export default {
         error: String(err.message || err),
       });
     }
-  },
-};
+}

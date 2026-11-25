@@ -71,6 +71,10 @@
       <div><label>Runs per photo (checks consistency)</label>
         <select id="repeats"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
     </div>
+    <div class="row" style="margin-top:10px">
+      <button class="secondary" id="testConn">Test connection</button>
+      <span class="muted" id="connStatus"></span>
+    </div>
     <details>
       <summary>Models, prices and prompt</summary>
       <div class="grid" style="margin-top:8px">
@@ -322,8 +326,45 @@ function score(expectedIds, parsed){
 
 /* ---------- running ---------- */
 let results = [];
+// Accepts "schooled-eval.x.workers.dev", ".../eval", trailing slashes, etc.
+function workerBase(){
+  let u = val("workerUrl").replace(/\s+/g, "");
+  if (u && !/^https?:\/\//i.test(u)) u = "https://" + u;
+  return u.replace(/\/+$/, "").replace(/\/(eval|health)$/i, "");
+}
+const FETCH_HELP = "Couldn't reach the worker. Check that the URL is right and that the schooled-eval worker is deployed (open the URL + /health in a new tab, and it should show ok: true).";
+
+async function testConnection(){
+  const base = workerBase();
+  if (!base) return { ok:false, msg:"Enter the worker URL first." };
+  let health;
+  try{
+    const r = await fetch(base + "/health");
+    health = await r.json();
+  }catch{
+    return { ok:false, msg: FETCH_HELP };
+  }
+  if (!health?.ok || health.worker !== "schooled-eval")
+    return { ok:false, msg:"That URL answered, but it isn't the schooled-eval worker. Check the address." };
+  const missing = Object.entries(health.secrets || {}).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) return { ok:false, msg:"Worker is live, but these secrets are missing in Cloudflare: " + missing.join(", ") };
+  try{
+    const r = await fetch(base + "/eval", { method:"POST", headers:{ "Content-Type":"application/json", "X-Eval-Token": val("token") }, body:"{}" });
+    if (r.status === 401) return { ok:false, msg:"Worker is live, but the passcode doesn't match EVAL_TOKEN." };
+  }catch{
+    return { ok:false, msg: FETCH_HELP };
+  }
+  return { ok:true, msg:"Connected. Worker is live, all 3 secrets are set and the passcode works." };
+}
+$("testConn").onclick = async () => {
+  $("connStatus").textContent = "Checking…"; $("connStatus").style.color = "";
+  const r = await testConnection();
+  $("connStatus").textContent = r.msg;
+  $("connStatus").style.color = r.ok ? "var(--good)" : "var(--bad)";
+};
+
 async function callWorker(provider, photo){
-  const base = val("workerUrl").replace(/\/+$/, "");
+  const base = workerBase();
   const res = await fetch(base + "/eval", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Eval-Token": val("token") },
@@ -341,13 +382,16 @@ $("runBtn").onclick = async () => {
   const set = photos.filter(p => p.expected.length);
   if (!val("workerUrl") || !val("token")) return alert("Fill in the worker URL and passcode first.");
   if (!set.length) return alert("Add at least one photo and tap the species in it.");
+  $("status").textContent = "Checking the worker…";
+  const conn = await testConnection();
+  if (!conn.ok){ $("status").textContent = conn.msg; $("connStatus").textContent = conn.msg; $("connStatus").style.color = "var(--bad)"; return; }
   const repeats = parseInt($("repeats").value, 10) || 1;
   results = [];
   const tasks = [];
   for (const p of set) for (const pr of PROVIDERS) for (let r = 1; r <= repeats; r++){
     tasks.push(async () => {
       let data;
-      try{ data = await callWorker(pr, p); }catch(err){ data = { ok:false, error: String(err.message || err) }; }
+      try{ data = await callWorker(pr, p); }catch(err){ data = { ok:false, error: /fetch/i.test(String(err.message)) ? FETCH_HELP : String(err.message || err) }; }
       const sc = data.ok ? score(p.expected, data.parsed) : null;
       const cost = data.ok ? (data.inputTokens / 1e6) * pr.pin() + (data.outputTokens / 1e6) * pr.pout() : 0;
       results.push({ photoId: p.id, photoName: p.name, provider: pr.id, run: r, data, sc, cost,

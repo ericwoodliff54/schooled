@@ -1,3 +1,6 @@
 name = "schooled-eval"
 main = "eval-worker.js"
 compatibility_date = "2026-11-01"
+workers_dev = true
+# Keep the API key secrets you set in the Cloudflare dashboard.
+keep_vars = true
