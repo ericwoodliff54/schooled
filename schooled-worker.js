@@ -643,7 +643,7 @@ async function scan(request, env, origin) {
     // Automatic second opinion: when the cheap model is unsure or gives a vague label, the stronger model looks at the same photo.
     // The person never sees a retry button, they just get the better answer.
     if (mode === 'fish' && result.fish && result.fish.is_aquarium && usedModel === primary && !(tester && body.escalate === false) && needsSecondOpinion(result.fish, env)) {
-      const strong = env.GEMINI_ESCALATE_MODEL || (primary === FALLBACK_MODEL ? VERIFY_MODEL : FALLBACK_MODEL);
+      const strong = env.GEMINI_ESCALATE_MODEL || (primary === FALLBACK_MODEL ? primary : FALLBACK_MODEL); // Hydrogen as the first look has nobody stronger: no second opinion
       const left = TOTAL_BUDGET_MS - (Date.now() - started);
       if (strong !== primary && left > 9000) {
         const f1 = result.fish;
@@ -1187,7 +1187,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 35, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 36, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {
