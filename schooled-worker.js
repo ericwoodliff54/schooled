@@ -7,6 +7,7 @@ const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io'];
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL = 'gemini-4-hydrogen';
 const LAST_RESORT_MODEL = 'gemini-3.6-flash';
+const FISH_MODEL = 'gemini-3.6-flash'; // Fish Check's first look (env GEMINI_FISH_MODEL overrides). Tested: Flash-Lite 52% right, 3.6 Flash 76%, Hydrogen 80%.
 const VERIFY_MODEL = 'gemini-3.6-flash'; // the close-up check is tiny, so a stronger model costs little there
 const IMAGE_MODEL = 'gemini-3.1-flash-image'; // Dream Tank pictures (env GEMINI_IMAGE_MODEL overrides)
 const DREAM_PER_MONTH = 10; // pictures per device per month, enforced here only when the LIMITS KV store is bound
@@ -466,7 +467,7 @@ function inHardGroup(names) {
   return names.some((n) => { const id = DB.k[normKey(n)]; return !!(id && DB.g[id] && DB.g[id].h); });
 }
 function needsSecondOpinion(fish, env) {
-  const below = Number(env.ESCALATE_BELOW) > 0 ? Number(env.ESCALATE_BELOW) : 0.8;
+  const below = Number(env.ESCALATE_BELOW) > 0 ? Number(env.ESCALATE_BELOW) : 0.85;
   const name = String(fish.common_name || '').trim();
   if (fish.life_stage === 'juvenile' || fish.confidence < below || GENERIC_NAME.test(name)) return true;
   // The common name is not one the species list knows: a sign the cheap model is guessing.
@@ -545,7 +546,7 @@ async function scan(request, env, origin) {
       }
       const part = { inline_data: { mime_type: mime, data } };
       if (withRes && mode === 'single') part.media_resolution = { level: 'MEDIA_RESOLUTION_ULTRA_HIGH' };
-      if (withRes && (mode === 'verify' || mode === 'fish')) part.media_resolution = { level: 'MEDIA_RESOLUTION_HIGH' };
+      if (withRes && (mode === 'verify' || mode === 'fish')) part.media_resolution = { level: 'MEDIA_RESOLUTION_' + (testRes || 'HIGH') };
       parts.push(part);
     });
     return parts;
@@ -553,6 +554,8 @@ async function scan(request, env, origin) {
   const tester = isTester(request, env);
   const ground = (mode === 'verify' || mode === 'fish') && body.ground === true && tester;
   // Test runs only: body.model picks the first-pass model and body.escalate === false skips the second opinion, so models can be compared side by side.
+  const testRes = tester && /^(LOW|MEDIUM|HIGH|ULTRA_HIGH)$/.test(String(body.res || '').toUpperCase()) ? String(body.res).toUpperCase() : '';
+  const testThink = tester && /^(minimal|low|medium|high)$/.test(String(body.think || '')) ? String(body.think) : '';
   const testModel = tester && typeof body.model === 'string' && /^[a-z0-9.\-]{3,40}$/.test(body.model) ? body.model : '';
   const basePrompt = mode === 'verify' ? VERIFY_PROMPT : mode === 'fish' ? FISH_PROMPT : (mode === 'zoom' ? PROMPT + ' ' + ZOOM_NOTE : PROMPT);
   // The app matches names against its own species list on the phone, so no list is sent here.
@@ -560,17 +563,17 @@ async function scan(request, env, origin) {
   const promptText = basePrompt + (tankType ? ' ' + TYPE_NOTES[tankType] : '') + (known.length ? ' ' + KNOWN_NOTE(known) : '') +
     ' ' + SPECIFIC_NOTE + (mode !== 'verify' ? ' ' + SCI_NOTE : '') + (ground ? ' ' + (mode === 'fish' ? FISH_GROUND_NOTE : GROUND_NOTE) : '');
 
-  const primary = testModel || env.GEMINI_MODEL || DEFAULT_MODEL;
-  // Ordinary Fish Check runs on the cheap first model. Only the close-up check uses the middle one.
+  const primary = testModel || (mode === 'fish' ? (env.GEMINI_FISH_MODEL || FISH_MODEL) : (env.GEMINI_MODEL || DEFAULT_MODEL));
+  // Fish Check looks first with the middle model, then asks Hydrogen when it is unsure. Whole-tank scans stay on the cheap model, and the close-up check uses the middle one.
   const lead = mode === 'verify' ? (env.GEMINI_VERIFY_MODEL || VERIFY_MODEL) : primary;
-  const models = [lead, primary, FALLBACK_MODEL, LAST_RESORT_MODEL].filter((m, i, all) => all.indexOf(m) === i);
+  const models = [lead, primary, FALLBACK_MODEL, LAST_RESORT_MODEL, env.GEMINI_MODEL || DEFAULT_MODEL].filter((m, i, all) => all.indexOf(m) === i);
   const started = Date.now();
 
   let plainJson = false; // grounded calls fall back to plain text JSON if Google rejects search together with a schema
   let secondNote = ''; // extra text for the Fish Check second opinion: the first guess and tell-apart tips
   async function ask(model, withThinking, ms, withRes) {
     const generationConfig = plainJson ? {} : { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : mode === 'fish' ? FISH_SCHEMA : SCHEMA };
-    if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+    if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: testThink || 'low' };
     const payload = {
       systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
       contents: [{ role: 'user', parts: [{ text: promptText + secondNote + (plainJson ? (mode === 'fish' ? FISH_GROUND_JSON_NOTE : GROUND_JSON_NOTE) : '') }].concat(buildParts(withRes)) }],
@@ -593,7 +596,7 @@ async function scan(request, env, origin) {
   for (const model of models) {
     const left = TOTAL_BUDGET_MS - (Date.now() - started);
     if (left < 6000) break;
-    const ms = Math.min(mode === 'fish' && !testModel ? 12000 : 24000, left); // a quick fish check should fail over fast, not wait
+    const ms = Math.min(mode === 'fish' && model === (env.GEMINI_MODEL || DEFAULT_MODEL) && !testModel ? 12000 : 24000, left); // a quick fish check should fail over fast, not wait
     let res = null;
     try {
       res = await ask(model, true, ms, true);
@@ -634,13 +637,13 @@ async function scan(request, env, origin) {
     }
     let result = mode === 'verify' ? { items: sanitizeVerify(parsedReply, items.length) } : mode === 'fish' ? sanitizeFish(parsedReply) : sanitize(parsedReply);
     const u = data.usageMetadata || {};
-    let usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
+    let usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0), cached: Number(u.cachedContentTokenCount) || 0 };
     let finalModel = usedModel;
     let firstPass = null;
     // Automatic second opinion: when the cheap model is unsure or gives a vague label, the stronger model looks at the same photo.
     // The person never sees a retry button, they just get the better answer.
     if (mode === 'fish' && result.fish && result.fish.is_aquarium && usedModel === primary && !(tester && body.escalate === false) && needsSecondOpinion(result.fish, env)) {
-      const strong = env.GEMINI_ESCALATE_MODEL || env.GEMINI_VERIFY_MODEL || VERIFY_MODEL;
+      const strong = env.GEMINI_ESCALATE_MODEL || (primary === FALLBACK_MODEL ? VERIFY_MODEL : FALLBACK_MODEL);
       const left = TOTAL_BUDGET_MS - (Date.now() - started);
       if (strong !== primary && left > 9000) {
         const f1 = result.fish;
@@ -1184,7 +1187,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 33, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 35, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {

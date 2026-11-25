@@ -138,6 +138,11 @@ def call_worker(worker, key, image, mime, tank_type, variant='app'):
             body['ground'] = True
         if 'solo' in parts:
             body['escalate'] = False
+        for x in parts:
+            if x.startswith('res='):
+                body['res'] = x[4:]
+            if x.startswith('think='):
+                body['think'] = x[6:]
     for attempt in range(4):
         try:
             r = requests.post(worker.rstrip('/') + '/scan', json=body, headers=headers, timeout=90)

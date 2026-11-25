@@ -33,6 +33,11 @@ def call_worker(worker, key, image, variant, tank):
             body['ground'] = True
         if 'solo' in parts:
             body['escalate'] = False
+        for x in parts:
+            if x.startswith('res='):
+                body['res'] = x[4:]
+            if x.startswith('think='):
+                body['think'] = x[6:]
     data = {'ok': False, 'error': 'no response'}
     for attempt in range(4):
         try:
