@@ -1526,7 +1526,7 @@ function renderTankAddMenu() {
       go: () => { state.activeId = t.id; saveState(); closeAddMenu(); $('gallery-input').click(); } }),
     featureBtn({ icon: 'fish', color: 'aqua', title: 'Check one fish', text: 'Photograph a fish and see if it fits ' + tankLabel(t),
       go: () => { fishCheck = null; fishCheckTankId = t.id; fishCheckNone = false; fishCheckFrom = 'tank'; closeAddMenu(); showView('fishcheck'); } }),
-    featureBtn({ icon: 'plus', color: 'orange', title: 'Add by name', text: 'Search the list and add it yourself',
+    featureBtn({ icon: 'plus', color: 'orange', title: 'Type a name', text: 'See its details first, then add it',
       go: () => { closeAddMenu(); openAddPop(); } }));
 }
 if ($('tank-add-fish')) $('tank-add-fish').addEventListener('click', () => {
@@ -2706,16 +2706,15 @@ $('tank-photo-remove').addEventListener('click', () => {
 });
 
 const addSearch = createSearch({
-  placeholder: 'Search to add a fish, plant or coral', label: 'Add a fish, plant or coral',
+  placeholder: 'Type a fish, plant or coral name', label: 'Look up a fish, plant or coral',
   type: () => { const t = getTank(openTankId); return t ? t.type : 'Freshwater'; },
+  // Same as a scan: look at the details first, then add it from that page.
   onPick: (name, entry) => {
     const t = getTank(openTankId);
     if (!t) return;
-    addToTank(t, name, 1, 'add', entry ? entry.k : undefined);
     addSearch.clear();
     closeAddPop();
-    saveState();
-    renderTank();
+    showSpecies(entry ? entry.n : name, t.id);
   }
 });
 $('add-slot').append(addSearch.root);
@@ -4016,6 +4015,17 @@ async function runFish(deep) {
   if (res && !res.care_estimate && !(lookupSpecies(fishCheck.name) && lookupSpecies(fishCheck.name).c)) fetchCare(fishCheck, res);
 }
 
+// The keeper typed a name instead of taking a photo: show the same details a photo check shows, minus the photo-only parts.
+function startNamedCheck(name, entry) {
+  const nm = entry ? entry.n : name;
+  fishCheck = {
+    photoUrl: '', loading: false, error: '', name: nm, count: entry && entry.c && entry.c.s > 1 ? entry.c.s : 1, runs: [], images: null, deep: false, userPick: true,
+    result: { common_name: nm, scientific_name: entry && usableScientific(entry) ? entry.s : '', kind: entry ? entry.k : 'fish', confidence: 1, alternatives: [], label_text: '', note: '', is_aquarium: true, life_stage: 'unknown', health: null, main_box: null, others: [], manual: true }
+  };
+  renderFishCheck();
+  if (!(entry && entry.c)) fetchCare(fishCheck, fishCheck.result);
+}
+
 // A species that is not in the app's list: ask the AI for a rough care sheet, a separate tiny call that only runs when needed.
 async function fetchCare(fc, r) {
   fc.careLoading = true;
@@ -4189,7 +4199,7 @@ function renderFishCheck() {
   body.replaceChildren();
   const t = fishCheckTank();
   body.append(el('h1', { text: 'Fish Check' }),
-    el('p', { class: 'muted', text: 'Standing at the fish store? Photograph one fish, plant or coral. Get its name, what it needs, and whether it fits your tank. Including its name tag in the photo helps.' }));
+    el('p', { class: 'muted', text: 'Standing at the fish store? Photograph one fish, plant or coral, or type its name. Get what it needs and whether it fits your tank. Including its name tag in the photo helps.' }));
   if (fishCheckFrom === 'tank' && t) body.append(el('p', { class: 'muted small', text: 'Checking for ' + tankLabel(t) }));
   else putAll(body, tankSwitcher(t, 'Checking for', (id) => { fishCheckNone = !id; if (id) setActiveTank(id); else fishCheckTankId = ''; renderFishCheck(); }, 'No tank yet'));
   const fc = fishCheck;
@@ -4199,6 +4209,12 @@ function renderFishCheck() {
     el('button', { type: 'button', class: 'btn', text: 'Record short video', onclick: () => $('fishcheck-video').click() }));
   body.append(actions);
   body.append(el('p', { class: 'muted small', text: 'Video: hold steady on one fish for about 3 seconds. We pick the sharpest frame, so it costs the same as one photo.' }));
+  const nameSearch = createSearch({
+    placeholder: 'Or type its name', label: 'Type a fish, plant or coral name',
+    type: () => (t ? t.type : 'Freshwater'),
+    onPick: (name, entry) => startNamedCheck(name, entry)
+  });
+  body.append(el('p', { class: 'label', text: 'Read its name on the tank?' }), nameSearch.root);
   if (!fc) return;
   if (fc.photoUrl && fc.picker) {
     const pk = fc.picker;
@@ -4230,20 +4246,21 @@ function renderFishCheck() {
   if (young) conf = Math.min(conf, 0.6);
   const sure = switched ? ['Your pick', 'ok'] : young ? ['Young fish', 'warn'] : conf >= 0.95 ? ['Confident', 'ok'] : conf >= 0.8 ? ['Likely', 'warn'] : ['Not sure', 'bad'];
   const card = el('div', { class: 'card dream-result' });
-  card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), el('span', { class: 'pill ' + sure[1], text: sure[0] })));
+  const typed = !!r.manual;
+  card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), typed ? null : el('span', { class: 'pill ' + sure[1], text: sure[0] })));
   if (entry && entry.s) card.append(el('p', { class: 'muted small', text: entry.s }));
   if (entry && entry.c && entry.c.n) card.append(el('p', { class: 'fc-about', text: entry.c.n }));
-  card.append(healthCard(r.health));
+  if (!typed) card.append(healthCard(r.health));
   if (r.label_text) card.append(el('p', { class: 'muted small', text: 'Read from the tag: ' + r.label_text }));
   if (young) card.append(el('p', { class: 'muted small', text: 'This looks like a young fish. Young fish are hard to tell apart because their adult colors and patterns have not come in yet. Check the tank\'s sign or ask the store what it is before you buy, and plan for the adult size below.' }));
-  if (!young && conf < 0.95 && conf >= 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Worth a second look. Check the other names below, or try a closer side-on photo.' }));
-  if (!young && conf < 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Try a closer photo of one fish, or include its name tag. Fish look different when they are stressed in store tanks.' }));
+  if (!typed && !young && conf < 0.95 && conf >= 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Worth a second look. Check the other names below, or try a closer side-on photo.' }));
+  if (!typed && !young && conf < 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Try a closer photo of one fish, or include its name tag. Fish look different when they are stressed in store tanks.' }));
   // Members of the look-alike group, in the order the tell-apart tip mentions them (the usual mix-ups come first).
   const tipText = group && group.tip ? group.tip.toLowerCase() : '';
   const tipPos = (n) => { const k = tipText.indexOf(n.toLowerCase().split(/[\s-]/)[0]); return k < 0 ? 9999 : k; };
   const members = group && group.h ? DB.list.filter((e) => e.g === entry.g).map((e) => e.n).sort((x, y) => tipPos(x) - tipPos(y)) : [];
   const seenAlt = new Set();
-  const alts = r.alternatives.concat(members).map((x) => lookupSpecies(x) ? lookupSpecies(x).n : x)
+  const alts = typed ? [] : r.alternatives.concat(members).map((x) => lookupSpecies(x) ? lookupSpecies(x).n : x)
     .filter((x) => { const k = canonKey(x); if (k === canonKey(fc.name) || seenAlt.has(k) || !sameKindAs(x, fc.name)) return false; seenAlt.add(k); return true; }).slice(0, 3);
   if (alts.length) {
     const chunks = parseTip(group && group.tip);
