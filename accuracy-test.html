@@ -71,6 +71,11 @@
       <div><label>Runs per photo (checks consistency)</label>
         <select id="repeats"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
     </div>
+    <div class="grid" style="margin-top:12px">
+      <div><label>Live worker URL (for the Live Fish Check columns)</label><input id="liveUrl" type="text"></div>
+      <div><label>Live worker test key (TEST_KEY)</label><input id="testKey" type="password"></div>
+    </div>
+    <p class="muted">The Live columns run your real Fish Check. The test key keeps these scans off the monthly limits and lets the test pick the first model.</p>
     <label style="margin-top:12px">Compare these (each one is a column in the results)</label>
     <div class="chips" id="variantChips"></div>
     <div class="row" style="margin-top:10px">
@@ -88,6 +93,8 @@
         <div><label>Haiku $ / 1M output</label><input id="pHaikuOut" type="number" step="0.01"></div>
         <div><label>Hydrogen $ / 1M input</label><input id="pHydIn" type="number" step="0.01"></div>
         <div><label>Hydrogen $ / 1M output</label><input id="pHydOut" type="number" step="0.01"></div>
+        <div><label>Flash-Lite $ / 1M input</label><input id="pLiteIn" type="number" step="0.01"></div>
+        <div><label>Flash-Lite $ / 1M output</label><input id="pLiteOut" type="number" step="0.01"></div>
       </div>
       <p class="muted">Defaults are the standard list prices as of Nov 2026. Hydrogen's output price includes its thinking tokens.</p>
       <label style="margin-top:8px">Prompt (both models get exactly the same one)</label>
@@ -151,7 +158,8 @@ Reply with only JSON in this exact shape:
 const DEFAULTS = {
   workerUrl:"", token:"", repeats:"1",
   modelHaiku:"claude-haiku-5-5", modelHydrogen:"gemini-4-hydrogen",
-  pHaikuIn:"0.10", pHaikuOut:"0.50", pHydIn:"1.50", pHydOut:"7.50",
+  pHaikuIn:"0.10", pHaikuOut:"0.50", pHydIn:"1.50", pHydOut:"7.50", pLiteIn:"0.30", pLiteOut:"2.50",
+  liveUrl:"https://schooled-worker.ericwoodliff.workers.dev", testKey:"",
   prompt: DEFAULT_PROMPT
 };
 
@@ -173,7 +181,15 @@ const ALL_VARIANTS = [
   { id:"hyd-high", label:"Hydrogen · high (default)", thinking:"high", ...hydCfg },
   { id:"hyd-medium", label:"Hydrogen · medium", thinking:"medium", ...hydCfg },
   { id:"hyd-low", label:"Hydrogen · low", thinking:"low", ...hydCfg },
+  { id:"live-hyd", label:"Live Fish Check · Hydrogen only", live:true, firstModel:"gemini-4-hydrogen" },
+  { id:"live-cascade", label:"Live Fish Check · Flash-Lite, then Hydrogen if unsure", live:true, firstModel:"gemini-3.5-flash-lite" },
 ];
+// Price of a model by name, for the live worker's mixed calls.
+function priceFor(model){
+  if (/flash-lite/.test(model)) return [num("pLiteIn"), num("pLiteOut")];
+  if (/haiku/.test(model)) return [num("pHaikuIn"), num("pHaikuOut")];
+  return [num("pHydIn"), num("pHydOut")]; // Hydrogen, and Flash models at their January 2027 price (same as Hydrogen)
+}
 let selectedVariants = ["hyd-high", "hyd-medium", "hyd-low"]; // loaded from storage at startup
 let PROVIDERS = []; // columns of the current results
 function renderVariantChips(){
@@ -375,7 +391,43 @@ $("testConn").onclick = async () => {
   $("connStatus").style.color = r.ok ? "var(--good)" : "var(--bad)";
 };
 
+function liveBase(){
+  let u = val("liveUrl").replace(/\s+/g, "");
+  if (u && !/^https?:\/\//i.test(u)) u = "https://" + u;
+  return u.replace(/\/+$/, "").replace(/\/scan$/i, "");
+}
+// Runs your real Fish Check in tester mode. The reply says which model answered last, and first_pass
+// is there when Flash-Lite was unsure and Hydrogen took a second look.
+async function callLive(provider, photo){
+  const started = Date.now();
+  let res, d;
+  try{
+    res = await fetch(liveBase() + "/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Test-Key": val("testKey") },
+      body: JSON.stringify({ images: [photo.dataUrl.split(",")[1]], mime: "image/jpeg", mode: "fish", model: provider.firstModel, device: "eval-test" })
+    });
+    d = await res.json();
+  }catch{ return { ok:false, error: "Couldn't reach the live worker. Check its URL." }; }
+  const latencyMs = Date.now() - started;
+  if (typeof d.scans_left === "number")
+    return { ok:false, latencyMs, error: "The test key wasn't accepted, so this scan counted against limits and the model choice was ignored. Check TEST_KEY." };
+  if (!d.ok || !d.fish) return { ok:false, latencyMs, error: (d.error || ("error " + res.status)) + (d.ai_detail ? " (" + d.ai_detail + ")" : "") };
+  const parts = [{ model: d.model, usage: d.usage || {} }].concat(d.first_pass ? [{ model: d.first_pass.model, usage: d.first_pass.usage || {} }] : []);
+  let inputTokens = 0, outputTokens = 0, cost = 0;
+  parts.forEach(pt => {
+    const i = Number(pt.usage.input) || 0, o = Number(pt.usage.output) || 0, pr = priceFor(pt.model || "");
+    inputTokens += i; outputTokens += o; cost += i / 1e6 * pr[0] + o / 1e6 * pr[1];
+  });
+  const f = d.fish;
+  return { ok:true, model: d.model, latencyMs, inputTokens, outputTokens, cost,
+    escalated: !!d.first_pass, firstModel: d.first_pass ? d.first_pass.model : d.model,
+    parsed: { fish: f.is_aquarium && f.common_name ? [{ common_name: f.common_name, scientific_name: f.scientific_name, confidence: f.confidence }] : [] },
+    raw: JSON.stringify({ answered_by: d.model, second_look: !!d.first_pass, common_name: f.common_name, scientific_name: f.scientific_name, confidence: f.confidence, alternatives: f.alternatives, note: f.note }, null, 1) };
+}
+
 async function callWorker(provider, photo){
+  if (provider.live) return callLive(provider, photo);
   const base = workerBase();
   const res = await fetch(base + "/eval", {
     method: "POST",
@@ -392,14 +444,19 @@ async function pool(tasks, n){
 
 $("runBtn").onclick = async () => {
   const set = photos.filter(p => p.expected.length);
-  if (!val("workerUrl") || !val("token")) return alert("Fill in the worker URL and passcode first.");
+  if (selectedVariants.some(id => !ALL_VARIANTS.find(v => v.id === id)?.live) && (!val("workerUrl") || !val("token"))) return alert("Fill in the eval worker URL and passcode first, or pick only Live columns.");
   if (!set.length) return alert("Add at least one photo and tap the species in it.");
-  $("status").textContent = "Checking the worker…";
-  const conn = await testConnection();
-  if (!conn.ok){ $("status").textContent = conn.msg; $("connStatus").textContent = conn.msg; $("connStatus").style.color = "var(--bad)"; return; }
   const repeats = parseInt($("repeats").value, 10) || 1;
   PROVIDERS = ALL_VARIANTS.filter(v => selectedVariants.includes(v.id));
   if (!PROVIDERS.length){ $("status").textContent = "Pick at least one model to compare."; return; }
+  $("status").textContent = "Checking the worker…";
+  const fail = (msg) => { $("status").textContent = msg; $("connStatus").textContent = msg; $("connStatus").style.color = "var(--bad)"; };
+  if (PROVIDERS.some(v => !v.live)){ const conn = await testConnection(); if (!conn.ok) return fail(conn.msg); }
+  if (PROVIDERS.some(v => v.live)){
+    if (!val("testKey")) return fail("Enter your live worker's TEST_KEY to run the Live Fish Check columns.");
+    try{ const t = await (await fetch(liveBase() + "/")).text(); if (!/Schooled API is running/.test(t)) return fail("The live worker URL didn't answer like your Schooled worker."); }
+    catch{ return fail("Couldn't reach the live worker. Check its URL."); }
+  }
   results = [];
   const tasks = [];
   for (const p of set) for (const pr of PROVIDERS) for (let r = 1; r <= repeats; r++){
@@ -407,7 +464,7 @@ $("runBtn").onclick = async () => {
       let data;
       try{ data = await callWorker(pr, p); }catch(err){ data = { ok:false, error: /fetch/i.test(String(err.message)) ? FETCH_HELP : String(err.message || err) }; }
       const sc = data.ok ? score(p.expected, data.parsed) : null;
-      const cost = data.ok ? (data.inputTokens / 1e6) * pr.pin() + (data.outputTokens / 1e6) * pr.pout() : 0;
+      const cost = !data.ok ? 0 : typeof data.cost === "number" ? data.cost : (data.inputTokens / 1e6) * pr.pin() + (data.outputTokens / 1e6) * pr.pout();
       results.push({ photoId: p.id, photoName: p.name, provider: pr.id, run: r, data, sc, cost,
         parseFailed: data.ok && !data.parsed });
       done++; $("bar").style.width = (100 * done / tasks.length) + "%";
@@ -445,7 +502,10 @@ function summarize(pid, set){
     latency: avg(ok, r => r.data.latencyMs),
     tin: avg(ok, r => r.data.inputTokens), tout: avg(ok, r => r.data.outputTokens),
     cost: avg(ok, r => r.cost),
-    consistency: multi ? consistentPhotos / multi : null
+    consistency: multi ? consistentPhotos / multi : null,
+    escalate: ALL_VARIANTS.find(v => v.id === pid)?.firstModel === "gemini-3.5-flash-lite" && ok.length ? ok.filter(r => r.data.escalated).length / ok.length : null,
+    liteAloneWrong: ok.filter(r => r.data.escalated === false && r.data.firstModel === "gemini-3.5-flash-lite" && r.sc && r.sc.recall < 1).length,
+    liteAlone: ok.filter(r => r.data.escalated === false && r.data.firstModel === "gemini-3.5-flash-lite").length
   };
 }
 function renderResults(set){
@@ -456,6 +516,8 @@ function renderResults(set){
     ["Answers that were right (precision)", s => pct(s.precision), s => s.precision, "high"],
     ["Perfect photos", s => `${s.perfect} / ${s.scoredN}`, s => s.scoredN ? s.perfect / s.scoredN : 0, "high"],
     ["Same answer every run", s => s.consistency === null ? "set runs to 2+" : pct(s.consistency), s => s.consistency ?? -1, "high"],
+    ["Sent to Hydrogen for a second look", s => s.escalate === null ? "—" : pct(s.escalate), null, null],
+    ["Flash-Lite answered alone and was wrong", s => s.escalate === null ? "—" : s.liteAloneWrong + " of " + s.liteAlone, null, null],
     ["Failed calls / unreadable replies", s => `${s.failed} / ${s.parseFailed}`, s => s.failed + s.parseFailed, "low"],
     ["Average time per scan", s => (s.latency / 1000).toFixed(1) + " s", s => s.latency, "low"],
     ["Average tokens in / out", s => `${Math.round(s.tin)} / ${Math.round(s.tout)}`, null, null],
@@ -483,7 +545,7 @@ function renderResults(set){
     </tr>`).join("");
 }
 function renderRun(r){
-  const head = `<div class="muted">Run ${r.run}${r.data.latencyMs ? ` · ${(r.data.latencyMs / 1000).toFixed(1)}s` : ""}</div>`;
+  const head = `<div class="muted">Run ${r.run}${r.data.latencyMs ? ` · ${(r.data.latencyMs / 1000).toFixed(1)}s` : ""}${r.data.escalated ? " · Hydrogen second look" : r.data.firstModel === "gemini-3.5-flash-lite" ? " · Flash-Lite alone" : ""}</div>`;
   if (!r.data.ok) return head + `<span class="tag err">Error: ${esc(r.data.error)}</span>`;
   if (r.parseFailed) return head + `<span class="tag err">Reply wasn't readable JSON</span><details><summary>Raw reply</summary><pre>${esc(r.data.raw)}</pre></details>`;
   const sc = r.sc;
@@ -502,7 +564,7 @@ function download(name, text, type){
 $("exportJson").onclick = () => download("schooled-eval-results.json", JSON.stringify(results, null, 2), "application/json");
 $("exportCsv").onclick = () => {
   const q = s => `"${String(s ?? "").replace(/"/g, '""')}"`;
-  const lines = [["photo","model","run","expected","model_answer","species_found","precision","perfect","extras","latency_ms","input_tokens","output_tokens","cost_usd","error"].join(",")];
+  const lines = [["photo","model","run","expected","model_answer","species_found","precision","perfect","extras","latency_ms","input_tokens","output_tokens","cost_usd","answered_by","second_look","error"].join(",")];
   for (const r of results){
     const p = photos.find(x => x.id === r.photoId);
     lines.push([q(r.photoName), q(ALL_VARIANTS.find(v => v.id === r.provider)?.label || r.provider), r.run,
@@ -510,17 +572,17 @@ $("exportCsv").onclick = () => {
       q(r.sc ? r.sc.items.map(x => x.common_name || x.scientific_name).join("; ") : ""),
       r.sc ? r.sc.recall.toFixed(3) : "", r.sc ? r.sc.precision.toFixed(3) : "", r.sc ? r.sc.perfect : "",
       q(r.sc ? r.sc.extras.map(x => x.common_name || x.scientific_name).join("; ") : ""),
-      r.data.latencyMs ?? "", r.data.inputTokens ?? "", r.data.outputTokens ?? "", r.cost.toFixed(6), q(r.data.error || "")].join(","));
+      r.data.latencyMs ?? "", r.data.inputTokens ?? "", r.data.outputTokens ?? "", r.cost.toFixed(6), q(r.data.model || ""), r.data.escalated === undefined ? "" : r.data.escalated, q(r.data.error || "")].join(","));
   }
   download("schooled-eval-results.csv", lines.join("\n"), "text/csv");
 };
 
 /* ---------- start ---------- */
-selectedVariants = lsGet("eval-variants", selectedVariants).filter(id => ALL_VARIANTS.some(v => v.id === id));
+selectedVariants = lsGet("eval-variants-2", ["live-hyd", "live-cascade"]).filter(id => ALL_VARIANTS.some(v => v.id === id));
 $("variantChips").addEventListener("click", e => {
   const id = e.target.dataset.variant; if (!id) return;
   selectedVariants = selectedVariants.includes(id) ? selectedVariants.filter(x => x !== id) : [...selectedVariants, id];
-  lsSet("eval-variants", selectedVariants); renderVariantChips();
+  lsSet("eval-variants-2", selectedVariants); renderVariantChips();
 });
 renderVariantChips();
 renderKey();
