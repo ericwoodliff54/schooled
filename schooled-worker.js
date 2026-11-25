@@ -1,13 +1,17 @@
 // Schooled Worker: reads aquarium photos with Gemini.
 // Paste this whole file into your Cloudflare Worker (schooled-worker) and click Deploy.
 // Needs one secret: GEMINI_API_KEY.
-// Optional plain variable: GEMINI_MODEL (to change models without editing code).
+// Optional plain variables (change models without editing code):
+//   GEMINI_TANK_MODEL (whole-tank scans), GEMINI_FISH_MODEL (Fish Check), GEMINI_DREAM_MODEL (Dream Tank plan),
+//   GEMINI_IMAGE_MODEL (Dream Tank pictures), GEMINI_MODEL (care estimate, Ask the Tank, last-resort backup).
 
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io'];
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL = 'gemini-4-hydrogen';
 const LAST_RESORT_MODEL = 'gemini-3.6-flash';
-const FISH_MODEL = 'gemini-3.6-flash'; // Fish Check's first look (env GEMINI_FISH_MODEL overrides). Tested: Flash-Lite 52% right, 3.6 Flash 76%, Hydrogen 80%.
+const FISH_MODEL = 'gemini-4-hydrogen'; // Fish Check (env GEMINI_FISH_MODEL overrides). Tested: Flash-Lite 52% right, 3.6 Flash 76%, Hydrogen 80%; Hydrogen at low thinking matched high in the Nov 25 eval.
+const TANK_MODEL = 'gemini-4-hydrogen'; // whole-tank scans (env GEMINI_TANK_MODEL overrides). Runs at low thinking.
+const DREAM_PLAN_MODEL = 'gemini-4-hydrogen'; // Dream Tank's stocking plan and scene text (env GEMINI_DREAM_MODEL overrides). Pictures still use IMAGE_MODEL.
 const VERIFY_MODEL = 'gemini-3.6-flash'; // the close-up check is tiny, so a stronger model costs little there
 const IMAGE_MODEL = 'gemini-3.1-flash-image'; // Dream Tank pictures (env GEMINI_IMAGE_MODEL overrides)
 const DREAM_PER_MONTH = 10; // pictures per device per month, enforced here only when the LIMITS KV store is bound
@@ -563,7 +567,7 @@ async function scan(request, env, origin) {
   const promptText = basePrompt + (tankType ? ' ' + TYPE_NOTES[tankType] : '') + (known.length ? ' ' + KNOWN_NOTE(known) : '') +
     ' ' + SPECIFIC_NOTE + (mode !== 'verify' ? ' ' + SCI_NOTE : '') + (ground ? ' ' + (mode === 'fish' ? FISH_GROUND_NOTE : GROUND_NOTE) : '');
 
-  const primary = testModel || (mode === 'fish' ? (env.GEMINI_FISH_MODEL || FISH_MODEL) : (env.GEMINI_MODEL || DEFAULT_MODEL));
+  const primary = testModel || (mode === 'fish' ? (env.GEMINI_FISH_MODEL || FISH_MODEL) : (env.GEMINI_TANK_MODEL || TANK_MODEL));
   // Fish Check looks first with the middle model, then asks Hydrogen when it is unsure. Whole-tank scans stay on the cheap model, and the close-up check uses the middle one.
   const lead = mode === 'verify' ? (env.GEMINI_VERIFY_MODEL || VERIFY_MODEL) : primary;
   const models = [lead, primary, FALLBACK_MODEL, LAST_RESORT_MODEL, env.GEMINI_MODEL || DEFAULT_MODEL].filter((m, i, all) => all.indexOf(m) === i);
@@ -979,16 +983,19 @@ async function dream(request, env, origin) {
   const planParts = [{ text: planText }];
   if (photo) planParts.push({ inline_data: { mime_type: body.mime, data: photo } });
   let plan = null;
-  const planModels = [env.GEMINI_MODEL || DEFAULT_MODEL, FALLBACK_MODEL, LAST_RESORT_MODEL].filter((m, i, a) => a.indexOf(m) === i);
+  const planModels = [env.GEMINI_DREAM_MODEL || DREAM_PLAN_MODEL, FALLBACK_MODEL, LAST_RESORT_MODEL, env.GEMINI_MODEL || DEFAULT_MODEL].filter((m, i, a) => a.indexOf(m) === i);
   let planUsage = { input: 0, output: 0 };
   const planErrors = [];
+  const planPayload = (withThinking) => {
+    const generationConfig = { responseMimeType: 'application/json', responseSchema: DREAM_SCHEMA };
+    // Hydrogen thinks at "high" unless told otherwise: low keeps the plan quick and cheap.
+    if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+    return { systemInstruction: { parts: [{ text: DREAM_INSTRUCTIONS }] }, contents: [{ role: 'user', parts: planParts }], generationConfig };
+  };
   for (const model of planModels) {
     try {
-      const res = await geminiCall(env, model, {
-        systemInstruction: { parts: [{ text: DREAM_INSTRUCTIONS }] },
-        contents: [{ role: 'user', parts: planParts }],
-        generationConfig: { responseMimeType: 'application/json', responseSchema: DREAM_SCHEMA }
-      }, 25000);
+      let res = await geminiCall(env, model, planPayload(true), 25000);
+      if (res.status === 400) res = await geminiCall(env, model, planPayload(false), 25000); // a model that won't take the thinking setting
       if (!res.ok) {
         let msg = '';
         try { const ej = await res.json(); msg = (ej && ej.error && ej.error.message) || ''; } catch (err) { /* no body */ }
@@ -1187,7 +1194,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 37, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 38, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': tank ' + (env.GEMINI_TANK_MODEL || TANK_MODEL) + ', fish ' + (env.GEMINI_FISH_MODEL || FISH_MODEL) + ', dream plan ' + (env.GEMINI_DREAM_MODEL || DREAM_PLAN_MODEL) + ', other ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {
