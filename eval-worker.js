@@ -5,6 +5,8 @@
 //   ANTHROPIC_API_KEY  - your Claude API key
 //   GEMINI_API_KEY     - your Gemini API key
 //   EVAL_TOKEN         - any passcode you make up; the test page must send it
+// Optional:
+//   ANTHROPIC_WORKSPACE_ID - only if your Claude key isn't scoped to a workspace (wrkspc_...)
 
 const DEFAULT_MODELS = {
   haiku: "claude-haiku-5-5",
@@ -39,13 +41,16 @@ function extractJson(text) {
 }
 
 async function callHaiku(env, modelId, prompt, image, mime) {
+  const headers = {
+    "x-api-key": env.ANTHROPIC_API_KEY,
+    "anthropic-version": "2023-06-01",
+    "content-type": "application/json",
+  };
+  // Only needed for a Claude API key that isn't tied to one workspace.
+  if (env.ANTHROPIC_WORKSPACE_ID) headers["anthropic-workspace-id"] = env.ANTHROPIC_WORKSPACE_ID;
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: {
-      "x-api-key": env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       model: modelId,
       max_tokens: 1500,
@@ -70,7 +75,12 @@ async function callHaiku(env, modelId, prompt, image, mime) {
   };
 }
 
-async function callHydrogen(env, modelId, prompt, image, mime) {
+async function callHydrogen(env, modelId, prompt, image, mime, thinking) {
+  const generationConfig = { responseMimeType: "application/json", maxOutputTokens: 4000 };
+  // Gemini 4 thinking levels: low, medium, high (default), xhigh. Omit to use the default.
+  if (["low", "medium", "high", "xhigh"].includes(thinking)) {
+    generationConfig.thinkingConfig = { thinkingLevel: thinking };
+  }
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`;
   const res = await fetch(url, {
     method: "POST",
@@ -82,7 +92,7 @@ async function callHydrogen(env, modelId, prompt, image, mime) {
           parts: [{ inline_data: { mime_type: mime, data: image } }, { text: prompt }],
         },
       ],
-      generationConfig: { responseMimeType: "application/json", maxOutputTokens: 4000 },
+      generationConfig,
     }),
   });
   const data = await res.json();
@@ -159,11 +169,12 @@ async function handle(request, env) {
       const out =
         provider === "haiku"
           ? await callHaiku(env, modelId, prompt, image, mime)
-          : await callHydrogen(env, modelId, prompt, image, mime);
+          : await callHydrogen(env, modelId, prompt, image, mime, body.thinking);
       return json({
         ok: true,
         provider,
         model: modelId,
+        thinking: provider === "hydrogen" ? body.thinking || "default" : null,
         latencyMs: Date.now() - started,
         inputTokens: out.inputTokens,
         outputTokens: out.outputTokens,

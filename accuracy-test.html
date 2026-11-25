@@ -71,6 +71,8 @@
       <div><label>Runs per photo (checks consistency)</label>
         <select id="repeats"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
     </div>
+    <label style="margin-top:12px">Compare these (each one is a column in the results)</label>
+    <div class="chips" id="variantChips"></div>
     <div class="row" style="margin-top:10px">
       <button class="secondary" id="testConn">Test connection</button>
       <span class="muted" id="connStatus"></span>
@@ -164,10 +166,20 @@ const DEFAULT_KEY = [
   {id:"sae", name:"Siamese algae eater", sci:"Crossocheilus oblongus", aliases:["sae","crossocheilus siamensis","true siamese algae eater"]},
 ];
 
-const PROVIDERS = [
-  {id:"haiku", label:"Claude Haiku 5.5", model:()=>val("modelHaiku"), pin:()=>num("pHaikuIn"), pout:()=>num("pHaikuOut")},
-  {id:"hydrogen", label:"Gemini 4 Hydrogen", model:()=>val("modelHydrogen"), pin:()=>num("pHydIn"), pout:()=>num("pHydOut")},
+const haikuCfg = { provider:"haiku", model:()=>val("modelHaiku"), pin:()=>num("pHaikuIn"), pout:()=>num("pHaikuOut") };
+const hydCfg = { provider:"hydrogen", model:()=>val("modelHydrogen"), pin:()=>num("pHydIn"), pout:()=>num("pHydOut") };
+const ALL_VARIANTS = [
+  { id:"haiku", label:"Haiku 5.5", ...haikuCfg },
+  { id:"hyd-high", label:"Hydrogen · high (default)", thinking:"high", ...hydCfg },
+  { id:"hyd-medium", label:"Hydrogen · medium", thinking:"medium", ...hydCfg },
+  { id:"hyd-low", label:"Hydrogen · low", thinking:"low", ...hydCfg },
 ];
+let selectedVariants = ["hyd-high", "hyd-medium", "hyd-low"]; // loaded from storage at startup
+let PROVIDERS = []; // columns of the current results
+function renderVariantChips(){
+  $("variantChips").innerHTML = ALL_VARIANTS.map(v =>
+    `<span class="chip ${selectedVariants.includes(v.id) ? "on" : ""}" data-variant="${v.id}">${esc(v.label)}</span>`).join("");
+}
 
 const $ = id => document.getElementById(id);
 const val = id => $(id).value.trim();
@@ -368,7 +380,7 @@ async function callWorker(provider, photo){
   const res = await fetch(base + "/eval", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Eval-Token": val("token") },
-    body: JSON.stringify({ provider: provider.id, model: provider.model(), prompt: $("prompt").value, mime: "image/jpeg", image: photo.dataUrl.split(",")[1] })
+    body: JSON.stringify({ provider: provider.provider, thinking: provider.thinking, model: provider.model(), prompt: $("prompt").value, mime: "image/jpeg", image: photo.dataUrl.split(",")[1] })
   });
   let data; try{ data = await res.json(); }catch{ data = { ok:false, error:`Worker returned ${res.status}` }; }
   return data;
@@ -386,6 +398,8 @@ $("runBtn").onclick = async () => {
   const conn = await testConnection();
   if (!conn.ok){ $("status").textContent = conn.msg; $("connStatus").textContent = conn.msg; $("connStatus").style.color = "var(--bad)"; return; }
   const repeats = parseInt($("repeats").value, 10) || 1;
+  PROVIDERS = ALL_VARIANTS.filter(v => selectedVariants.includes(v.id));
+  if (!PROVIDERS.length){ $("status").textContent = "Pick at least one model to compare."; return; }
   results = [];
   const tasks = [];
   for (const p of set) for (const pr of PROVIDERS) for (let r = 1; r <= repeats; r++){
@@ -453,7 +467,10 @@ function renderResults(set){
       let best = -1;
       if (cmp){
         const v = S.map(cmp);
-        if (v[0] !== v[1] && v.every(x => x >= 0)) best = dir === "high" ? (v[0] > v[1] ? 0 : 1) : (v[0] < v[1] ? 0 : 1);
+        if (v.length > 1 && v.every(x => x >= 0)){
+          const target = dir === "high" ? Math.max(...v) : Math.min(...v);
+          if (v.filter(x => x === target).length === 1) best = v.indexOf(target);
+        }
       }
       return `<tr><td>${label}</td>${S.map((s, i) => `<td class="num ${i === best ? "win" : ""}">${fmt(s)}</td>`).join("")}</tr>`;
     }).join("");
@@ -488,7 +505,7 @@ $("exportCsv").onclick = () => {
   const lines = [["photo","model","run","expected","model_answer","species_found","precision","perfect","extras","latency_ms","input_tokens","output_tokens","cost_usd","error"].join(",")];
   for (const r of results){
     const p = photos.find(x => x.id === r.photoId);
-    lines.push([q(r.photoName), q(r.data.model || r.provider), r.run,
+    lines.push([q(r.photoName), q(ALL_VARIANTS.find(v => v.id === r.provider)?.label || r.provider), r.run,
       q((p?.expected || []).map(id => keyById(id)?.name || id).join("; ")),
       q(r.sc ? r.sc.items.map(x => x.common_name || x.scientific_name).join("; ") : ""),
       r.sc ? r.sc.recall.toFixed(3) : "", r.sc ? r.sc.precision.toFixed(3) : "", r.sc ? r.sc.perfect : "",
@@ -499,6 +516,13 @@ $("exportCsv").onclick = () => {
 };
 
 /* ---------- start ---------- */
+selectedVariants = lsGet("eval-variants", selectedVariants).filter(id => ALL_VARIANTS.some(v => v.id === id));
+$("variantChips").addEventListener("click", e => {
+  const id = e.target.dataset.variant; if (!id) return;
+  selectedVariants = selectedVariants.includes(id) ? selectedVariants.filter(x => x !== id) : [...selectedVariants, id];
+  lsSet("eval-variants", selectedVariants); renderVariantChips();
+});
+renderVariantChips();
 renderKey();
 idb("readonly", s => s.getAll()).then(all => { photos = all || []; renderPhotos(); }).catch(() => renderPhotos());
 </script>
