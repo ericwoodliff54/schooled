@@ -168,7 +168,9 @@ function resolveNamed(common, scientific, where, kind) {
 
 // ---------- Tester usage log (tokens and cost of each AI call, kept on this phone) ----------
 const USAGE_KEY = 'schooled.usage';
-const USAGE_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75], 'gemini-3.7-flash': [0.75, 3.75], 'gemini-3.6-flash': [0.75, 3.75], 'gemini-3.5-flash': [0.75, 3.75] };
+// Flash models are on an introductory price until Dec 31, 2026, then $1.50 / $7.50 per 1M tokens.
+const FLASH_PRICE = Date.now() < Date.UTC(2027, 0, 1) ? [0.75, 3.75] : [1.5, 7.5];
+const USAGE_PRICES = { 'gemini-4-hydrogen': [1.5, 7.5], 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': FLASH_PRICE, 'gemini-3.7-flash': FLASH_PRICE, 'gemini-3.6-flash': FLASH_PRICE, 'gemini-3.5-flash': [0.75, 3.75] };
 function loadUsage() {
   try { const v = JSON.parse(localStorage.getItem(USAGE_KEY)); return Array.isArray(v) ? v : []; } catch (err) { return []; }
 }
@@ -1034,11 +1036,12 @@ async function runWaterScan(file) {
     const jpeg = drawToJpeg(image.source, 0, 0, image.width, image.height, SINGLE_SIDE, 0.85).split(',')[1];
     const res = await fetch(WORKER_URL + '/water', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: jpeg, mime: 'image/jpeg', kit: scanState.kit, tank_type: t.type, keys: logKeys(t) }),
+      body: JSON.stringify({ image: jpeg, mime: 'image/jpeg', kit: scanState.kit, tank_type: t.type, keys: logKeys(t), device: deviceId() }),
       signal: AbortSignal.timeout(60000)
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(friendlyError(data.error, res.status));
+    noteScansLeft(data);
     if (data.usage) logUsage('water', data.model, data.usage, { detail: 'test scan, ' + (data.kit_type || '') });
     scanState.rows = data.readings || [];
     scanState.chart = !!data.chart_visible;
@@ -2963,13 +2966,37 @@ function friendlyError(code, status) {
   switch (code) {
     case 'rate_limited': return 'Lots of scans right now. Wait a minute and try again.';
     case 'ai_busy': return 'The photo reader is busy. Try again in a moment.';
-    case 'limit_reached': return 'You have used this month\u2019s photo scans. They come back on the 1st.';
+    case 'limit_reached': return 'You\u2019ve been busy! You\u2019ve used all ' + SCAN_MONTHLY + ' scans this month. They reset on ' + resetDateText() + '.';
+    case 'day_limit': return 'You\u2019ve scanned a lot today! Scans open up again tomorrow.';
     case 'busy_today': return 'Photo scans are very busy today. Please try again tomorrow.';
     case 'bad_image': return "That photo couldn't be read. Try a different one.";
     case 'too_large': return 'That photo is too large. Try a smaller one.';
     case 'server_not_configured': return 'The server is not set up yet. Check the Worker secret.';
     default: return status ? 'Something went wrong (' + status + '). Try again.' : 'Something went wrong. Try again.';
   }
+}
+
+// ---------- Monthly scan pool (each phone has its own) ----------
+// Fish Check uses 1, a whole-tank scan 3, a water test read 1. The server keeps the real count.
+const SCAN_MONTHLY = 150;
+const SCAN_WARN_KEY = 'schooled.scanwarn';
+function resetDateText() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth() + 1, 1).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+// The counter stays out of sight until scans run low, then a short note appears once at 30, 10, 3 and 0 left.
+function noteScansLeft(data) {
+  if (!data || typeof data.scans_left !== 'number') return;
+  const left = data.scans_left;
+  const month = new Date().toISOString().slice(0, 7);
+  let w = null;
+  try { w = JSON.parse(localStorage.getItem(SCAN_WARN_KEY)); } catch (err) { w = null; }
+  if (!w || w.m !== month) w = { m: month, at: 9999 };
+  const step = [30, 10, 3, 0].filter((n) => left <= n).pop();
+  if (step === undefined || step >= w.at) return;
+  w.at = step;
+  try { localStorage.setItem(SCAN_WARN_KEY, JSON.stringify(w)); } catch (err) { /* optional */ }
+  toast(left === 0 ? 'That was your last scan this month. Scans reset on ' + resetDateText() + '.' : left + (left === 1 ? ' scan' : ' scans') + ' left this month. They reset on ' + resetDateText() + '.');
 }
 
 async function askWorker(images, mode, timeoutMs, ctx) {
@@ -2990,6 +3017,7 @@ async function askWorker(images, mode, timeoutMs, ctx) {
       ? 'The photo reader had trouble (' + (data.ai_detail || 'error ' + data.ai_status) + '). Please try again in a moment.'
       : friendlyError(data.error, res.status));
   }
+  noteScansLeft(data);
   if (data.first_pass && data.first_pass.usage) logUsage('fish', data.first_pass.model, data.first_pass.usage, { detail: 'first look' });
   if (data.usage) logUsage(mode === 'zoom' || mode === 'verify' ? 'zoom' : mode === 'fish' ? 'fish' : 'scan', data.model, data.usage, { detail: mode + (ctx.deep ? ' deep' : '') + ', ' + (images || []).length + ' img, ' + Math.round(JSON.stringify(images || []).length / 1024) + ' KB' });
   return data;
@@ -4020,7 +4048,7 @@ function stockCard(t) {
 }
 
 // ---------- Fish Check ----------
-const SCAN_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75] };
+const SCAN_PRICES = USAGE_PRICES;
 let fishCheckTankId = '';
 let fishCheckNone = false;
 function fishCheckTank() { return fishCheckNone ? null : (getTank(fishCheckTankId) || activeTank()); }
@@ -4091,7 +4119,7 @@ async function fetchCare(fc, r) {
     const res = await fetch(WORKER_URL + '/care', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: r.common_name, scientific: r.scientific_name || '' }),
+      body: JSON.stringify({ name: r.common_name, scientific: r.scientific_name || '', device: deviceId() }),
       signal: AbortSignal.timeout(20000)
     });
     const data = await res.json().catch(() => ({}));
@@ -4650,11 +4678,11 @@ async function sendAsk(text) {
 }
 
 // ---------- Dream Tank ----------
-const DREAM_MONTHLY = 10;
+const DREAM_MONTHLY = 3;
 const DREAM_KEY = 'schooled.dream';
 const DEVICE_KEY = 'schooled.device';
 const DREAM_ERRORS = {
-  limit_reached: 'You have used this month’s dream pictures. They come back next month.',
+  limit_reached: 'You\u2019ve made all ' + DREAM_MONTHLY + ' dream tanks this month. More on ' + resetDateText() + '.',
   busy_today: 'Dream Tank has been very busy today. Please try again tomorrow.',
   rate_limited: 'That was a few too many tries in a row. Wait a few minutes and try again.',
   not_aquarium: 'That did not sound like an aquarium. Describe the fish, plants and style you want.',

@@ -14,14 +14,16 @@ const TANK_MODEL = 'gemini-4-hydrogen'; // whole-tank scans (env GEMINI_TANK_MOD
 const DREAM_PLAN_MODEL = 'gemini-4-hydrogen'; // Dream Tank's stocking plan and scene text (env GEMINI_DREAM_MODEL overrides). Pictures still use IMAGE_MODEL.
 const VERIFY_MODEL = 'gemini-3.6-flash'; // the close-up check is tiny, so a stronger model costs little there
 const IMAGE_MODEL = 'gemini-3.1-flash-image'; // Dream Tank pictures (env GEMINI_IMAGE_MODEL overrides)
-const DREAM_PER_MONTH = 10; // pictures per device per month, enforced here only when the LIMITS KV store is bound
-const DREAM_PER_DAY_ALL = 60; // pictures per day across everyone, same condition
-const DREAM_RATE_MAX = 3; // and no more than this many tries per 10 minutes from one address
-const ASK_PER_MONTH = 100; // Get Schooled questions per device per month, enforced here only when the LIMITS KV store is bound
-const ASK_PER_DAY_ALL = 3000; // questions per day across everyone, same condition
-const ASK_RATE_MAX = 10; // and no more than this many questions per 10 minutes from one address
-const SCAN_PER_MONTH = 600; // photo reads per device per month (a whole-tank scan is about 3 calls), only when the LIMITS KV store is bound
-const SCAN_PER_DAY_ALL = 6000; // photo reads per day across everyone, same condition: a spend breaker, about $13 at today's prices
+// Every limit below is per device (each phone has its own count). There are no limits shared across all users.
+// They are enforced only when a KV store named LIMITS is bound to this Worker.
+const DREAM_PER_MONTH = 3; // Dream Tank pictures per device per month
+const DREAM_RATE_MAX = 3; // and no more than this many tries per 10 minutes from one device
+const ASK_PER_MONTH = 100; // Get Schooled questions per device per month
+const ASK_RATE_MAX = 10; // and no more than this many questions per 10 minutes from one device
+const SCAN_PER_MONTH = 150; // scan credits per device per month ("about 5 scans a day")
+const SCAN_PER_DAY = 40; // scan credits per device per day: stops runaway use without touching normal users
+// Credits per call, matched to cost: Fish Check 1, whole-tank scan 3 (first read 2 + close-up check 1).
+const SCAN_CREDITS = { fish: 1, single: 2, zoom: 2, verify: 1 };
 const CARE_KEEP_SECONDS = 15552000; // shared care sheets are kept about 180 days
 const CARE_MISS_SECONDS = 259200; // "not a species I know" is remembered 3 days so junk names do not cost a call each time
 const CROP_CAP = 50; // saved fish photos per species before we stop asking for more (corrected names go to twice this)
@@ -37,7 +39,8 @@ const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 // Best-effort limit per visitor while the Worker stays warm.
 // Real monthly limits come in a later stage (they need Cloudflare KV).
 const RATE_WINDOW_MS = 10 * 60 * 1000;
-const RATE_MAX = 30;
+const RATE_MAX = 30; // calls per 10 minutes from one device
+const IP_RATE_MAX = 300; // calls per 10 minutes from one internet address: only scripts hit this, not a busy store on shared Wi-Fi
 const hits = new Map();
 const dreamHits = new Map();
 const askHits = new Map();
@@ -206,15 +209,17 @@ function isTester(request, env) {
   return !!(env.TEST_KEY && k && k === env.TEST_KEY);
 }
 
-function rateLimited(ip) {
+// Short burst guard. key is 'dev:<device>' (per person) or 'ip:<address>' (the loose anti-script ceiling).
+function rateLimited(key, max) {
+  const limit = max || RATE_MAX;
   const now = Date.now();
-  const recent = (hits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
-  if (recent.length >= RATE_MAX) {
-    hits.set(ip, recent);
+  const recent = (hits.get(key) || []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (recent.length >= limit) {
+    hits.set(key, recent);
     return true;
   }
   recent.push(now);
-  hits.set(ip, recent);
+  hits.set(key, recent);
   if (hits.size > 5000) hits.clear(); // keep memory small
   return false;
 }
@@ -485,7 +490,7 @@ async function scan(request, env, origin) {
   if (!env.GEMINI_API_KEY) return json({ ok: false, error: 'server_not_configured' }, 500, origin);
 
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  if (!isTester(request, env) && rateLimited(ip)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
+  if (!isTester(request, env) && rateLimited('ip:' + ip, IP_RATE_MAX)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
 
   let body;
   try {
@@ -510,16 +515,21 @@ async function scan(request, env, origin) {
   // Limits are real only when a KV store named LIMITS is bound. Counts are approximate, which is fine for a safety net.
   const kv = env.LIMITS;
   const scanDevice = clean(body.device, 60).replace(/[^A-Za-z0-9_-]/g, '');
+  if (!isTester(request, env) && rateLimited('dev:' + (scanDevice || ip))) return json({ ok: false, error: 'rate_limited' }, 429, origin);
   const scanDeviceKey = 'scan:' + (scanDevice || ip) + ':' + monthKey();
-  const scanDayKey = 'scan:all:' + dayKey();
-  let scanMine = 0, scanAll = 0;
+  const scanDayKey = 'scan:' + (scanDevice || ip) + ':' + dayKey(); // this device's count for today
+  const scanCost = SCAN_CREDITS[mode] || 1;
+  let scanMine = 0, scanToday = 0;
   const scanCounted = !!kv && !isTester(request, env);
   if (scanCounted) {
     try {
-      [scanMine, scanAll] = (await Promise.all([kv.get(scanDeviceKey), kv.get(scanDayKey)])).map((v) => Number(v) || 0);
+      [scanMine, scanToday] = (await Promise.all([kv.get(scanDeviceKey), kv.get(scanDayKey)])).map((v) => Number(v) || 0);
     } catch (err) { /* if the store is down, let the scan through */ }
-    if (scanMine >= SCAN_PER_MONTH) return json({ ok: false, error: 'limit_reached' }, 429, origin);
-    if (scanAll >= SCAN_PER_DAY_ALL) return json({ ok: false, error: 'busy_today' }, 429, origin);
+    // The close-up check finishes a whole-tank scan that already started, so it is never blocked halfway.
+    if (mode !== 'verify') {
+      if (scanMine >= SCAN_PER_MONTH) return json({ ok: false, error: 'limit_reached', scans_left: 0, scans_month: SCAN_PER_MONTH }, 429, origin);
+      if (scanToday >= SCAN_PER_DAY) return json({ ok: false, error: 'day_limit', scans_left: Math.max(0, SCAN_PER_MONTH - scanMine), scans_month: SCAN_PER_MONTH }, 429, origin);
+    }
   }
   const tankType = Object.prototype.hasOwnProperty.call(TYPE_NOTES, body.tank_type) ? body.tank_type : '';
   let items = [];
@@ -675,15 +685,17 @@ async function scan(request, env, origin) {
     }
     const gm = ground && data.candidates[0].groundingMetadata;
     const groundInfo = ground ? { ground: { queries: ((gm && gm.webSearchQueries) || []).slice(0, 12), plain_json: plainJson } } : {};
+    let scanInfo = {};
     if (scanCounted) {
       try {
         await Promise.all([
-          kv.put(scanDeviceKey, String(scanMine + 1), { expirationTtl: 3456000 }),
-          kv.put(scanDayKey, String(scanAll + 1), { expirationTtl: 172800 })
+          kv.put(scanDeviceKey, String(scanMine + scanCost), { expirationTtl: 3456000 }),
+          kv.put(scanDayKey, String(scanToday + scanCost), { expirationTtl: 172800 })
         ]);
       } catch (err) { /* counting is best effort */ }
+      scanInfo = { scans_left: Math.max(0, SCAN_PER_MONTH - scanMine - scanCost), scans_month: SCAN_PER_MONTH };
     }
-    return json(Object.assign({ ok: true, model: finalModel, usage, mode }, firstPass ? { first_pass: firstPass } : {}, groundInfo, result), 200, origin);
+    return json(Object.assign({ ok: true, model: finalModel, usage, mode }, scanInfo, firstPass ? { first_pass: firstPass } : {}, groundInfo, result), 200, origin);
   } catch (err) {
     const why = data && ((data.promptFeedback && data.promptFeedback.blockReason) || (data.candidates && data.candidates[0] && data.candidates[0].finishReason)) || String(err && err.message || err);
     return json({ ok: false, error: 'ai_error', ai_status: 200, ai_detail: 'bad reply: ' + String(why).slice(0, 120) }, 502, origin);
@@ -776,9 +788,10 @@ const CARE_SCHEMA = {
 async function careEstimate(request, env, origin) {
   if (!env.GEMINI_API_KEY) return json({ ok: false, error: 'server_not_configured' }, 500, origin);
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  if (rateLimited(ip)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
+  if (rateLimited('ip:' + ip, IP_RATE_MAX)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
   let body;
   try { body = await request.json(); } catch (err) { return json({ ok: false, error: 'bad_request' }, 400, origin); }
+  if (rateLimited('dev:' + (clean(body && body.device, 60).replace(/[^A-Za-z0-9_-]/g, '') || ip))) return json({ ok: false, error: 'rate_limited' }, 429, origin);
   const name = clean(body && body.name, 60).replace(/["\n\r]/g, ' ');
   const sci = clean(body && body.scientific, 80).replace(/["\n\r]/g, ' ');
   if (!name) return json({ ok: false, error: 'bad_request' }, 400, origin);
@@ -854,9 +867,22 @@ function sanitizeWater(parsed, keys) {
 async function waterScan(request, env, origin) {
   if (!env.GEMINI_API_KEY) return json({ ok: false, error: 'server_not_configured' }, 500, origin);
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  if (!isTester(request, env) && rateLimited(ip)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
+  const tester = isTester(request, env);
+  if (!tester && rateLimited('ip:' + ip, IP_RATE_MAX)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
   let body;
   try { body = await request.json(); } catch (err) { return json({ ok: false, error: 'bad_image' }, 400, origin); }
+  // A water test read uses 1 credit from the same monthly scan pool as Fish Check and tank scans.
+  const wDevice = clean(body.device, 60).replace(/[^A-Za-z0-9_-]/g, '') || ip;
+  if (!tester && rateLimited('dev:' + wDevice)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
+  const kv = env.LIMITS;
+  const wMonthKey = 'scan:' + wDevice + ':' + monthKey(), wDayKey = 'scan:' + wDevice + ':' + dayKey();
+  let wMine = 0, wToday = 0;
+  const wCounted = !!kv && !tester;
+  if (wCounted) {
+    try { [wMine, wToday] = (await Promise.all([kv.get(wMonthKey), kv.get(wDayKey)])).map((v) => Number(v) || 0); } catch (err) { /* store down: let it through */ }
+    if (wMine >= SCAN_PER_MONTH) return json({ ok: false, error: 'limit_reached', scans_left: 0, scans_month: SCAN_PER_MONTH }, 429, origin);
+    if (wToday >= SCAN_PER_DAY) return json({ ok: false, error: 'day_limit', scans_left: Math.max(0, SCAN_PER_MONTH - wMine), scans_month: SCAN_PER_MONTH }, 429, origin);
+  }
   const mime = ALLOWED_MIME.includes(body.mime) ? body.mime : '';
   const image = typeof body.image === 'string' ? body.image : '';
   if (!mime || !image || !/^[A-Za-z0-9+/=]+$/.test(image)) return json({ ok: false, error: 'bad_image' }, 400, origin);
@@ -888,7 +914,12 @@ async function waterScan(request, env, origin) {
       const parsed = JSON.parse(data.candidates[0].content.parts.map((p) => p.text || '').join(''));
       const u = data.usageMetadata || {};
       const usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
-      return json(Object.assign({ ok: true, model, usage }, sanitizeWater(parsed, keys)), 200, origin);
+      let wInfo = {};
+      if (wCounted) {
+        try { await Promise.all([kv.put(wMonthKey, String(wMine + 1), { expirationTtl: 3456000 }), kv.put(wDayKey, String(wToday + 1), { expirationTtl: 172800 })]); } catch (err) { /* best effort */ }
+        wInfo = { scans_left: Math.max(0, SCAN_PER_MONTH - wMine - 1), scans_month: SCAN_PER_MONTH };
+      }
+      return json(Object.assign({ ok: true, model, usage }, wInfo, sanitizeWater(parsed, keys)), 200, origin);
     } catch (err) { problems.push(model + ': ' + ((err && (err.name === 'TimeoutError' || err.name === 'AbortError')) ? 'too slow' : 'bad reply')); }
   }
   return json({ ok: false, error: 'ai_busy', ai_detail: problems.join('; ').slice(0, 200) }, 502, origin);
@@ -940,8 +971,7 @@ async function dream(request, env, origin) {
   if (!env.GEMINI_API_KEY) return json({ ok: false, error: 'server_not_configured' }, 500, origin);
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
   const now = Date.now();
-  const recent = (dreamHits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
-  if (recent.length >= DREAM_RATE_MAX) return json({ ok: false, error: 'rate_limited' }, 429, origin);
+  if (rateLimited('ip:' + ip, IP_RATE_MAX)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
 
   let body;
   try { body = await request.json(); } catch (err) { return json({ ok: false, error: 'bad_request' }, 400, origin); }
@@ -951,6 +981,9 @@ async function dream(request, env, origin) {
   const type = Object.prototype.hasOwnProperty.call(TYPE_NOTES, body.tank_type) ? body.tank_type : 'Freshwater';
   const gallons = Math.min(2000, Math.max(5, Math.round(Number(body.gallons) || 29)));
   const device = clean(body.device, 60).replace(/[^A-Za-z0-9_-]/g, '');
+  const dreamKey = device || ip;
+  const recent = (dreamHits.get(dreamKey) || []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (recent.length >= DREAM_RATE_MAX) return json({ ok: false, error: 'rate_limited' }, 429, origin);
 
   let photo = '';
   if (body.image != null && body.image !== '') {
@@ -962,14 +995,12 @@ async function dream(request, env, origin) {
   // Hard limits, real only when a KV store named LIMITS is bound to this Worker.
   const kv = env.LIMITS;
   const deviceKey = 'dream:' + (device || ip) + ':' + monthKey();
-  const dayKeyName = 'dream:all:' + dayKey();
   if (kv) {
-    const [mine, all] = await Promise.all([kv.get(deviceKey), kv.get(dayKeyName)]);
-    if ((Number(mine) || 0) >= DREAM_PER_MONTH) return json({ ok: false, error: 'limit_reached' }, 429, origin);
-    if ((Number(all) || 0) >= DREAM_PER_DAY_ALL) return json({ ok: false, error: 'busy_today' }, 429, origin);
+    const mine = Number(await kv.get(deviceKey)) || 0;
+    if (mine >= DREAM_PER_MONTH) return json({ ok: false, error: 'limit_reached' }, 429, origin);
   }
   recent.push(now);
-  dreamHits.set(ip, recent);
+  dreamHits.set(dreamKey, recent);
   if (dreamHits.size > 2000) dreamHits.clear();
 
   // Step 1: a stocking plan, using only names from the species list when possible.
@@ -1072,11 +1103,8 @@ async function dream(request, env, origin) {
 
   // Only a finished picture counts against the monthly limit.
   if (kv && image) {
-    const [mine, all] = await Promise.all([kv.get(deviceKey), kv.get(dayKeyName)]);
-    await Promise.all([
-      kv.put(deviceKey, String((Number(mine) || 0) + 1), { expirationTtl: 3456000 }),
-      kv.put(dayKeyName, String((Number(all) || 0) + 1), { expirationTtl: 172800 })
-    ]);
+    const mine = Number(await kv.get(deviceKey)) || 0;
+    await kv.put(deviceKey, String(mine + 1), { expirationTtl: 3456000 });
   }
   return json({ ok: true, title, summary, species, image, image_model: imageModel, image_error: image ? '' : imageErrors.join('; ').slice(0, 300), usage: { plan: planUsage, image: imageUsage }, enforced: !!kv }, 200, origin);
 }
@@ -1109,8 +1137,7 @@ async function askTank(request, env, origin) {
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
   const tester = isTester(request, env);
   const now = Date.now();
-  const recent = (askHits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
-  if (!tester && recent.length >= ASK_RATE_MAX) return json({ ok: false, error: 'rate_limited' }, 429, origin);
+  if (!tester && rateLimited('ip:' + ip, IP_RATE_MAX)) return json({ ok: false, error: 'rate_limited' }, 429, origin);
 
   let body;
   try { body = await request.json(); } catch (err) { return json({ ok: false, error: 'bad_request' }, 400, origin); }
@@ -1122,6 +1149,9 @@ async function askTank(request, env, origin) {
     .filter((m) => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && m.text.trim())
     .map((m) => ({ role: m.role, parts: [{ text: noCtl(clean(m.text, 800)) }] }));
   const device = clean(body.device, 60).replace(/[^A-Za-z0-9_-]/g, '');
+  const askKey = device || ip;
+  const recent = (askHits.get(askKey) || []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (!tester && recent.length >= ASK_RATE_MAX) return json({ ok: false, error: 'rate_limited' }, 429, origin);
   let photo = '';
   if (body.image != null && body.image !== '') {
     if (typeof body.image !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(body.image) || !ALLOWED_MIME.includes(body.mime)) return json({ ok: false, error: 'bad_image' }, 400, origin);
@@ -1131,15 +1161,13 @@ async function askTank(request, env, origin) {
 
   const kv = env.LIMITS;
   const deviceKey = 'ask:' + (device || ip) + ':' + monthKey();
-  const dayKeyName = 'ask:all:' + dayKey();
-  let mine = 0, all = 0;
+  let mine = 0;
   if (kv && !tester) {
-    [mine, all] = (await Promise.all([kv.get(deviceKey), kv.get(dayKeyName)])).map((v) => Number(v) || 0);
+    mine = Number(await kv.get(deviceKey)) || 0;
     if (mine >= ASK_PER_MONTH) return json({ ok: false, error: 'limit_reached' }, 429, origin);
-    if (all >= ASK_PER_DAY_ALL) return json({ ok: false, error: 'busy_today' }, 429, origin);
   }
   recent.push(now);
-  askHits.set(ip, recent);
+  askHits.set(askKey, recent);
   if (askHits.size > 5000) askHits.clear();
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1173,10 +1201,7 @@ async function askTank(request, env, origin) {
       const u = data.usageMetadata || {};
       const usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
       if (kv && !tester) {
-        await Promise.all([
-          kv.put(deviceKey, String(mine + 1), { expirationTtl: 3456000 }),
-          kv.put(dayKeyName, String(all + 1), { expirationTtl: 172800 })
-        ]);
+        await kv.put(deviceKey, String(mine + 1), { expirationTtl: 3456000 });
       }
       return json({ ok: true, answer, suggestions, model, usage, left: kv ? Math.max(0, ASK_PER_MONTH - mine - 1) : null }, 200, origin);
     } catch (err) {
@@ -1194,7 +1219,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 38, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': tank ' + (env.GEMINI_TANK_MODEL || TANK_MODEL) + ', fish ' + (env.GEMINI_FISH_MODEL || FISH_MODEL) + ', dream plan ' + (env.GEMINI_DREAM_MODEL || DREAM_PLAN_MODEL) + ', other ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 39, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': tank ' + (env.GEMINI_TANK_MODEL || TANK_MODEL) + ', fish ' + (env.GEMINI_FISH_MODEL || FISH_MODEL) + ', dream plan ' + (env.GEMINI_DREAM_MODEL || DREAM_PLAN_MODEL) + ', other ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {
