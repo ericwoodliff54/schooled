@@ -288,7 +288,9 @@ function sanitize(parsed) {
 const FISH_PROMPT =
   'This photo was taken in a pet store or fish shop. Identify the ONE animal or plant that is most prominent or closest to the center. ' +
   'If a name tag, price tag or label is clearly readable near it, read it and use it as strong evidence, and copy the text you read into label_text. ' +
-  'First fill in features: in under 25 words, list what you can see that tells species apart (body shape, main colors, barring or stripes, fin shape, snout or mouth). Then name it from those features. ' +
+  'First fill in features: in under 25 words, list what you can see that tells species apart (body shape, main colors, barring or stripes, fin shape, snout or mouth). Then decide life_stage, then name it from those features. ' +
+  'LIFE STAGE: store tanks are full of young fish, and juveniles of different species often look alike. Set life_stage to juvenile when the fish shows any of these: tiny for the kind of fish, pale, silvery, grey or see-through with little color, a head and eyes that look large for the body, rounded or unfinished fins, no adult pattern or breeding color, or a crowd of same-sized small fish in one tank. Set adult when it is clearly full grown with full color, and unknown when you cannot tell. ' +
+  'Never name a species from the adult colors you expect it to grow into. For a juvenile, judge only by what is visible now (body shape, mouth, fin shape, markings that are already there, and a tag if there is one), keep confidence at 0.6 or lower, name your best guess, and list alternatives that match the juvenile body shape. Say in note that it looks young. ' +
   'Do not guess from the other fish in the background. Give the common name hobbyists use, the scientific name only if you are reasonably sure, ' +
   'the kind, a confidence from 0 to 1, and up to three alternatives when it could be a lookalike. ' +
   'Alternatives must look like the animal in THIS photo: the same main color, pattern, body shape and kind (a yellow fish gets yellow look-alikes, never blue ones; a brain-like coral gets other brain-like or rounded stony corals, never long-tentacled ones). Never list a species just because it is in the same family or group. If you cannot name look-alikes that match what you see, leave alternatives empty. ' +
@@ -308,9 +310,10 @@ const FISH_PROMPT =
 const HEALTH_ITEMS = ['bloating', 'scales', 'spots', 'fins', 'eyes', 'mouth', 'skin', 'color', 'posture'];
 const FISH_SCHEMA = {
   type: 'OBJECT',
-  propertyOrdering: ['features', 'is_aquarium', 'common_name', 'scientific_name', 'kind', 'confidence', 'alternatives', 'label_text', 'note', 'main_box', 'others', 'health'],
+  propertyOrdering: ['features', 'life_stage', 'is_aquarium', 'common_name', 'scientific_name', 'kind', 'confidence', 'alternatives', 'label_text', 'note', 'main_box', 'others', 'health'],
   properties: {
     features: { type: 'STRING' },
+    life_stage: { type: 'STRING', enum: ['juvenile', 'adult', 'unknown'] },
     main_box: { type: 'ARRAY', items: { type: 'NUMBER' } },
     others: { type: 'ARRAY', items: { type: 'OBJECT', properties: { look: { type: 'STRING' }, box: { type: 'ARRAY', items: { type: 'NUMBER' } } }, required: ['look', 'box'] } },
     is_aquarium: { type: 'BOOLEAN' },
@@ -367,13 +370,15 @@ function sanitizeOthers(parsed, mainBox) {
 function sanitizeFish(parsed) {
   const name = clean(parsed.common_name, 60);
   const alts = (Array.isArray(parsed.alternatives) ? parsed.alternatives : []).map((x) => clean(x, 60)).filter((x) => x && x.toLowerCase() !== name.toLowerCase()).slice(0, 3);
+  const stage = ['juvenile', 'adult'].includes(parsed.life_stage) ? parsed.life_stage : 'unknown';
   return {
     fish: {
+      life_stage: stage,
       is_aquarium: parsed.is_aquarium !== false && !!name,
       common_name: name,
       scientific_name: cleanSci(parsed.scientific_name),
       kind: KINDS.includes(parsed.kind) ? parsed.kind : 'fish',
-      confidence: Math.min(1, Math.max(0, Number(parsed.confidence) || 0)),
+      confidence: Math.min(stage === 'juvenile' ? 0.6 : 1, Math.max(0, Number(parsed.confidence) || 0)),
       alternatives: alts,
       label_text: clean(parsed.label_text, 80),
       note: clean(parsed.note, 160),
@@ -458,7 +463,7 @@ function inHardGroup(names) {
 function needsSecondOpinion(fish, env) {
   const below = Number(env.ESCALATE_BELOW) > 0 ? Number(env.ESCALATE_BELOW) : 0.8;
   const name = String(fish.common_name || '').trim();
-  if (fish.confidence < below || GENERIC_NAME.test(name)) return true;
+  if (fish.life_stage === 'juvenile' || fish.confidence < below || GENERIC_NAME.test(name)) return true;
   // The common name is not one the species list knows: a sign the cheap model is guessing.
   if (name && !knownName(name)) return true;
   // Look-alike groups (wrasses, tangs, rainbowfish...) get a second look unless the first one was very sure.
@@ -634,7 +639,7 @@ async function scan(request, env, origin) {
         const guesses = [f1.common_name, f1.scientific_name].concat(f1.alternatives || []).filter(Boolean);
         const tips = tipsFor(guesses);
         secondNote = ' A quick first look guessed "' + f1.common_name + '"' + (f1.alternatives && f1.alternatives.length ? ' (or ' + f1.alternatives.join(', ') + ')' : '') +
-          ', but it is often wrong with look-alikes. Ignore that guess unless the photo clearly supports it, and decide from the visible features.' +
+          ', but it is often wrong with look-alikes.' + (f1.life_stage === 'juvenile' ? ' The first look also thought this is a young fish, so ignore any adult colors it may have imagined.' : '') + ' Ignore that guess unless the photo clearly supports it, and decide from the visible features.' +
           (tips.length ? ' Tips for telling similar species apart: ' + tips.join(' ') : '');
         try {
           let res2 = await ask(strong, true, Math.min(20000, left), true);
@@ -1171,7 +1176,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 27, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 28, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {

@@ -4226,15 +4226,18 @@ function renderFishCheck() {
   let conf = isGenericName(r.common_name) ? Math.min(r.confidence, 0.6) : (group && group.h ? Math.min(r.confidence, 0.85) : r.confidence);
   // The AI's common name is not one we know (matched only by scientific name or genus): treat it as unsure.
   if (entry && !lookupSpecies(r.common_name)) conf = Math.min(conf, 0.75);
-  const sure = switched ? ['Your pick', 'ok'] : conf >= 0.95 ? ['Confident', 'ok'] : conf >= 0.8 ? ['Likely', 'warn'] : ['Not sure', 'bad'];
+  const young = r.life_stage === 'juvenile' && !switched;
+  if (young) conf = Math.min(conf, 0.6);
+  const sure = switched ? ['Your pick', 'ok'] : young ? ['Young fish', 'warn'] : conf >= 0.95 ? ['Confident', 'ok'] : conf >= 0.8 ? ['Likely', 'warn'] : ['Not sure', 'bad'];
   const card = el('div', { class: 'card dream-result' });
   card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), el('span', { class: 'pill ' + sure[1], text: sure[0] })));
   if (entry && entry.s) card.append(el('p', { class: 'muted small', text: entry.s }));
   if (entry && entry.c && entry.c.n) card.append(el('p', { class: 'fc-about', text: entry.c.n }));
   card.append(healthCard(r.health));
   if (r.label_text) card.append(el('p', { class: 'muted small', text: 'Read from the tag: ' + r.label_text }));
-  if (conf < 0.95 && conf >= 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Worth a second look. Check the other names below, or try a closer side-on photo.' }));
-  if (conf < 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Try a closer photo of one fish, or include its name tag. Fish look different when they are stressed in store tanks.' }));
+  if (young) card.append(el('p', { class: 'muted small', text: 'This looks like a young fish. Young fish are hard to tell apart because their adult colors and patterns have not come in yet. Check the tank\'s sign or ask the store what it is before you buy, and plan for the adult size below.' }));
+  if (!young && conf < 0.95 && conf >= 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Worth a second look. Check the other names below, or try a closer side-on photo.' }));
+  if (!young && conf < 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Try a closer photo of one fish, or include its name tag. Fish look different when they are stressed in store tanks.' }));
   // Members of the look-alike group, in the order the tell-apart tip mentions them (the usual mix-ups come first).
   const tipText = group && group.tip ? group.tip.toLowerCase() : '';
   const tipPos = (n) => { const k = tipText.indexOf(n.toLowerCase().split(/[\s-]/)[0]); return k < 0 ? 9999 : k; };
