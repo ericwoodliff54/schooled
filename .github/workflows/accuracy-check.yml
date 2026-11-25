@@ -1,30 +1,15 @@
-name: Accuracy check
+name: Photo test set check
 
-# Run it by hand: Actions tab, "Accuracy check", Run workflow.
-# Pulls labeled photos from Wikimedia Commons, sends them to the Worker, and writes a report.
-# Rough cost: about 0.15 cents per photo (default run is under 10 cents).
+# Run it by hand: Actions tab, "Photo test set check", Run workflow.
+# Sends every photo in the private test-set repo through the Worker's Fish Check and scores it against labels.csv.
+# The photos are not stored in this (public) repo. Each variant costs a few cents for the 73 photos; the default runs five variants side by side.
 
 on:
   workflow_dispatch:
     inputs:
-      species:
-        description: 'How many species to test'
-        default: '25'
-      photos:
-        description: 'Photos per species (1 to 6)'
-        default: '2'
-      kinds:
-        description: 'Only these kinds, comma separated (fish, coral, plant, shrimp, snail). Blank = all'
-        default: ''
-      names:
-        description: 'Or test exactly these species, comma separated'
-        default: ''
-      seed:
-        description: 'Same number = same species and photos'
-        default: '7'
-      variant:
-        description: 'app = exactly what the app does. Or model[+solo][+ground], e.g. gemini-4-hydrogen+solo. Run again with the same seed to compare models.'
-        default: 'app'
+      variants:
+        description: 'What to run, comma separated. app = exactly what the app does. Or model[+solo][+ground][+res=medium][+think=minimal], e.g. gemini-4-hydrogen+solo+think=minimal'
+        default: 'app,gemini-3.6-flash+solo,gemini-3.6-flash+solo+res=medium,gemini-3.6-flash+solo+think=minimal,gemini-4-hydrogen+solo,gemini-4-hydrogen+solo+think=minimal'
 
 permissions:
   contents: read
@@ -32,27 +17,26 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ericwoodliff54/schooled-testset
+          token: ${{ secrets.TESTSET_TOKEN }}
+          path: testset
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install requests
-      - name: Run the check
+      - name: Run the photo check
         env:
           TEST_KEY: ${{ secrets.TEST_KEY }}
-        run: |
-          python accuracy_check.py \
-            --limit "${{ inputs.species }}" \
-            --per "${{ inputs.photos }}" \
-            --kinds "${{ inputs.kinds }}" \
-            --names "${{ inputs.names }}" \
-            --seed "${{ inputs.seed }}" \
-            --variant "${{ inputs.variant }}"
+        run: python photo_check.py --dir testset --variants "${{ inputs.variants }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: accuracy-report
-          path: accuracy-out/
+          name: photo-report
+          path: photo-out/
           retention-days: 30
+
