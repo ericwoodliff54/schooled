@@ -2241,7 +2241,14 @@ function gearPicks(kind, t) {
     const sp = ft === 'sponge' ? (HYDRO_SPONGE.find((m) => gal <= m[1]) || null) : null;
     if (sp) P('Budget', 'Hydro-Sponge ' + sp[0], 'Sponge filter that runs off an air pump. Sold for up to ' + sp[1] + ' gal.');
     if ((!ft || ft === 'canister') && gal >= 20 && gal <= 150) P('Budget', gal <= 100 ? 'Penn-Plax Cascade Pro 1000 (III)' : 'Penn-Plax Cascade 1200', gal <= 100 ? 'Canister filter, 350 GPH. The maker rates it for up to 100 gal.' : 'Canister filter, 315 GPH. The maker rates it for up to 150 gal.');
-    if ((!ft || ft === 'canister') && gal >= 60 && gal <= 400) P('Pro', 'Fluval FX6', 'Large canister filter. Rated up to 400 gal, 925 GPH pump.');
+    if (!ft || ft === 'canister') {
+      const messy = bigFishTank(t);
+      // Big or messy stock over about 180 gal needs more than one canister, and two also keep the tank filtered while one is being cleaned.
+      const n6 = gal > 400 ? Math.ceil(gal / 400) : (gal >= 250 || (messy && gal >= 180)) ? 2 : 1;
+      if (gal >= 100 && gal <= 250 && !(messy && gal > 180)) P('Popular', 'Fluval FX4', 'Large canister filter. The maker rates it up to 250 gal, with a 700 GPH pump.');
+      if (gal >= 60 && gal <= 800) P('Pro', n6 === 1 ? 'Fluval FX6' : (n6 === 2 ? 'Two Fluval FX6' : n6 + ' Fluval FX6'),
+        'Large canister filter with a 925 GPH pump, rated up to 400 gal each.' + (n6 > 1 ? ' Run ' + (n6 === 2 ? 'two' : n6) + ' side by side for about ' + (n6 * 925).toLocaleString('en-US') + ' GPH. That spreads a heavy waste load across more media and keeps the tank filtered while you clean one.' : ''));
+    }
   } else if (kind === 'Heater' && gal > 0) {
     const aq = AQUEON.find((m) => gal <= m[1]);
     if (aq) P('Budget', 'Aqueon Pro Adjustable ' + aq[0] + 'W', 'Shatterproof plastic body with an electronic thermostat. Rated up to ' + aq[1] + ' gal by the maker.');
