@@ -66,7 +66,26 @@ function kindAvatar(kind) {
 }
 
 // ---------- Species database (names, look-alike groups, autocomplete) ----------
-const DB = { ready: false, list: [], byKey: new Map(), byGenus: new Map(), groups: {} };
+const DB = { ready: false, list: [], byKey: new Map(), byGenus: new Map(), groups: {}, derived: new Set() };
+
+// Names the AI used that we do not list, matched to a listed species by its scientific name. The app keeps the AI's own name on screen
+// (it is often more specific than ours, like a locality or strain) and borrows the care sheet and tips from the species it points to.
+const NAMEMAP_KEY = 'schooled.namemap';
+function loadNameMap() {
+  try { const m = JSON.parse(localStorage.getItem(NAMEMAP_KEY)); return m && typeof m === 'object' && !Array.isArray(m) ? m : {}; } catch (err) { return {}; }
+}
+function saveNameMap(shown, target) {
+  try {
+    const m = loadNameMap();
+    m[normKey(shown)] = target;
+    const ks = Object.keys(m);
+    if (ks.length > 300) delete m[ks[0]];
+    localStorage.setItem(NAMEMAP_KEY, JSON.stringify(m));
+  } catch (err) { /* storage full or blocked: the name still works this session */ }
+}
+function isDerivedName(name) {
+  return !!(name && DB.derived && DB.derived.has(normKey(name)));
+}
 
 function normKey(text) {
   return String(text).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/['\u2019]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -92,6 +111,16 @@ async function loadSpecies() {
         if (q && !DB.bySquash.has(q)) DB.bySquash.set(q, e);
       });
     });
+    DB.derived = new Set();
+    const nameMap = loadNameMap();
+    Object.keys(nameMap).forEach((k) => {
+      if (DB.byKey.has(k)) return; // the list has learned this name since: use the real entry
+      const e = DB.byKey.get(normKey(nameMap[k]));
+      if (!e) return;
+      DB.byKey.set(k, e);
+      DB.bySquash.set(k.replace(/ /g, ''), e);
+      DB.derived.add(k);
+    });
     DB.ready = true;
   } catch (err) { /* the app works without the list, with plainer names */ }
 }
@@ -115,8 +144,26 @@ function resolveSpecies(common, scientific, where, kind) {
       how = hit ? 'genus' : '';
     }
   }
-  if (where && DB.ready && how !== 'exact') noteMiss(common, scientific, kind, how || 'miss', hit ? hit.n : '', where);
+  if (where && DB.ready && (how !== 'exact' || isDerivedName(common))) noteMiss(common, scientific, kind, how || 'miss', hit ? hit.n : '', where);
   return hit;
+}
+
+// Like resolveSpecies, but also says which name to show. A name we list shows as our entry's name. A specific name we do not list
+// (matched only through the scientific name or genus) keeps the AI's own wording, with the matched species' care and tips behind it.
+function resolveNamed(common, scientific, where, kind) {
+  const hit = resolveSpecies(common, scientific, where, kind);
+  if (!hit) return { hit: null, name: common };
+  const shown = String(common || '').split(' / ')[0].replace(/\s*\(.*?(\)|$)/g, '').trim().slice(0, 60);
+  const k = normKey(shown);
+  const derived = DB.derived.has(k);
+  if (!shown || isGenericName(shown) || /^unidentified/i.test(shown) || (!derived && lookupSpecies(shown))) return { hit, name: hit.n };
+  if (!derived) {
+    DB.byKey.set(k, hit);
+    if (DB.bySquash) DB.bySquash.set(k.replace(/ /g, ''), hit);
+    DB.derived.add(k);
+    saveNameMap(shown, hit.n);
+  }
+  return { hit, name: shown };
 }
 
 // ---------- Tester usage log (tokens and cost of each AI call, kept on this phone) ----------
@@ -225,7 +272,7 @@ function fallbackCopy(text) {
 // Same species whatever the spelling: "cardinals", "Cardinal Tetra" and its scientific name all match.
 function canonKey(name) {
   const hit = lookupSpecies(name);
-  return normKey(hit ? hit.n : name);
+  return normKey(hit && !isDerivedName(name) ? hit.n : name);
 }
 
 function usableScientific(entry) {
@@ -1362,7 +1409,7 @@ function addToTank(tank, name, count, mode, kind, photo) {
   let clean = name.trim().slice(0, 60);
   if (!clean) return '';
   const hit = lookupSpecies(clean);
-  if (hit) { clean = hit.n; kind = kind || hit.k; }
+  if (hit) { if (!isDerivedName(clean)) clean = hit.n; kind = kind || hit.k; }
   const key = canonKey(clean);
   const existing = tank.fish.find((f) => canonKey(f.name) === key);
   if (existing) {
@@ -2946,7 +2993,7 @@ function titleCase(text) {
 }
 function canonName(name) {
   const hit = lookupSpecies(name);
-  return hit ? hit.n : String(name).trim().slice(0, 60);
+  return hit && !isDerivedName(name) ? hit.n : String(name).trim().slice(0, 60);
 }
 function canonList(list) {
   const seen = new Set();
@@ -3012,16 +3059,17 @@ function applyResult(data, mode) {
     pending.error = "Couldn't spot any fish, plants or corals. Try getting closer, with less glare.";
   }
   pending.species = (data.species || []).map((s) => {
-    const hit = resolveSpecies(s.common_name, s.scientific_name, 'scan', s.kind);
+    const named = resolveNamed(s.common_name, s.scientific_name, 'scan', s.kind);
+    const hit = named.hit;
     const kind = hit && KIND_LIST.includes(hit.k) ? hit.k : (s.kind || 'fish');
     return {
-      name: hit ? hit.n : s.common_name,
+      name: named.name,
       scientific: usableScientific(hit) || s.scientific_name || '',
       kind,
       group: hit && hit.g ? hit.g : '',
       count: s.count,
       confidence: s.confidence,
-      alternatives: canonList(s.alternatives).filter((n) => canonKey(n) !== canonKey(hit ? hit.n : s.common_name)),
+      alternatives: canonList(s.alternatives).filter((n) => canonKey(n) !== canonKey(named.name)),
       boxes: Array.isArray(s.boxes) ? s.boxes : [],
       verified: false,
       editing: false
@@ -3040,7 +3088,7 @@ function needsVerify(sp) {
   const group = sp.group && DB.groups[sp.group];
   if (!(sp.kind === 'fish' || sp.kind === 'coral' || sp.kind === 'invert' || sp.kind === 'plant' || group)) return false;
   if (!sp.boxes || !sp.boxes.length) return false;
-  return sp.confidence < 0.9 || !!(group && group.h) || !lookupSpecies(sp.name);
+  return sp.confidence < 0.9 || !!(group && group.h) || !lookupSpecies(sp.name) || isDerivedName(sp.name);
 }
 
 // Boxes are [ymin, xmin, ymax, xmax] from 0 to 1000. Pad them so the fish isn't cut off.
@@ -3083,8 +3131,9 @@ function applyVerified(targets, data) {
     const sp = targets[it.index];
     if (!sp) return;
     if (it.confidence >= 0.45 && !/^unidentified/i.test(it.common_name)) {
-      const hit = resolveSpecies(it.common_name, it.scientific_name, 'close-up', it.kind);
-      sp.name = hit ? hit.n : it.common_name;
+      const named = resolveNamed(it.common_name, it.scientific_name, 'close-up', it.kind);
+      const hit = named.hit;
+      sp.name = named.name;
       sp.scientific = usableScientific(hit) || it.scientific_name || '';
       if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k;
       sp.group = hit && hit.g ? hit.g : '';
@@ -3448,7 +3497,7 @@ function editRow(sp, index) {
       onclick: () => {
         const name = nameInput.value.trim();
         const count = Math.round(Number(countInput.value));
-        if (name) { const was = sp.name; const hit = lookupSpecies(name); sp.name = hit ? hit.n : name.slice(0, 60); if (canonKey(was) !== canonKey(sp.name)) { sp.ai = sp.ai || was; sp.edited = true; } sp.group = hit && hit.g ? hit.g : ''; if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k; }
+        if (name) { const was = sp.name; const hit = lookupSpecies(name); sp.name = hit && !isDerivedName(name) ? hit.n : name.slice(0, 60); if (canonKey(was) !== canonKey(sp.name)) { sp.ai = sp.ai || was; sp.edited = true; } sp.group = hit && hit.g ? hit.g : ''; if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k; }
         if (count >= 1 && count <= 999) sp.count = count;
         sp.confidence = 1; // the user checked it
         sp.editing = false;
@@ -4001,8 +4050,9 @@ async function runFish(deep) {
         const it = fishCheck.picker.items[fishCheck.picker.active];
         if (it) { it.look = r.common_name; it.done = true; }
       }
-      const hit = resolveSpecies(r.common_name, r.scientific_name, 'fish check', r.kind);
-      fishCheck.name = hit ? hit.n : r.common_name;
+      const named = resolveNamed(r.common_name, r.scientific_name, 'fish check', r.kind);
+      const hit = named.hit;
+      fishCheck.name = named.name;
       fishCheck.userPick = false;
       fishCheck.count = hit && hit.c && hit.c.s > 1 ? hit.c.s : (r.care_estimate && r.care_estimate.min_group > 1 ? r.care_estimate.min_group : 1);
     }
@@ -4241,7 +4291,7 @@ function renderFishCheck() {
   const switched = !!fc.userPick && canonKey(fc.name) !== canonKey(r.common_name);
   let conf = isGenericName(r.common_name) ? Math.min(r.confidence, 0.6) : (group && group.h ? Math.min(r.confidence, 0.85) : r.confidence);
   // The AI's common name is not one we know (matched only by scientific name or genus): treat it as unsure.
-  if (entry && !lookupSpecies(r.common_name)) conf = Math.min(conf, 0.75);
+  if (entry && (!lookupSpecies(r.common_name) || isDerivedName(r.common_name))) conf = Math.min(conf, 0.75);
   const young = r.life_stage === 'juvenile' && !switched;
   if (young) conf = Math.min(conf, 0.6);
   const sure = switched ? ['Your pick', 'ok'] : young ? ['Young fish', 'warn'] : conf >= 0.95 ? ['Confident', 'ok'] : conf >= 0.8 ? ['Likely', 'warn'] : ['Not sure', 'bad'];
