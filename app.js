@@ -2809,7 +2809,7 @@ function drawToJpeg(source, sx, sy, sw, sh, maxSide, quality) {
 
 // A small square picture of one fish, cut from the scan photo, to use as its icon in the tank.
 // box is [ymin, xmin, ymax, xmax] from 0 to 1000; without a box the middle of the photo is used.
-const FISH_THUMB_SIDE = 240;
+const FISH_THUMB_SIDE = 280;
 function fishThumb(image, box, side0) {
   try {
     if (!image || !image.source || !image.width) return '';
@@ -2819,7 +2819,7 @@ function fishThumb(image, box, side0) {
       const x1 = box[1] / 1000 * W, x2 = box[3] / 1000 * W, y1 = box[0] / 1000 * H, y2 = box[2] / 1000 * H;
       if (Math.min(x2 - x1, y2 - y1) < 40) return ''; // too small in the photo to make a useful icon
       cx = (x1 + x2) / 2; cy = (y1 + y2) / 2;
-      side = Math.min(Math.max(x2 - x1, y2 - y1) * 1.15, W, H);
+      side = Math.min(Math.max(x2 - x1, y2 - y1) * 1.3, W, H);
     }
     const sx = Math.max(0, Math.min(W - side, cx - side / 2)), sy = Math.max(0, Math.min(H - side, cy - side / 2));
     return drawToJpeg(image.source, sx, sy, side, side, side0 || FISH_THUMB_SIDE, side0 ? 0.82 : 0.8);
@@ -3822,6 +3822,7 @@ function speciesPhotoBox(entry, name, f, t) {
   const wrap = el('div', { class: 'species-photo-wrap' }, box, credit);
   const icon = () => el('div', { class: 'tank-hero-empty' }, kindIcon(entry && entry.k ? entry.k : 'fish'), el('span', { text: 'No photo yet' }));
   if (f && f.photo) {
+    box.classList.add('own');
     box.append(el('img', { src: f.photo, alt: 'Your ' + name }));
     credit.textContent = 'Your photo';
   } else {
@@ -3876,7 +3877,6 @@ function renderSpecies() {
     entry && usableScientific(entry) ? el('p', { class: 'muted sci', text: entry.s }) : null);
   if (entry && entry.c) {
     body.append(el('div', { class: 'chips' },
-      el('span', { class: 'pill', text: entry.k === 'plant' ? 'Plant' : entry.k === 'coral' ? 'Coral' : entry.k === 'shrimp' ? 'Shrimp' : entry.k === 'snail' ? 'Snail' : entry.k === 'invert' ? 'Invertebrate' : 'Fish' }),
       el('span', { class: 'pill ' + (entry.c.l === 'e' ? 'ok' : entry.c.l === 'h' ? 'warn' : ''), text: LEVEL[entry.c.l] }),
       TEMPER[entry.c.m] ? el('span', { class: 'pill ' + (entry.c.m === 'p' ? 'ok' : entry.c.m === 'a' ? 'bad' : 'warn'), text: TEMPER[entry.c.m] }) : null));
   }
@@ -3928,38 +3928,9 @@ function renderSpecies() {
   if (grp && grp.tip && entry.k !== 'plant') about.append(el('details', { class: 'tell' }, el('summary', { text: 'How to tell it from lookalikes' }), el('p', { text: grp.tip })));
   body.append(about);
 
-  // Mates
-  if (entry.k !== 'plant') {
-    const type = t && TYPES.includes(t.type) ? t.type : 'Freshwater';
-    const codes = type === 'Saltwater' ? ['s'] : type === 'Brackish' ? ['b', 'f'] : ['f'];
-    const wantKinds = entry.k === 'coral' ? ['fish', 'coral', 'invert', 'shrimp', 'snail'] : ['fish', 'shrimp', 'snail', 'invert'];
-    const good = [], avoid = [];
-    DB.list.forEach((c) => {
-      if (c === entry || !c.c || wantKinds.indexOf(c.k) === -1 || !codes.some((x) => c.w.indexOf(x) !== -1)) return;
-      const issues = pairIssues(entry, c);
-      if (!issues.length) { if (!gal || c.c.g <= gal) good.push(c); }
-      else if (issues.some((i) => i.level === 'bad')) avoid.push({ c, text: issues.find((i) => i.level === 'bad').text });
-    });
-    const score = (c) => (c.c.m === 'p' ? 0 : 6) + Math.abs(c.c.z - entry.c.z) * 0.6 + (c.c.y === entry.c.y ? 2 : 0) + (c.c.l === 'h' ? 3 : 0);
-    good.sort((p, q) => score(p) - score(q));
-    const goodCard = el('div', { class: 'card' }, el('h2', { text: 'Good tank mates' }));
-    if (good.length) {
-      goodCard.append(el('div', { class: 'alts mates' }, ...good.slice(0, 14).map((c) => el('button', { type: 'button', class: 'alt-chip', text: c.n + (rosterRow(t, c.n) ? ' · in your tank' : ''), onclick: () => showSpecies(c.n, t && t.id, true) }))));
-      goodCard.append(el('p', { class: 'muted small', text: 'Showing the best matches for ' + type.toLowerCase() + ' tanks. Check size and temperament before buying.' }));
-    } else goodCard.append(el('p', { class: 'muted small', text: 'No clear matches in the list for this tank type.' }));
-    body.append(goodCard);
-    if (avoid.length) {
-      avoid.sort((p, q) => (p.c.c.l === q.c.c.l ? p.c.n.localeCompare(q.c.n) : p.c.c.l < q.c.c.l ? -1 : 1));
-      const shrimpHits = avoid.filter((a) => a.c.k === 'shrimp');
-      if (shrimpHits.length > 1) {
-        const first = avoid.indexOf(shrimpHits[0]);
-        avoid.splice(0, avoid.length, ...avoid.filter((a) => a.c.k !== 'shrimp'));
-        avoid.splice(Math.min(first, avoid.length), 0, { c: shrimpHits[0].c, text: shrimpHits[0].text.replace(/so .* will not last/, 'so shrimp will not last') });
-      }
-      body.append(el('div', { class: 'card' }, el('h2', { text: 'Better to avoid' }),
-        el('div', { class: 'issues' }, ...avoid.slice(0, 6).map((a) => el('button', { type: 'button', class: 'issue bad', onclick: () => showSpecies(a.c.n, t && t.id, true) }, el('span', { class: 'dot', 'aria-hidden': 'true' }), el('span', { class: 'issue-text', text: a.text }))))));
-    }
-  }
+  // Mates (same layout as Fish Check)
+  const mates = compatBox(entry, t, { onPick: (n) => showSpecies(n, t && t.id, true), mark: (n) => (t && rosterRow(t, n) ? ' \u00b7 in your tank' : '') });
+  if (mates) body.append(el('div', { class: 'card' }, el('h2', { text: 'Tank mates' }), mates));
 }
 
 function stockCard(t) {
@@ -4171,12 +4142,16 @@ function compatLists(entry, t) {
   return { good: good.slice(0, 8).map((c) => c.n), avoid: avoidNames.slice(0, 6) };
 }
 
-function compatBox(entry, t) {
+function compatBox(entry, t, opts) {
   const lists = compatLists(entry, t);
   if (!lists) return null;
+  const o = opts || {};
+  const item = (n) => (o.onPick && n !== 'Shrimp'
+    ? el('li', { class: 'compat-link', role: 'link', tabindex: '0', text: n + (o.mark ? o.mark(n) : ''), onclick: () => o.onPick(n), onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); o.onPick(n); } } })
+    : el('li', { text: n }));
   const col = (cls, title, names, empty) => el('div', { class: 'compat-col ' + cls },
     el('h3', { text: title }),
-    names.length ? el('ul', {}, ...names.map((n) => el('li', { text: n }))) : el('p', { class: 'muted small', text: empty }));
+    names.length ? el('ul', {}, ...names.map(item)) : el('p', { class: 'muted small', text: empty }));
   return el('div', { class: 'compat' },
     col('ok', 'Works with', lists.good, 'No clear matches in the list.'),
     col('bad', 'Not with', lists.avoid, 'Nothing flagged.'));
@@ -4228,6 +4203,7 @@ function renderFishCheck() {
   const card = el('div', { class: 'card dream-result' });
   card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), el('span', { class: 'pill ' + sure[1], text: sure[0] })));
   if (entry && entry.s) card.append(el('p', { class: 'muted small', text: entry.s }));
+  if (entry && entry.c && entry.c.n) card.append(el('p', { class: 'fc-about', text: entry.c.n }));
   card.append(healthCard(r.health));
   if (r.label_text) card.append(el('p', { class: 'muted small', text: 'Read from the tag: ' + r.label_text }));
   if (conf < 0.95 && conf >= 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Worth a second look. Check the other names below, or try a closer side-on photo.' }));
@@ -4255,7 +4231,6 @@ function renderFishCheck() {
   const care = entry && entry.c ? entry : null;
   if (care) {
     card.append(el('div', { class: 'facts' }, ...speciesFacts(care).slice(0, 8).map((row) => factRow(row[0], row[1]))));
-    if (care.c.n) card.append(el('p', { class: 'muted small', text: care.c.n }));
   } else if (fc.careLoading && canonKey(fc.name) === canonKey(r.common_name)) {
     card.append(el('p', { class: 'muted small', role: 'status', text: 'Looking up care details…' }));
   } else if (r.care_estimate && canonKey(fc.name) === canonKey(r.common_name)) {

@@ -1239,3 +1239,11 @@ body { min-height: 100vh; min-height: 100dvh; }
 .btn.add-pill.add-grad { background: linear-gradient(135deg, #2F8CFF, #1A63C7); color: #fff; border-color: transparent; box-shadow: 0 6px 14px -6px rgba(26, 99, 199, 0.8); padding: 0 16px 0 12px; }
 .btn.add-pill.add-grad svg { stroke: #fff; stroke-width: 2.4; }
 .btn.add-pill.add-grad:active { background: linear-gradient(135deg, #1A63C7, #0A2E5C); }
+
+.fc-about { margin: 6px 0 12px; font-size: 15px; line-height: 1.5; color: var(--ink); }
+.compat-link { cursor: pointer; text-decoration: underline; text-decoration-color: rgba(30, 80, 160, 0.35); text-underline-offset: 3px; }
+.compat-link:active { color: #1A63C7; }
+
+/* The keeper's own fish photo is a square crop: show all of it at its own size instead of zooming it into a wide frame */
+.species-photo.own { aspect-ratio: auto; display: flex; justify-content: center; align-items: center; background: #EAF2FC; padding: 0; }
+.species-photo.own img { width: auto; height: auto; max-width: 100%; max-height: 320px; object-fit: contain; }
