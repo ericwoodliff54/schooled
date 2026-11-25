@@ -23,7 +23,7 @@ for l in read_lines('groups.txt'):
     if hard.strip() == '1': groups[gid]['h'] = 1
 
 species, errors = [], []
-for fn in ['species_fresh_fish.txt', 'species_fresh_other.txt', 'species_salt.txt', 'species_more_fresh.txt', 'species_more_salt.txt', 'species_batch3.txt', 'species_batch4.txt', 'species_batch5.txt', 'species_batch6.txt', 'species_batch7.txt', 'species_batch8.txt', 'species_batch9.txt', 'species_batch10.txt', 'species_batch11.txt', 'species_batch12.txt', 'species_batch13.txt', 'species_batch14.txt', 'species_batch15.txt']:
+for fn in ['species_fresh_fish.txt', 'species_fresh_other.txt', 'species_salt.txt', 'species_more_fresh.txt', 'species_more_salt.txt', 'species_batch3.txt', 'species_batch4.txt', 'species_batch5.txt', 'species_batch6.txt', 'species_batch7.txt', 'species_batch8.txt', 'species_batch9.txt', 'species_batch10.txt', 'species_batch11.txt', 'species_batch12.txt', 'species_batch13.txt', 'species_batch14.txt', 'species_batch15.txt', 'species_batch16.txt', 'species_batch17.txt', 'species_batch18.txt']:
     for i, l in enumerate(read_lines(fn), 1):
         parts = l.split('|')
         if len(parts) != 6:
@@ -63,7 +63,7 @@ for i, l in enumerate(fix_lines, 1):
 # care data: one row per species, keyed by common name
 by_name = {e['n']: e for e in species}
 care_seen = set()
-for fn in ['care_fresh_fish.txt', 'care_fresh_other.txt', 'care_salt.txt', 'care_more_fresh.txt', 'care_more_salt.txt', 'care_batch3.txt', 'care_batch4.txt', 'care_batch5.txt', 'care_batch6.txt', 'care_batch7.txt', 'care_batch8.txt', 'care_batch9.txt', 'care_batch10.txt', 'care_batch11.txt', 'care_batch12.txt', 'care_batch13.txt', 'care_batch14.txt', 'care_batch15.txt']:
+for fn in ['care_fresh_fish.txt', 'care_fresh_other.txt', 'care_salt.txt', 'care_more_fresh.txt', 'care_more_salt.txt', 'care_batch3.txt', 'care_batch4.txt', 'care_batch5.txt', 'care_batch6.txt', 'care_batch7.txt', 'care_batch8.txt', 'care_batch9.txt', 'care_batch10.txt', 'care_batch11.txt', 'care_batch12.txt', 'care_batch13.txt', 'care_batch14.txt', 'care_batch15.txt', 'care_batch16.txt', 'care_batch17.txt', 'care_batch18.txt']:
     for i, l in enumerate(read_lines(fn), 1):
         p = l.split('|')
         if len(p) != 12:
@@ -90,7 +90,7 @@ for e in species:
     if e['n'] not in care_seen: errors.append('no care row for "' + e['n'] + '"')
 
 # specific diet text (optional per species, shown instead of the generic Diet label)
-for i, l in enumerate(read_lines('diet.txt') + read_lines('diet_more.txt') + read_lines('diet_batch7.txt') + read_lines('diet_batch8.txt') + read_lines('diet_batch9.txt') + read_lines('diet_batch12.txt') + read_lines('diet_batch13.txt') + read_lines('diet_batch14.txt') + read_lines('diet_batch15.txt'), 1):
+for i, l in enumerate(read_lines('diet.txt') + read_lines('diet_more.txt') + read_lines('diet_batch7.txt') + read_lines('diet_batch8.txt') + read_lines('diet_batch9.txt') + read_lines('diet_batch12.txt') + read_lines('diet_batch13.txt') + read_lines('diet_batch14.txt') + read_lines('diet_batch15.txt') + read_lines('diet_batch16.txt') + read_lines('diet_batch17.txt') + read_lines('diet_batch18.txt'), 1):
     name, _, text = l.partition('|')
     e = by_name.get(name.strip())
     if not e or 'c' not in e: errors.append(f'diet.txt:{i}: no species with care named "{name}"'); continue
