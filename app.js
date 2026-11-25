@@ -2088,7 +2088,7 @@ function renderTank() {
         el('span', { class: 'group-thumb' }, items.length ? rowAvatar(items[0]) : kindAvatar(g.kinds ? g.kinds[0] : 'invert')),
         el('span', { class: 'group-text' }, el('strong', { text: g.title }), el('span', { text: total ? total + ' in your tank' : 'None yet' })),
         chevron()),
-      el('div', { class: 'group-body' }, ...(items.length ? items.map(rowFor) : [el('p', { class: 'muted small', text: g.empty + ' Tap Scan / Add to start.' })])));
+      el('div', { class: 'group-body' }, ...(items.length ? items.map(rowFor) : [el('p', { class: 'muted small', text: g.empty + ' Tap + New Fish to start.' })])));
     if (groupOpen[g.key]) det.open = true;
     det.addEventListener('toggle', () => { groupOpen[g.key] = det.open; });
     list.append(det);
@@ -2204,6 +2204,7 @@ function gearSuggestions(t) {
 const GEAR_PICKS_CHECKED = 'November 2026';
 const GEAR_DISCLAIMER = 'Product names and models are suggested for compatibility reference only; Schooled is not affiliated with or endorsed by these brands.';
 const AQUACLEAR = [[20, 5, 20, 100], [30, 10, 30, 150], [50, 20, 50, 200], [70, 40, 70, 300], [110, 60, 110, 500]]; // model, min gal, max gal, GPH
+const OASE = [['250', 70, 250], ['350', 90, 295], ['600', 160, 350], ['850', 225, 400]]; // BioMaster: model, max gal, GPH (Oase US)
 const FLUVAL07 = [[107, 10, 30], [207, 20, 45], [307, 40, 70], [407, 50, 100]];
 const JAGER = [[5, 7, 25], [7, 16, 50], [16, 26, 75], [26, 40, 100], [40, 53, 125], [53, 79, 150], [79, 106, 200], [106, 159, 250], [159, 264, 300]]; // min gal, max gal, watts
 const TIDAL = [['35', 35, 130], ['55', 55, 250], ['75', 75, 350], ['110', 110, 450]]; // model, max gal, GPH (Seachem)
@@ -2246,6 +2247,12 @@ function gearPicks(kind, t) {
       // Big or messy stock over about 180 gal needs more than one canister, and two also keep the tank filtered while one is being cleaned.
       const n6 = gal > 400 ? Math.ceil(gal / 400) : (gal >= 250 || (messy && gal >= 180)) ? 2 : 1;
       if (gal >= 100 && gal <= 250 && !(messy && gal > 180)) P('Popular', 'Fluval FX4', 'Large canister filter. The maker rates it up to 250 gal, with a 700 GPH pump.');
+      if (gal >= 30 && gal <= 900) {
+        const om = OASE.find((m) => gal * (messy ? 1.25 : 1) <= m[1]);
+        const no = om ? 1 : Math.ceil(gal * (messy ? 1.25 : 1) / 225);
+        const m = om || OASE[3];
+        P('Pro', (no > 1 ? (no === 2 ? 'Two' : no) + ' ' : '') + 'Oase BioMaster ' + m[0], 'Canister filter with an easy-clean pre-filter chamber. Oase rates each one for up to ' + m[1] + ' gal, ' + m[2] + ' GPH.' + (no > 1 ? ' Run ' + (no === 2 ? 'two' : no) + ' side by side for this tank size.' : ''));
+      }
       if (gal >= 60 && gal <= 800) P('Pro', n6 === 1 ? 'Fluval FX6' : (n6 === 2 ? 'Two Fluval FX6' : n6 + ' Fluval FX6'),
         'Large canister filter with a 925 GPH pump, rated up to 400 gal each.' + (n6 > 1 ? ' Run ' + (n6 === 2 ? 'two' : n6) + ' side by side for about ' + (n6 * 925).toLocaleString('en-US') + ' GPH. That spreads a heavy waste load across more media and keeps the tank filtered while you clean one.' : ''));
     }
