@@ -1432,6 +1432,8 @@ function fillSetupForm() {
     ? 'This helps size treatments and look up your tap water. It stays on your phone.'
     : 'Give it a name, a photo and a few details. You can change any of it later.';
   $('setup-submit').textContent = first ? 'Continue' : 'Add tank';
+  const sl = $('setup-legal');
+  if (sl) { sl.textContent = ''; if (first) sl.append('By continuing you agree to the ', extLink(LEGAL.privacy + '#terms', 'Terms of Use'), ' and ', extLink(LEGAL.privacy, 'Privacy Policy'), '.'); }
   $('setup-skip').textContent = first ? 'Skip for now' : 'Cancel';
   $('tank-name').value = '';
   $('tank-size').value = '';
@@ -1684,7 +1686,7 @@ function renderHome() {
   const usageN = loadUsage().length;
   missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => { restorePending = null; showView('backup'); } },
     featureIcon('info'),
-    el('strong', { text: 'Back up or restore \u00b7 ' + lastBackupText() }),
+    el('strong', { text: 'Settings \u00b7 ' + lastBackupText() }),
     chevron()));
   if (usageN) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
     featureIcon('info'),
@@ -1695,6 +1697,13 @@ function renderHome() {
     el('strong', { text: misses.length + (misses.length === 1 ? ' unmatched species to review' : ' unmatched species to review') }),
     chevron()));
 }
+
+// ---------- About and legal ----------
+// The legal pages live on the publisher's own site, so store listings and the app point to the same place.
+const SITE_URL = 'https://www.twinravensdigital.com';
+const LEGAL = { privacy: SITE_URL + '/schooled-privacy.html', support: SITE_URL + '/support.html#schooled', page: SITE_URL + '/schooled.html', email: 'contact@twinravensdigital.com' };
+const APP_VERSION = '1.0';
+function extLink(href, text) { return el('a', { href, target: '_blank', rel: 'noopener noreferrer', text }); }
 
 // ---------- Community fish photos (opt-in) ----------
 // With the keeper's yes, a small crop of one fish and its confirmed name go to a shared collection. No tank background, name or place.
@@ -1712,7 +1721,7 @@ function askContribConsent() {
         el('div', { class: 'sheet-grab', 'aria-hidden': 'true' }),
         el('div', { class: 'sheet-head' }, el('h2', { text: 'Help improve fish ID?' })),
         el('p', { text: CONTRIB_BLURB }),
-        el('p', { class: 'muted small', text: 'You can change this any time under Back up or restore.' }),
+        el('p', { class: 'muted small' }, 'You can change this any time under Settings. ', extLink(LEGAL.privacy + '#photos', 'How we use these photos'), '.'),
         el('button', { type: 'button', class: 'btn primary big', text: 'Yes, help improve it', onclick: () => done('yes') }),
         el('button', { type: 'button', class: 'btn big', text: 'No thanks', onclick: () => done('no') })));
     document.body.append(wrap);
@@ -1807,7 +1816,7 @@ function renderBackup() {
   const body = $('backup-body');
   body.replaceChildren();
   const tn = state.tanks.length;
-  body.append(el('h1', { text: 'Back up and restore' }),
+  body.append(el('h1', { text: 'Settings' }),
     el('p', { class: 'muted', text: 'Your tanks live only on this phone. Save a backup file before you switch phones, clear your browser data or delete the app, then restore it on the new phone.' }),
     el('div', { class: 'card' },
       el('h2', { text: 'Save a backup' }),
@@ -1848,6 +1857,12 @@ function renderBackup() {
       el('button', { type: 'button', class: 'btn primary', text: 'Choose backup file', onclick: () => fileIn.click() }));
   }
   body.append(rcard, fileIn);
+  body.append(el('div', { class: 'card' },
+    el('h2', { text: 'About Schooled' }),
+    el('p', { class: 'muted small', text: 'Schooled is made by Twin Ravens Digital LLC. Fish identification, care information and product ideas are estimates to help you plan, not veterinary or professional advice. Check with a trusted fish store or vet before you buy or treat livestock.' }),
+    el('p', { class: 'small' }, extLink(LEGAL.privacy, 'Privacy Policy'), ' \u00b7 ', extLink(LEGAL.privacy + '#terms', 'Terms of Use'), ' \u00b7 ', extLink(LEGAL.support, 'Support'), ' \u00b7 ', extLink(LEGAL.page, 'Website')),
+    el('p', { class: 'muted small', text: 'Contact: ' + LEGAL.email }),
+    el('p', { class: 'muted small', text: 'Version ' + APP_VERSION })));
 }
 
 function heroBtn(title, sub, icon, alt, onclick) {
