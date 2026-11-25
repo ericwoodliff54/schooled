@@ -111,14 +111,22 @@ def download(url):
     return None
 
 
-def call_worker(worker, key, image, mime, tank_type):
+def call_worker(worker, key, image, mime, tank_type, variant='app'):
     headers = {'Origin': ORIGIN, 'Content-Type': 'application/json'}
     if key:
         headers['X-Test-Key'] = key
     body = {'mode': 'fish', 'mime': mime, 'images': [base64.b64encode(image).decode()], 'tank_type': tank_type}
+    if variant != 'app':  # test runs only (needs TEST_KEY): 'model[+solo][+ground]'
+        parts = variant.split('+')
+        if parts[0] != 'default':
+            body['model'] = parts[0]
+        if 'ground' in parts:
+            body['ground'] = True
+        if 'solo' in parts:
+            body['escalate'] = False
     for attempt in range(4):
         try:
-            r = requests.post(worker.rstrip('/') + '/scan', json=body, headers=headers, timeout=70)
+            r = requests.post(worker.rstrip('/') + '/scan', json=body, headers=headers, timeout=90)
         except requests.RequestException as err:
             return {'ok': False, 'error': 'network: ' + str(err)[:80]}
         if r.status_code == 429:
@@ -148,6 +156,7 @@ def main():
     ap.add_argument('--commons', default='https://commons.wikimedia.org/w/api.php')
     ap.add_argument('--delay', type=float, default=-1, help='seconds between Worker calls (default 1, or 45 without a test key)')
     ap.add_argument('--out', default='accuracy-out')
+    ap.add_argument('--variant', default='app', help="app = what the app does; or model[+solo][+ground], e.g. gemini-4-hydrogen+solo")
     a = ap.parse_args()
 
     key = os.environ.get('TEST_KEY', '').strip()
@@ -206,7 +215,7 @@ def main():
             if not img:
                 continue
             tank = 'Saltwater' if 's' in e.get('w', 'f') and 'f' not in e.get('w', 'f') else 'Freshwater'
-            data = call_worker(a.worker, key, img, c['mime'], tank)
+            data = call_worker(a.worker, key, img, c['mime'], tank, a.variant)
             sent += 1
             got += 1
             row = {'expected': e['n'], 'kind': e['k'], 'file': c['title'], 'page': c['page'], 'license': c['license'], 'artist': c['artist']}
@@ -258,7 +267,7 @@ def write_report(a, db, results, sent, uin, uout, models):
     scored = [r for r in results if r['verdict'] not in ('no_photo', 'error')]
     n = len(scored)
     c = collections.Counter(r['verdict'] for r in scored)
-    lines = ['# Schooled accuracy check', '', 'Run: %s UTC. Worker: %s' % (datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M'), a.worker), '']
+    lines = ['# Schooled accuracy check (%s)' % a.variant, '', 'Run: %s UTC. Worker: %s' % (datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M'), a.worker), '']
     lines += ['**%d photos checked** across %d species.' % (n, len({r['expected'] for r in scored})), '',
               '| Result | Photos | Share |', '|---|---|---|',
               '| Correct species | %d | %s |' % (c['correct'], pct(c['correct'], n)),
