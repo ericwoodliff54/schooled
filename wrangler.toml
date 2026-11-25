@@ -13,3 +13,9 @@ keep_vars = true
 [[kv_namespaces]]
 binding = "LIMITS"
 id = "64581e37fa464497a2ac176e40b693bd"
+
+# Community fish photos (opt-in crops of one fish). One-time setup: Cloudflare dashboard > Storage & Databases >
+# R2 > Create bucket named exactly schooled-crops. Create the bucket BEFORE uploading this file.
+[[r2_buckets]]
+binding = "CROPS"
+bucket_name = "schooled-crops"

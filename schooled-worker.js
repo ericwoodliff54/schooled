@@ -19,6 +19,10 @@ const SCAN_PER_MONTH = 600; // photo reads per device per month (a whole-tank sc
 const SCAN_PER_DAY_ALL = 6000; // photo reads per day across everyone, same condition: a spend breaker, about $13 at today's prices
 const CARE_KEEP_SECONDS = 15552000; // shared care sheets are kept about 180 days
 const CARE_MISS_SECONDS = 259200; // "not a species I know" is remembered 3 days so junk names do not cost a call each time
+const CROP_CAP = 50; // saved fish photos per species before we stop asking for more (corrected names go to twice this)
+const CROP_PER_DEVICE_DAY = 40; // photos one phone can add per day
+const CROP_MAX_CHARS = 220000; // about 160 KB of JPEG per fish crop
+const CROP_RATE_MAX = 120; // requests per 10 minutes from one address
 const TOTAL_BUDGET_MS = 52000; // stop trying more models after this long
 const MAX_IMAGE_CHARS = 2800000; // about 2 MB per photo
 const MAX_IMAGES = 8; // one whole-tank photo, or up to 8 close-up montages to double-check
@@ -667,6 +671,68 @@ async function scan(request, env, origin) {
 }
 
 
+// ---------- Community fish photos: opt-in crops of one fish plus the name the keeper confirmed ----------
+const cropHits = new Map();
+async function sha256Hex(bytes) {
+  const d = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(d)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function contribute(request, env, origin) {
+  if (!env.CROPS || !env.LIMITS) return json({ ok: true, want: false, stored: false, reason: 'off' }, 200, origin);
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const now = Date.now();
+  const recent = (cropHits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (recent.length >= CROP_RATE_MAX) return json({ ok: false, error: 'rate_limited' }, 429, origin);
+  recent.push(now);
+  cropHits.set(ip, recent);
+  if (cropHits.size > 5000) cropHits.clear();
+  let body;
+  try { body = await request.json(); } catch (err) { return json({ ok: false, error: 'bad_request' }, 400, origin); }
+  const name = clean(body && body.name, 60);
+  const key = normKey(name).replace(/ /g, '_').slice(0, 60);
+  if (!key) return json({ ok: false, error: 'bad_request' }, 400, origin);
+  const kind = KINDS.includes(body.kind) ? body.kind : 'fish';
+  if (kind === 'other') return json({ ok: true, want: false, stored: false, reason: 'kind' }, 200, origin);
+  const corrected = body.src === 'user';
+  const device = clean(body.device, 60).replace(/[^A-Za-z0-9_-]/g, '') || ip;
+  const kv = env.LIMITS;
+  const countKey = 'crop:n:' + key;
+  const devKey = 'crop:d:' + device + ':' + dayKey();
+  let have = 0, mine = 0;
+  try { [have, mine] = (await Promise.all([kv.get(countKey), kv.get(devKey)])).map((v) => Number(v) || 0); } catch (err) { return json({ ok: true, want: false, stored: false, reason: 'busy' }, 200, origin); }
+  const cap = corrected ? CROP_CAP * 2 : CROP_CAP;
+  if (have >= cap) return json({ ok: true, want: false, stored: false, reason: 'enough' }, 200, origin);
+  if (mine >= CROP_PER_DEVICE_DAY) return json({ ok: true, want: false, stored: false, reason: 'daily' }, 200, origin);
+  if (!body.image) return json({ ok: true, want: true }, 200, origin); // the app asks first, so a photo we do not need is never uploaded
+  const img = body.image;
+  if (typeof img !== 'string' || img.length > CROP_MAX_CHARS || !/^\/9j\/[A-Za-z0-9+/=]+$/.test(img)) return json({ ok: false, error: 'bad_image' }, 400, origin);
+  let bytes;
+  try { bytes = Uint8Array.from(atob(img), (c) => c.charCodeAt(0)); } catch (err) { return json({ ok: false, error: 'bad_image' }, 400, origin); }
+  if (bytes.length < 2000 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return json({ ok: false, error: 'bad_image' }, 400, origin);
+  const hash = (await sha256Hex(bytes)).slice(0, 24);
+  const path = 'crops/' + key + '/' + hash + '.jpg';
+  try {
+    if (await env.CROPS.head(path)) return json({ ok: true, stored: false, reason: 'duplicate' }, 200, origin);
+    await env.CROPS.put(path, bytes, {
+      httpMetadata: { contentType: 'image/jpeg' },
+      customMetadata: {
+        name, sci: clean(body.sci, 80), kind,
+        water: ['Freshwater', 'Saltwater', 'Brackish'].includes(body.water) ? body.water : '',
+        src: corrected ? 'user' : 'ai',
+        ai: clean(body.ai, 60),
+        conf: String(Math.round((Number(body.conf) || 0) * 100)),
+        dev: (await sha256Hex(new TextEncoder().encode(device))).slice(0, 12),
+        t: new Date().toISOString().slice(0, 19)
+      }
+    });
+    await Promise.all([
+      kv.put(countKey, String(have + 1)),
+      kv.put(devKey, String(mine + 1), { expirationTtl: 172800 })
+    ]);
+  } catch (err) { return json({ ok: false, error: 'storage_error' }, 502, origin); }
+  return json({ ok: true, stored: true }, 200, origin);
+}
+
 // ---------- Care estimate: a rough care sheet for a species that is not in the app's list ----------
 const CARE_SCHEMA = {
   type: 'OBJECT',
@@ -1105,7 +1171,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 26, limits ' + (env.LIMITS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 27, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {
@@ -1116,6 +1182,11 @@ export default {
     if (request.method === 'POST' && url.pathname === '/ask') {
       if (!ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'forbidden' }, 403, origin);
       return askTank(request, env, origin);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/contribute') {
+      if (!ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'forbidden' }, 403, origin);
+      return contribute(request, env, origin);
     }
 
     if (request.method === 'POST' && url.pathname === '/care') {

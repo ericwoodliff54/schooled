@@ -1696,6 +1696,49 @@ function renderHome() {
     chevron()));
 }
 
+// ---------- Community fish photos (opt-in) ----------
+// With the keeper's yes, a small crop of one fish and its confirmed name go to a shared collection. No tank background, name or place.
+const CONTRIB_KEY = 'schooled.contrib';
+const CROP_SIDE = 384;
+function contribState() { try { return localStorage.getItem(CONTRIB_KEY) || ''; } catch (err) { return ''; } }
+function setContrib(v) { try { localStorage.setItem(CONTRIB_KEY, v); } catch (err) { /* optional */ } }
+const CONTRIB_BLURB = 'When you add a fish, Schooled can send a small cropped photo of just that fish, with the name you confirmed, to a shared collection that makes fish ID better for everyone. We never send your whole tank photo, tank names, notes, location or account details.';
+function askContribConsent() {
+  return new Promise((resolve) => {
+    const done = (v) => { setContrib(v); wrap.remove(); resolve(v === 'yes'); };
+    const wrap = el('div', { class: 'sheet-wrap' },
+      el('div', { class: 'sheet-dim' }),
+      el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Help improve fish ID' },
+        el('div', { class: 'sheet-grab', 'aria-hidden': 'true' }),
+        el('div', { class: 'sheet-head' }, el('h2', { text: 'Help improve fish ID?' })),
+        el('p', { text: CONTRIB_BLURB }),
+        el('p', { class: 'muted small', text: 'You can change this any time under Back up or restore.' }),
+        el('button', { type: 'button', class: 'btn primary big', text: 'Yes, help improve it', onclick: () => done('yes') }),
+        el('button', { type: 'button', class: 'btn big', text: 'No thanks', onclick: () => done('no') })));
+    document.body.append(wrap);
+  });
+}
+async function postCrop(item, withImage) {
+  const body = { device: deviceId(), name: item.name, sci: item.sci, kind: item.kind, src: item.src, ai: item.ai, conf: item.conf, water: item.water };
+  if (withImage) body.image = item.image.split(',')[1];
+  const res = await fetch(WORKER_URL + '/contribute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
+  return res.json().catch(() => ({}));
+}
+// Asks once, then quietly shares. Never blocks or shows errors: this is a bonus, not part of saving.
+async function shareCrops(list) {
+  try {
+    const items = (list || []).filter((x) => x && x.image && x.name).slice(0, 12);
+    if (!items.length) return;
+    let st = contribState();
+    if (st === '') { await askContribConsent(); st = contribState(); }
+    if (st !== 'yes') return;
+    for (const item of items) {
+      const q = await postCrop(item, false);
+      if (q && q.ok && q.want) await postCrop(item, true);
+    }
+  } catch (err) { /* sharing is optional */ }
+}
+
 // ---------- Back up and restore ----------
 // One file holds every tank, its fish, water log, reminders, equipment and progress photos.
 const LASTBACKUP_KEY = 'schooled.lastbackup';
@@ -1770,6 +1813,12 @@ function renderBackup() {
       el('h2', { text: 'Save a backup' }),
       el('p', { class: 'muted small', text: lastBackupText() + (tn ? '. ' + tn + (tn === 1 ? ' tank' : ' tanks') + ' with their fish, water logs, reminders, equipment and progress photos.' : '.') }),
       el('button', { type: 'button', class: 'btn primary', text: 'Save backup file', disabled: tn ? null : '', onclick: () => { saveBackupFile().catch(() => toast("Couldn't make the backup file.")); } })));
+  const on = contribState() === 'yes';
+  body.append(el('div', { class: 'card' },
+    el('h2', { text: 'Help improve fish ID' }),
+    el('p', { class: 'muted small', text: CONTRIB_BLURB }),
+    el('p', { class: 'small', text: on ? 'Sharing is on.' : 'Sharing is off.' }),
+    el('button', { type: 'button', class: 'btn' + (on ? '' : ' primary'), text: on ? 'Turn off sharing' : 'Turn on sharing', onclick: () => { setContrib(on ? 'no' : 'yes'); renderBackup(); } })));
   const fileIn = el('input', { type: 'file', accept: '.json,application/json', hidden: '' });
   fileIn.addEventListener('change', async () => {
     const f = fileIn.files && fileIn.files[0];
@@ -2748,7 +2797,7 @@ function drawToJpeg(source, sx, sy, sw, sh, maxSide, quality) {
 // A small square picture of one fish, cut from the scan photo, to use as its icon in the tank.
 // box is [ymin, xmin, ymax, xmax] from 0 to 1000; without a box the middle of the photo is used.
 const FISH_THUMB_SIDE = 240;
-function fishThumb(image, box) {
+function fishThumb(image, box, side0) {
   try {
     if (!image || !image.source || !image.width) return '';
     const W = image.width, H = image.height;
@@ -2760,7 +2809,7 @@ function fishThumb(image, box) {
       side = Math.min(Math.max(x2 - x1, y2 - y1) * 1.15, W, H);
     }
     const sx = Math.max(0, Math.min(W - side, cx - side / 2)), sy = Math.max(0, Math.min(H - side, cy - side / 2));
-    return drawToJpeg(image.source, sx, sy, side, side, FISH_THUMB_SIDE, 0.8);
+    return drawToJpeg(image.source, sx, sy, side, side, side0 || FISH_THUMB_SIDE, side0 ? 0.82 : 0.8);
   } catch (err) { return ''; }
 }
 function biggestBox(boxes) {
@@ -3185,7 +3234,7 @@ async function startScan(file, append, note, force) {
       }
     }
     if (qualityTip) pending.tips = pending.tips ? pending.tips + ' ' + qualityTip : qualityTip;
-    pending.species.forEach((sp) => { if (!sp.thumb && sp.boxes && sp.boxes.length) sp.thumb = fishThumb(image, biggestBox(sp.boxes)); });
+    pending.species.forEach((sp) => { if (!sp.thumb && sp.boxes && sp.boxes.length) sp.thumb = fishThumb(image, biggestBox(sp.boxes)); if (sp.boxes && sp.boxes.length && !sp.crop) sp.crop = fishThumb(image, biggestBox(sp.boxes), CROP_SIDE); });
     if (!pending.error && pending.species.length) {
       if (scanCache.size >= 6) scanCache.delete(scanCache.keys().next().value);
       scanCache.set(cacheKey, { t: Date.now(), species: JSON.stringify(pending.species), tips: pending.tips });
@@ -3321,7 +3370,7 @@ function resultRow(sp) {
         el('span', { class: 'sub', text: 'Could also be:' }),
         ...alts.map((n) => el('button', {
           type: 'button', class: 'alt-chip', text: n + ((sp.tankMatches || []).includes(n) ? ' · in your tank' : ''),
-          onclick: () => { const hit = lookupSpecies(n); sp.name = n; sp.scientific = usableScientific(hit); if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k; sp.group = hit && hit.g ? hit.g : ''; sp.alternatives = []; sp.confidence = 1; sp.verified = true; renderResults(); }
+          onclick: () => { const hit = lookupSpecies(n); if (canonKey(sp.name) !== canonKey(n)) { sp.ai = sp.ai || sp.name; sp.edited = true; } sp.name = n; sp.scientific = usableScientific(hit); if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k; sp.group = hit && hit.g ? hit.g : ''; sp.alternatives = []; sp.confidence = 1; sp.verified = true; renderResults(); }
         })))
     : null;
   const grp = sp.group && DB.groups[sp.group];
@@ -3360,7 +3409,7 @@ function editRow(sp, index) {
       onclick: () => {
         const name = nameInput.value.trim();
         const count = Math.round(Number(countInput.value));
-        if (name) { const hit = lookupSpecies(name); sp.name = hit ? hit.n : name.slice(0, 60); sp.group = hit && hit.g ? hit.g : ''; if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k; }
+        if (name) { const was = sp.name; const hit = lookupSpecies(name); sp.name = hit ? hit.n : name.slice(0, 60); if (canonKey(was) !== canonKey(sp.name)) { sp.ai = sp.ai || was; sp.edited = true; } sp.group = hit && hit.g ? hit.g : ''; if (hit && KIND_LIST.includes(hit.k)) sp.kind = hit.k; }
         if (count >= 1 && count <= 999) sp.count = count;
         sp.confidence = 1; // the user checked it
         sp.editing = false;
@@ -3379,6 +3428,8 @@ $('save-scan').addEventListener('click', () => {
   const target = getTank(pending.tankId) || ensureTank();
   const out = { new: 0, raised: 0, same: 0 };
   const before = new Set(target.fish.filter((f) => f.photo).map((f) => f));
+  const shared = pending.species.filter((sp) => sp.crop && sp.kind !== 'other' && (sp.edited || (Number(sp.confidence) || 0) >= 0.7))
+    .map((sp) => ({ name: sp.name, sci: sp.scientific || '', kind: sp.kind, src: sp.edited ? 'user' : 'ai', ai: sp.ai || '', conf: sp.edited ? 1 : sp.confidence, water: target.type, image: sp.crop }));
   pending.species.forEach((sp) => { const r = addToTank(target, sp.name, sp.count, 'scan', sp.kind, sp.thumb || ''); if (r) out[r] += 1; });
   if (!saveState()) { target.fish.forEach((f) => { if (f.photo && !before.has(f)) delete f.photo; }); saveState(); }
   pending = null;
@@ -3388,6 +3439,7 @@ $('save-scan').addEventListener('click', () => {
   if (out.raised) bits.push(out.raised + ' count' + (out.raised === 1 ? '' : 's') + ' raised');
   if (out.same) bits.push(out.same + ' already in the tank');
   if (bits.length) toast('Saved: ' + bits.join(', ') + '.');
+  shareCrops(shared);
 });
 
 // ---------- Care data, tank mate check and stocking ----------
@@ -4234,6 +4286,11 @@ function renderFishCheck() {
     const had = t.fish.find((f) => canonKey(f.name) === canonKey(lookupSpecies(fc.name) ? lookupSpecies(fc.name).n : fc.name));
     const hadPhoto = !!(had && had.photo);
     addToTank(t, fc.name, fc.count, 'add', r.kind, thumb);
+    if (r.is_aquarium !== false && r.kind !== 'other') {
+      const crop = fishThumb(fc.image, (active && active.box) || r.main_box || null, CROP_SIDE);
+      const lk = lookupSpecies(fc.name);
+      if (crop) shareCrops([{ name: lk ? lk.n : fc.name, sci: r.scientific_name || '', kind: r.kind, src: fc.userPick ? 'user' : 'ai', ai: fc.userPick ? r.common_name : '', conf: fc.userPick ? 1 : r.confidence, water: t.type, image: crop }]);
+    }
     if (!saveState() && !hadPhoto) { const row = t.fish.find((f) => canonKey(f.name) === canonKey(lookupSpecies(fc.name) ? lookupSpecies(fc.name).n : fc.name)); if (row) delete row.photo; saveState(); }
     toast('Added ' + fc.count + ' ' + fc.name + ' to ' + tankLabel(t) + '.');
     renderFishCheck();
