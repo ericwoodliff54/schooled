@@ -2126,6 +2126,13 @@ function todayISO() {
 }
 
 // Rule-based ideas from the tank's water type, size and what lives in it.
+// Big, messy or predatory fish (oscars, big cichlids and the like). Their tanks run strong flow and no live plants, so plant lights and surface skimmers are the wrong picks.
+function bigFishTank(t) {
+  return t.fish.some((f) => { const e = careOf(f.name); return e && e.k === 'fish' && (hasTag(e, 'heavy') || e.c.z >= 10 || (e.c.m === 'a' && e.c.z >= 8)); });
+}
+function tankHasPlants(t) {
+  return t.fish.some((f) => { const e = careOf(f.name); return e && e.k === 'plant'; });
+}
 function gearSuggestions(t) {
   const gal = tankGallons(t);
   const salt = t.type === 'Saltwater';
@@ -2180,7 +2187,7 @@ function gearSuggestions(t) {
   }
   if (!salt) {
     if (gal >= 20) add('Pump or wavemaker', 'Powerhead or wavemaker', 'Moves water into dead spots so waste reaches the filter and plant food reaches every corner. Filter flow plus powerhead of about ' + Math.round(gal * 5) + ' to ' + Math.round(gal * 8) + ' gallons per hour is a good start' + (inverts ? ', but keep it gentle and guard the intake if you have shrimp or fry.' : '.') + (gal > 75 ? ' Two, placed at opposite ends, move water more evenly in a big tank.' : ''));
-    if (gal >= 10 && ft !== 'sponge') add('Surface skimmer', 'Surface skimmer', 'Pulls the oily film off the top of the water into the filter. Clearer water, better gas exchange and more light for plants.');
+    if (gal >= 10 && ft !== 'sponge' && (plants || !bigFishTank(t))) add('Surface skimmer', 'Surface skimmer', 'Pulls the oily film off the top of the water into the filter. Clearer water, better gas exchange and more light for plants.');
     if (plants) add('Fertilizer', 'Plant fertilizer', 'Liquid fertilizer feeds leaf plants from the water. Heavy root feeders like swords and crypts also like root tabs in the substrate.');
     add('Gravel vacuum', 'Gravel vacuum or water changer', 'Lifts waste out of the substrate while you take water out. A hose that reaches the sink makes weekly water changes quick' + (gal >= 40 ? ', and a bigger tank is worth the longer hose.' : '.'));
   }
@@ -2268,7 +2275,13 @@ function gearPicks(kind, t) {
       else if (gal > 15) P('Pro', 'Kessil A360XE Tuna Blue', '90 W reef light. Covers about 24 x 24 in. Two per 24 x 24 in suits SPS.');
     } else {
       const nl = gal <= 12 ? 12 : gal <= 20 ? 18 : gal <= 35 ? 30 : gal <= 50 ? 36 : 48;
-      P('Budget', 'NICREW SkyLED Plus (' + nl + ' in)', 'Budget 24-hour LED with an automatic sunrise and sunset cycle. Sold from 12 to 60 in, so match your tank length. Fine for easy plants.');
+      const planted = tankHasPlants(t);
+      P('Budget', 'NICREW SkyLED Plus (' + nl + ' in)', 'Budget 24-hour LED with an automatic sunrise and sunset cycle. Sold from 12 to 60 in, so match your tank length.' + (planted ? ' Fine for easy plants.' : ''));
+      if (!planted) {
+        const asz = gal <= 12 ? '12 to 24 in' : gal <= 35 ? '24 to 34 in' : gal <= 50 ? '36 to 48 in' : '48 to 60 in';
+        P('Popular', 'Fluval AquaSky LED 2.0 (' + asz + ')', 'Slim LED for fish-only freshwater tanks, with app control and a sunrise and sunset cycle. Sold by tank length, so match yours.');
+        return out;
+      }
       const sz = gal <= 12 ? ['15 to 24 in', '22 W'] : gal <= 35 ? ['24 to 34 in', '32 W'] : gal <= 50 ? ['36 to 48 in', '46 W'] : ['48 to 60 in', '59 W'];
       P('Popular', 'Fluval Plant 3.0 LED (' + sz[0] + ')', sz[1] + ', 6500K full spectrum with app control. Sold by tank length, so match yours.');
       const fl = gal <= 12 ? '20' : gal <= 20 ? '24' : gal <= 35 ? '30' : gal <= 50 ? '36' : '48';
