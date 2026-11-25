@@ -915,7 +915,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .misses-bar { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px 18px; border: 0; border-radius: 20px; background: #FDEBD6; color: #8A4A0C; font: inherit; text-align: left; cursor: pointer; }
 .misses-bar strong { flex: 1; font-size: 16px; font-weight: 800; }
 .misses-bar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; flex-shrink: 0; }
-.home-misses { margin-top: 12px; }
+.home-misses { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 
 /* Compact reminder rows */
 .rem-card h2 { margin-bottom: 4px; }
@@ -1191,10 +1191,11 @@ body { min-height: 100vh; min-height: 100dvh; }
 #app { position: relative; z-index: 1; }
 
 /* Home card icons: white glyph on a solid color tile */
-.hero .hero-icon.tile-lfs, .hero .hero-icon.tile-sparkle { color: #fff; }
+.hero .hero-icon.tile-lfs, .hero .hero-icon.tile-sparkle, .hero .hero-icon.tile-gear { color: #fff; }
+.hero .hero-icon.tile-gear { background: linear-gradient(135deg, #5E7896, #3A526E); box-shadow: 0 6px 14px -6px rgba(58, 82, 110, 0.8); }
 .hero .hero-icon.tile-lfs { background: linear-gradient(135deg, #2F8CFF, #1A63C7); box-shadow: 0 6px 14px -6px rgba(26, 99, 199, 0.8); }
 .hero .hero-icon.tile-sparkle { background: linear-gradient(135deg, #8B6CFF, #5B3FD1); box-shadow: 0 6px 14px -6px rgba(91, 63, 209, 0.8); }
-.hero .hero-icon.tile-lfs svg, .hero .hero-icon.tile-sparkle svg { width: 30px; height: 30px; stroke-width: 1.8; stroke-linejoin: round; }
+.hero .hero-icon.tile-lfs svg, .hero .hero-icon.tile-sparkle svg, .hero .hero-icon.tile-gear svg { width: 30px; height: 30px; stroke-width: 1.8; stroke-linejoin: round; }
 
 /* Ask the Tank */
 .ask-body { display: flex; flex-direction: column; gap: 14px; }

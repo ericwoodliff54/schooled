@@ -1601,6 +1601,7 @@ const FEATURE_ICONS = {
   plus: ['M12 5v14', 'M5 12h14'],
   lfs: ['M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8', 'M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8', 'M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16', 'M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16', 'M7 12c2-2.6 5.2-3 7.6-1.2L17 9.5v5l-2.4-1.3C12.2 15 9 14.6 7 12z', 'M10 11.6h.01'],
   sparkle: ['M12 3.5l1.6 4.2 4.2 1.6-4.2 1.6L12 15.1l-1.6-4.2-4.2-1.6 4.2-1.6z', 'M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z', 'M5.5 15.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z'],
+  gear: ['M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z', 'M12 3v2.5', 'M12 18.5V21', 'M3 12h2.5', 'M18.5 12H21', 'M5.6 5.6l1.8 1.8', 'M16.6 16.6l1.8 1.8', 'M18.4 5.6l-1.8 1.8', 'M7.4 16.6l-1.8 1.8'],
   info: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z', 'M12 11v5', 'M12 7.5v.5']
 };
 function featureIcon(name) {
@@ -1681,13 +1682,10 @@ function renderHome() {
   }
   putAll(body, heroBtn('At Your LFS?', 'Photograph one fish and see if it fits your tank', 'lfs', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
   putAll(body, heroBtn('Dream Tank', 'Picture the tank you dream of, we\'ll bring it to life!', 'sparkle', true, () => showView('dream')));
+  putAll(body, heroBtn('Settings', lastBackupText() + ' \u00b7 Backup, sharing, legal', 'gear', true, () => { restorePending = null; showView('backup'); }));
   updateBadge();
   const misses = loadMisses();
   const usageN = loadUsage().length;
-  missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => { restorePending = null; showView('backup'); } },
-    featureIcon('info'),
-    el('strong', { text: 'Settings \u00b7 ' + lastBackupText() }),
-    chevron()));
   if (usageN) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
     featureIcon('info'),
     el('strong', { text: 'Usage log: ' + usageN + ' AI calls' }),
