@@ -1729,7 +1729,7 @@ function renderHome() {
   }
   putAll(body, heroBtn('At Your LFS?', 'Photograph one fish and see if it fits your tank', 'lfs', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
   putAll(body, heroBtn('Dream Tank', 'Picture the tank you dream of, we\'ll bring it to life!', 'sparkle', true, () => showView('dream')));
-  putAll(body, heroBtn('Settings', lastBackupText() + ' \u00b7 Backup, sharing, legal', 'gear', true, () => { restorePending = null; showView('backup'); }));
+  putAll(body, heroBtn('Settings', lastBackupText() + ' \u00b7 Backup, dark mode, legal', 'gear', true, () => { restorePending = null; showView('backup'); }));
   updateBadge();
   const misses = loadMisses();
   const usageN = loadUsage().length;
@@ -1867,6 +1867,13 @@ function renderBackup() {
       el('h2', { text: 'Save a backup' }),
       el('p', { class: 'muted small', text: lastBackupText() + (tn ? '. ' + tn + (tn === 1 ? ' tank' : ' tanks') + ' with their fish, water logs, reminders, equipment and progress photos.' : '.') }),
       el('button', { type: 'button', class: 'btn primary', text: 'Save backup file', disabled: tn ? null : '', onclick: () => { saveBackupFile().catch(() => toast("Couldn't make the backup file.")); } })));
+  const theme = window.schooledTheme ? window.schooledTheme.get() : 'auto';
+  const themeBtn = (v, label) => el('button', { type: 'button', class: 'chip-btn theme-opt' + (theme === v ? ' on' : ''), 'aria-pressed': theme === v ? 'true' : 'false', text: label,
+    onclick: () => { if (window.schooledTheme) window.schooledTheme.set(v); renderBackup(); } });
+  body.append(el('div', { class: 'card' },
+    el('h2', { text: 'Appearance' }),
+    el('p', { class: 'muted small', text: 'Match phone switches between light and dark with your phone\u2019s setting.' }),
+    el('div', { class: 'theme-row', role: 'group', 'aria-label': 'Appearance' }, themeBtn('auto', 'Match phone'), themeBtn('light', 'Light'), themeBtn('dark', 'Dark'))));
   const on = contribState() === 'yes';
   body.append(el('div', { class: 'card' },
     el('h2', { text: 'Help improve fish ID' }),
