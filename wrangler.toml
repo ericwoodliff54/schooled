@@ -6,3 +6,10 @@ workers_dev = true
 # Keeps variables you set in the Cloudflare dashboard (like GEMINI_MODEL).
 # Secrets such as GEMINI_API_KEY are never touched by a deploy.
 keep_vars = true
+
+# Shared storage for monthly limits and the community care-sheet cache.
+# One-time setup: Cloudflare dashboard > Storage & Databases > KV > Create a namespace
+# (any name, e.g. schooled-limits), then paste its ID below.
+[[kv_namespaces]]
+binding = "LIMITS"
+id = "64581e37fa464497a2ac176e40b693bd"

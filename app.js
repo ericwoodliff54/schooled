@@ -2821,6 +2821,8 @@ function friendlyError(code, status) {
   switch (code) {
     case 'rate_limited': return 'Lots of scans right now. Wait a minute and try again.';
     case 'ai_busy': return 'The photo reader is busy. Try again in a moment.';
+    case 'limit_reached': return 'You have used this month\u2019s photo scans. They come back on the 1st.';
+    case 'busy_today': return 'Photo scans are very busy today. Please try again tomorrow.';
     case 'bad_image': return "That photo couldn't be read. Try a different one.";
     case 'too_large': return 'That photo is too large. Try a smaller one.';
     case 'server_not_configured': return 'The server is not set up yet. Check the Worker secret.';
@@ -2830,7 +2832,7 @@ function friendlyError(code, status) {
 
 async function askWorker(images, mode, timeoutMs, ctx) {
   ctx = ctx || {};
-  const body = { images, mime: 'image/jpeg', mode, known: ctx.known || [] };
+  const body = { images, mime: 'image/jpeg', mode, known: ctx.known || [], device: deviceId() };
   if (ctx.tank_type) body.tank_type = ctx.tank_type;
   if (ctx.items) body.items = ctx.items;
   if (ctx.deep) body.deep = true;
