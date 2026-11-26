@@ -12,17 +12,17 @@ const VERIFY_MODEL = 'gemini-3.6-flash'; // the close-up check is tiny, so a str
 const IMAGE_MODEL = 'gemini-3.1-flash-image'; // Dream Tank pictures (env GEMINI_IMAGE_MODEL overrides)
 // Each monthly cap below can be overridden with a Worker variable of the same name (Cloudflare dashboard > Settings > Variables), so it can be tuned without a deploy.
 function cap(env, name, dflt) { const v = Number(env && env[name]); return Number.isFinite(v) && v >= 0 && env[name] !== '' && env[name] != null ? v : dflt; }
-const DREAM_PER_MONTH = 3; // pictures per device per month, enforced here only when the LIMITS KV store is bound
+const DREAM_PER_MONTH = 2; // pictures per device per month, enforced here only when the LIMITS KV store is bound
 const DREAM_PER_DAY_ALL = 60; // pictures per day across everyone: only a warning in the logs now, never blocks anyone
 const DREAM_RATE_MAX = 3; // and no more than this many tries per 10 minutes from one address
 const ASK_PER_MONTH = 100; // Get Schooled questions per device per month, enforced here only when the LIMITS KV store is bound
 const ASK_PER_DAY_ALL = 3000; // questions per day across everyone: warning only
 const ASK_RATE_MAX = 10; // and no more than this many questions per 10 minutes from one address
-const SCAN_PER_MONTH = 120; // AI photo calls per device per month (Fish Check = 1 call, a whole-tank scan is about 3), only when the LIMITS KV store is bound
+const SCAN_PER_MONTH = 110; // AI photo calls per device per month (Fish Check = 1 call, a whole-tank scan is about 3), only when the LIMITS KV store is bound
 const SCAN_PER_DAY_ALL = 6000; // photo reads per day across everyone: warning only, never blocks anyone
 // Per-address monthly caps (one household can share an address, so these are generous). They stop someone inventing new device ids to get around the per-device caps.
 const IP_PER_MONTH = { scan: 1500, ask: 300, dream: 30, water: 300, care: 900 };
-const WATER_PER_MONTH = 60; // water-strip reads per device per month
+const WATER_PER_MONTH = 30; // water-strip reads per device per month
 const CARE_PER_MONTH = 200; // new care-sheet lookups per device per month
 // Counts one use against an address for the month. Returns true when that address is over its cap. If the store is down, lets the request through.
 async function ipOver(env, kind, ip, request) {
