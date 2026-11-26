@@ -963,15 +963,6 @@ function logTrendCard(t) {
   const chart = logChart(t, logParam, trendDays);
   card.append(chart || el('p', { class: 'muted small', text: 'Not enough ' + LOG_FIELDS[logParam].label + ' readings in the last ' + trendDays + ' days. Try a longer range.' }));
   card.append(el('p', { class: 'muted small', text: 'Latest ' + fmtVal(logParam, vals[vals.length - 1]) + (LOG_FIELDS[logParam].unit ? ' ' + LOG_FIELDS[logParam].unit : '') + (diff === 0 ? ', unchanged since your first reading.' : ', ' + (diff > 0 ? 'up' : 'down') + ' from ' + fmtVal(logParam, vals[0]) + ' at your first reading.') + (judgeBand(t, logParam) && chart ? ' The shaded band is the good range.' : '') }));
-  const ev = tankEvents(t);
-  const startTs = startOfDay(Date.now()) - (trendDays - 1) * DAY_MS;
-  const marks = ev.filter((e) => e.type !== 'test' && e.t >= startTs).slice(-4).reverse();
-  if (marks.length) {
-    card.append(el('h3', { class: 'gear-h', text: 'What changed' }));
-    marks.forEach((e) => card.append(el('div', { class: 'tl-row' }, el('i', { class: 'tl-tick ' + e.type }), el('span', { class: 'tl-text', text: e.text }), el('span', { class: 'muted small', text: agoText(e.t) }))));
-  }
-  const sus = tlSuspects(ev);
-  if (sus) card.append(el('p', { class: 'tl-sus', text: 'Your latest test needs a look. Before it: ' + sus.before.slice(-3).map((e) => e.text + ' (' + Math.max(0, daysBetween(e.t, sus.test.t)) + (daysBetween(e.t, sus.test.t) === 1 ? ' day' : ' days') + ' before)').join('; ') + '.' }));
   return card;
 }
 
@@ -1207,7 +1198,7 @@ function renderLog() {
     el('button', { type: 'button', class: 'btn small', text: 'Log a test', onclick: () => { logForm = { mode: 'test' }; renderLog(); } }),
     el('button', { type: 'button', class: 'btn small', text: 'Water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } }),
     el('button', { type: 'button', class: 'btn small', text: 'Treatment', onclick: () => { logForm = { mode: 'treat' }; renderLog(); } })));
-  putAll(body, treatCard(t), logTrendCard(t), logHistoryCard(t));
+  putAll(body, treatCard(t), timelineCard(t), logTrendCard(t), logHistoryCard(t));
   putAll(body, el('p', { class: 'muted small', text: 'These checks are general guidance. Your own fish and your test kit come first.' }));
 }
 
@@ -1245,6 +1236,8 @@ function dueTasks() {
 function updateBadge() {
   try {
     const n = dueTasks().length;
+    const bp = nativePlugin('Badge');
+    if (bp) { if (n) bp.set({ count: n }); else bp.clear(); return; }
     if (n && navigator.setAppBadge) navigator.setAppBadge(n);
     else if (!n && navigator.clearAppBadge) navigator.clearAppBadge();
   } catch (err) { /* badges are optional */ }
@@ -1263,7 +1256,9 @@ function taskRow(t, k) {
   const info = taskInfo(k);
   const open = remEdit === k.id;
   const done = () => {
-    k.last = Date.now(); k.snooze = 0; remEdit = ''; saveState(); updateBadge();
+    k.last = Date.now(); k.snooze = 0; remEdit = '';
+    if (k.kind === 'change') addLogEntry(t, { id: uid(), t: Date.now(), k: 'change', v: {}, pct: 0, note: '' });
+    saveState(); updateBadge();
     toast('Done. Next: ' + k.label.toLowerCase() + ' ' + taskInfo(k).text.toLowerCase() + '.');
     renderReminders();
   };
@@ -1382,11 +1377,87 @@ function loadFrom(key) {
 }
 
 // Returns true when the save worked. Photos can fill a phone's browser storage.
+// ---------- Reminder notifications (scheduled on the phone, no server) ----------
+// Inside the store apps these use the Capacitor LocalNotifications plugin. On the plain web there is nothing to schedule.
+var NOTIFY_KEY = 'schooled.notify';
+var notifyTimer = 0;
+function notifyPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(NOTIFY_KEY));
+    return { on: !!(p && p.on), hour: p && Number.isInteger(p.hour) && p.hour >= 0 && p.hour <= 23 ? p.hour : 9 };
+  } catch (err) { return { on: false, hour: 9 }; }
+}
+function setNotifyPrefs(p) { try { localStorage.setItem(NOTIFY_KEY, JSON.stringify(p)); } catch (err) { /* ignore */ } }
+// True inside the iPhone and Android store apps (Capacitor), false on the plain web.
+function isNativeApp() {
+  try { const c = window.Capacitor; return !!(c && c.isNativePlatform && c.isNativePlatform()); } catch (err) { return false; }
+}
+function nativePlugin(name) {
+  try { return isNativeApp() && window.Capacitor.Plugins && window.Capacitor.Plugins[name] ? window.Capacitor.Plugins[name] : null; } catch (err) { return null; }
+}
+function nativeNotify() { return nativePlugin('LocalNotifications'); }
+function hourLabel(h) { return (h % 12 === 0 ? 12 : h % 12) + ':00 ' + (h < 12 ? 'AM' : 'PM'); }
+// One notification when each task is due (or the next morning if it already is), and one more three days later in case it is still not done.
+function notifyPlan(prefs) {
+  const now = Date.now();
+  const out = [];
+  state.tanks.forEach((t) => (t.tasks || []).forEach((k) => {
+    const due = taskDue(k);
+    const first = new Date(due);
+    first.setHours(prefs.hour, 0, 0, 0);
+    if (first.getTime() <= now) {
+      first.setTime(now);
+      first.setHours(prefs.hour, 0, 0, 0);
+      if (first.getTime() <= now) first.setDate(first.getDate() + 1);
+    }
+    const late = new Date(first.getTime());
+    late.setDate(late.getDate() + 3);
+    const overdue = due < first.getTime() - DAY_MS / 2;
+    out.push({ at: first.getTime(), title: k.label, body: tankLabel(t) + (overdue ? ' is overdue.' : ' is due today.'), tank: t.id });
+    out.push({ at: late.getTime(), title: k.label + ' still waiting', body: tankLabel(t) + ' is overdue.', tank: t.id });
+  }));
+  out.sort((a, b) => a.at - b.at);
+  return out.slice(0, 60); // phones keep about 64 scheduled notifications
+}
+async function syncNotifications() {
+  const ln = nativeNotify();
+  if (!ln) return;
+  try {
+    const pend = await ln.getPending();
+    if (pend && pend.notifications && pend.notifications.length) await ln.cancel({ notifications: pend.notifications.map((n) => ({ id: n.id })) });
+    const prefs = notifyPrefs();
+    if (!prefs.on) return;
+    const perm = await ln.checkPermissions();
+    if (!perm || perm.display !== 'granted') return;
+    const plan = notifyPlan(prefs);
+    if (plan.length) await ln.schedule({ notifications: plan.map((p, i) => ({ id: i + 1, title: p.title, body: p.body, schedule: { at: new Date(p.at), allowWhileIdle: true }, extra: { tank: p.tank } })) });
+  } catch (err) { /* notifications are a bonus, never block the app */ }
+}
+function scheduleNotifySync() {
+  clearTimeout(notifyTimer);
+  notifyTimer = setTimeout(syncNotifications, 800);
+}
+async function setNotifyOn(on) {
+  const ln = nativeNotify();
+  if (on) {
+    if (!ln) { toast('Reminder notifications work in the Schooled app.'); return; }
+    try {
+      let p = await ln.checkPermissions();
+      if (!p || p.display !== 'granted') p = await ln.requestPermissions();
+      if (!p || p.display !== 'granted') { toast('Notifications are off for Schooled. Turn them on in your phone settings.'); return; }
+    } catch (err) { toast("Couldn't turn on notifications."); return; }
+  }
+  setNotifyPrefs(Object.assign(notifyPrefs(), { on }));
+  syncNotifications();
+  renderBackup();
+}
+
 function saveState() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
     if (!state.tanks.length) localStorage.removeItem(BACKUP_KEY); // deleted on purpose
     showSaveBanner(false);
+    scheduleNotifySync();
     return true;
   } catch (err) {
     showSaveBanner(true); // private mode or full storage; the app still works for this visit, but say so
@@ -2006,6 +2077,17 @@ async function saveBackupFile() {
   const text = JSON.stringify(await buildBackup());
   const name = 'schooled-backup-' + todayISO() + '.json';
   const file = new File([text], name, { type: 'application/json' });
+  const fs = nativePlugin('Filesystem'), sh = nativePlugin('Share');
+  if (fs && sh) {
+    try {
+      const saved = await fs.writeFile({ path: name, data: text, directory: 'CACHE', encoding: 'utf8' });
+      await sh.share({ title: 'Schooled backup', url: saved.uri });
+      markBackup();
+      return;
+    } catch (err) {
+      if (/cancel/i.test(String((err && err.message) || err))) return; // the person closed the share sheet
+    }
+  }
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Schooled backup' }); markBackup(); return; }
   } catch (err) {
@@ -2073,6 +2155,15 @@ function renderBackup() {
     el('div', { class: 'theme-seg', role: 'group', 'aria-label': 'Temperature unit' },
       ...[['F', '\u00b0F'], ['C', '\u00b0C']].map(([k, label]) =>
         el('button', { type: 'button', class: 'btn' + (tu === k ? ' on' : ''), text: label, 'aria-pressed': tu === k ? 'true' : 'false', onclick: () => { setTempUnit(k); renderBackup(); } })))));
+  const np = notifyPrefs();
+  const native = !!nativeNotify();
+  body.append(el('div', { class: 'card' },
+    el('h2', { text: 'Care reminders' }),
+    el('p', { class: 'muted small', text: native ? 'Get a notification when a water change or other chore is due. They are set on this phone and use no data.' : 'Reminder notifications work in the Schooled app on your phone.' }),
+    el('button', { type: 'button', class: 'btn' + (np.on && native ? '' : ' primary'), text: np.on && native ? 'Turn off notifications' : 'Turn on notifications', onclick: () => setNotifyOn(!(np.on && native)) }),
+    native && np.on ? el('label', { class: 'field' }, el('span', { class: 'label', text: 'Time of day' }),
+      el('select', { class: 'select', 'aria-label': 'Time of day for reminders', onchange: (ev) => { setNotifyPrefs(Object.assign(notifyPrefs(), { hour: Number(ev.target.value) })); syncNotifications(); renderBackup(); } },
+        ...[6, 7, 8, 9, 10, 11, 12, 15, 17, 18, 19, 20].map((h) => el('option', { value: String(h), text: hourLabel(h), selected: h === np.hour ? '' : null })))) : null));
   const on = contribState() === 'yes';
   body.append(el('div', { class: 'card' },
     el('h2', { text: 'Help improve fish ID' }),
@@ -2129,7 +2220,19 @@ function renderBackup() {
     el('p', { class: 'muted small', text: 'Schooled is made by Twin Ravens Digital LLC. Fish identification, care information and product ideas are estimates to help you plan, not veterinary or professional advice. Check with a trusted fish store or vet before you buy or treat livestock.' }),
     el('p', { class: 'small' }, extLink(LEGAL.privacy, 'Privacy Policy'), ' \u00b7 ', extLink(LEGAL.privacy + '#terms', 'Terms of Use'), ' \u00b7 ', extLink(LEGAL.support, 'Support'), ' \u00b7 ', extLink(LEGAL.page, 'Website')),
     el('p', { class: 'muted small', text: 'Contact: ' + LEGAL.email }),
-    el('p', { class: 'muted small', text: 'Version ' + APP_VERSION })));
+    el('p', { class: 'muted small', text: 'Version ' + APP_VERSION, onclick: () => { verTaps += 1; if (verTaps >= 7) { verTaps = 0; keyEntry = !keyEntry; renderBackup(); } } }),
+    keyEntry ? testKeyBox() : null));
+}
+// Hidden: tap the version line 7 times to enter the owner's test key (the store apps cannot open the ?testkey= link).
+let verTaps = 0;
+let keyEntry = false;
+function testKeyBox() {
+  const input = el('input', { type: 'text', placeholder: 'Test key', autocomplete: 'off', autocapitalize: 'off', 'aria-label': 'Test key', value: '' });
+  const save = (v) => { try { if (v) localStorage.setItem(TESTKEY_STORE, v); else localStorage.removeItem(TESTKEY_STORE); } catch (err) { /* ignore */ } location.reload(); };
+  return el('div', { class: 'gear-form' }, input,
+    el('div', { class: 'row' },
+      el('button', { type: 'button', class: 'btn small primary', text: 'Save key', onclick: () => { const v = input.value.trim(); if (/^\S{6,200}$/.test(v)) save(v); else toast('That does not look like a key.'); } }),
+      el('button', { type: 'button', class: 'btn small', text: 'Remove key', onclick: () => save('') })));
 }
 
 // Erases everything Schooled keeps on this phone, then reloads as a fresh install. (Shared fish photos live on the server and are removed on request.)
@@ -5476,9 +5579,23 @@ $('water-back').addEventListener('click', () => goBack(() => { if (waterFrom ===
 // ---------- Start ----------
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
+    // The store apps carry their own files, so the website cache is not used there.
+    if (isNativeApp()) { navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {}); return; }
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
   });
 }
+
+// Reminder notifications inside the store apps: reschedule on start and when the app comes back, and open the Care tab when one is tapped.
+(() => {
+  const ln = nativeNotify();
+  if (!ln) return;
+  syncNotifications();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNotifications(); });
+  if (ln.addListener) ln.addListener('localNotificationActionPerformed', (ev) => {
+    const id = ev && ev.notification && ev.notification.extra && ev.notification.extra.tank;
+    if (id && getTank(id)) showTank(id, 'care');
+  });
+})();
 
 loadSpecies().then(() => {
   // Names and kinds come from the list, so redraw once it has loaded.
