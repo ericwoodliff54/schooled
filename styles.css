@@ -1370,3 +1370,5 @@ body { min-height: 100vh; min-height: 100dvh; }
 :root[data-theme="dark"] .compat-col.bad { border-color: #8A5226; background: #3A2512; }
 :root[data-theme="dark"] .issue.bad .dot, :root[data-theme="dark"] .log-dot.bad::before { background: #FF9A4D; }
 :root[data-theme="dark"] .stock-fill.over { background: linear-gradient(90deg, #FFB347, #FF8A3D); }
+.hero.slim { min-height: 0; padding: 14px 22px; }
+.hero.slim .hero-icon { width: 46px; height: 46px; }

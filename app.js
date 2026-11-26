@@ -1729,7 +1729,7 @@ function renderHome() {
   }
   putAll(body, heroBtn('At Your LFS?', 'Photograph one fish and see if it fits your tank', 'lfs', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
   putAll(body, heroBtn('Dream Tank', 'Picture the tank you dream of, we\'ll bring it to life!', 'sparkle', true, () => showView('dream')));
-  putAll(body, heroBtn('Settings', lastBackupText() + ' \u00b7 Backup, sharing, legal', 'gear', true, () => { restorePending = null; showView('backup'); }));
+  putAll(body, heroBtn('Settings', '', 'gear', true, () => { restorePending = null; showView('backup'); }));
   updateBadge();
   const misses = loadMisses();
   const usageN = loadUsage().length;
@@ -1938,8 +1938,8 @@ function heroBtn(title, sub, icon, alt, onclick) {
   const ic = featureIcon(icon);
   ic.setAttribute('width', '28');
   ic.setAttribute('height', '28');
-  return el('button', { type: 'button', class: 'hero' + (alt ? ' alt' : ''), onclick },
-    el('span', {}, el('strong', { text: title }), el('small', { text: sub })),
+  return el('button', { type: 'button', class: 'hero' + (alt ? ' alt' : '') + (sub ? '' : ' slim'), onclick },
+    el('span', {}, el('strong', { text: title }), sub ? el('small', { text: sub }) : null),
     el('span', { class: 'hero-icon tile-' + icon }, ic));
 }
 
