@@ -186,6 +186,29 @@ function testerMode() {
   } catch (err) { return false; }
 }
 const TESTER = testerMode();
+// Owner's phone only: open the app once with ?testkey=YOUR_KEY to store the Worker's test key on this phone, and ?testkey=0 to remove it.
+// With it, this phone skips the monthly caps (the key is only ever sent to the Worker, and the address bar is cleaned right away).
+const TESTKEY_STORE = 'schooled.testkey';
+function loadTestKey() {
+  try {
+    const q = new URLSearchParams(location.search).get('testkey');
+    if (q === '0') localStorage.removeItem(TESTKEY_STORE);
+    else if (q && /^\S{6,200}$/.test(q)) localStorage.setItem(TESTKEY_STORE, q);
+    if (q !== null) { try { const u = new URL(location.href); u.searchParams.delete('testkey'); history.replaceState(null, '', u.pathname + u.search + u.hash); } catch (err) { /* cosmetic */ } }
+    return localStorage.getItem(TESTKEY_STORE) || '';
+  } catch (err) { return ''; }
+}
+const TESTKEY = loadTestKey();
+if (TESTKEY) {
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    try {
+      const url = typeof input === 'string' ? input : (input && input.url) || '';
+      if (url.indexOf(WORKER_URL) === 0) { const h = new Headers((init && init.headers) || undefined); h.set('X-Test-Key', TESTKEY); init = Object.assign({}, init, { headers: h }); }
+    } catch (err) { /* send it without the key */ }
+    return nativeFetch(input, init);
+  };
+}
 const USAGE_KEY = 'schooled.usage';
 const USAGE_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75], 'gemini-3.7-flash': [0.75, 3.75], 'gemini-3.6-flash': [0.75, 3.75], 'gemini-3.5-flash': [0.75, 3.75], 'gemini-4-hydrogen': [1.5, 7.5] };
 function loadUsage() {
@@ -4845,7 +4868,7 @@ function askChat(s, id) {
   const list = Array.isArray(s.chats[id]) ? s.chats[id] : [];
   return list.filter((m) => m && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string');
 }
-function askLeft() { return Math.max(0, ASK_MONTHLY - askLoad().used); }
+function askLeft() { return TESTKEY ? 999 : Math.max(0, ASK_MONTHLY - askLoad().used); }
 
 // Plain-text summary of the tank for the AI. Uses the same checks the app shows, so answers agree with the app.
 function askContext(t) {
@@ -4930,7 +4953,7 @@ function renderAsk() {
   if (!t) { showView('home'); return; }
   const s = askLoad();
   const chat = askChat(s, t.id);
-  const left = Math.max(0, ASK_MONTHLY - s.used);
+  const left = TESTKEY ? Math.max(1, ASK_MONTHLY - s.used) : Math.max(0, ASK_MONTHLY - s.used);
 
   const head = el('div', { class: 'ask-head' },
     el('div', {}, el('h1', { text: 'Get Schooled' }), el('p', { class: 'muted small', text: 'About ' + tankLabel(t) })),
@@ -5077,7 +5100,7 @@ function dreamLoad() {
 function dreamSave(s) {
   try { localStorage.setItem(DREAM_KEY, JSON.stringify(s)); return true; } catch (err) { return false; }
 }
-function dreamLeft() { return Math.max(0, DREAM_MONTHLY - dreamLoad().used); }
+function dreamLeft() { return TESTKEY ? 999 : Math.max(0, DREAM_MONTHLY - dreamLoad().used); }
 function deviceId() {
   let id = '';
   try { id = localStorage.getItem(DEVICE_KEY) || ''; } catch (err) { id = ''; }
@@ -5250,7 +5273,7 @@ function renderDream() {
   const go = el('button', { type: 'button', class: 'btn primary big', text: dreamBusy ? 'Dreaming…' : (s.last ? 'Dream another one' : 'Dream it'), onclick: runDream });
   if (dreamBusy || !left) go.disabled = true;
   body.append(go,
-    el('p', { class: 'muted small center', text: dreamBusy ? 'This can take up to a minute. Please keep the app open.' : left + ' of ' + DREAM_MONTHLY + ' dream pictures left this month. A picture only counts when it is made.' }));
+    el('p', { class: 'muted small center', text: dreamBusy ? 'This can take up to a minute. Please keep the app open.' : TESTKEY ? 'Test key on: no monthly limit.' : left + ' of ' + DREAM_MONTHLY + ' dream pictures left this month. A picture only counts when it is made.' }));
 
   if (s.last && !dreamBusy) body.append(dreamResultCard(s.last));
 }

@@ -968,7 +968,8 @@ async function dream(request, env, origin) {
   const kv = env.LIMITS;
   const deviceKey = 'dream:' + (device || ip) + ':' + monthKey();
   const dayKeyName = 'dream:all:' + dayKey();
-  if (kv) {
+  const dreamTester = isTester(request, env); // the owner's test key skips the monthly cap
+  if (kv && !dreamTester) {
     let mine = 0, all = 0;
     try { [mine, all] = await Promise.all([kv.get(deviceKey), kv.get(dayKeyName)]); } catch (err) { /* store down: let it through */ }
     if ((Number(mine) || 0) >= cap(env, 'DREAM_PER_MONTH', DREAM_PER_MONTH)) return json({ ok: false, error: 'limit_reached' }, 429, origin);
@@ -1075,7 +1076,7 @@ async function dream(request, env, origin) {
   }
 
   // Only a finished picture counts against the monthly limit.
-  if (kv && image) {
+  if (kv && image && !dreamTester) {
     try {
       const [mine, all] = await Promise.all([kv.get(deviceKey), kv.get(dayKeyName)]);
       await Promise.all([
