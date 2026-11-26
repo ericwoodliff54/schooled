@@ -809,8 +809,11 @@ function svgEl(tag, attrs, ...kids) {
   return n;
 }
 
-function logChart(t, key) {
-  const pts = t.log.filter((e) => e.k === 'test' && e.v[key] != null).slice(-30).map((e) => ({ t: e.t, v: e.v[key] }));
+let trendDays = 60;
+function logChart(t, key, days) {
+  const now = Date.now();
+  const startTs = startOfDay(now) - (days - 1) * DAY_MS;
+  const pts = t.log.filter((e) => e.k === 'test' && e.v[key] != null && e.t >= startTs).map((e) => ({ t: e.t, v: e.v[key] }));
   if (pts.length < 2) return null;
   const W = 320, H = 150, L = 44, R = 10, T = 10, B = 26;
   const band = judgeBand(t, key);
@@ -820,17 +823,21 @@ function logChart(t, key) {
   const pad = (hi - lo) * 0.1;
   lo = Math.max(LOG_FIELDS[key].min, lo - pad);
   hi += pad;
-  const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
-  const sx = (x) => (t1 === t0 ? (L + W - R) / 2 : L + ((x - t0) / (t1 - t0)) * (W - L - R));
+  const t0 = startTs, t1 = now;
+  const sx = (x) => L + ((Math.min(Math.max(x, t0), t1) - t0) / (t1 - t0)) * (W - L - R);
   const sy = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B);
-  const svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'log-chart', role: 'img', 'aria-label': LOG_FIELDS[key].label + ' over time: ' + pts.map((p) => fmtVal(key, p.v)).join(', ') });
+  const svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'log-chart', role: 'img', 'aria-label': LOG_FIELDS[key].label + ' over the last ' + days + ' days: ' + pts.map((p) => fmtVal(key, p.v)).join(', ') });
   if (band) {
     const y1 = sy(Math.min(band[1], hi)), y2 = sy(Math.max(band[0], lo));
     svg.append(svgEl('rect', { x: L, y: y1, width: W - L - R, height: Math.max(2, y2 - y1), class: 'chart-band' }));
   }
   svg.append(svgEl('line', { x1: L, y1: T, x2: L, y2: H - B, class: 'chart-axis' }), svgEl('line', { x1: L, y1: H - B, x2: W - R, y2: H - B, class: 'chart-axis' }));
-  const txt = (x, y, anchor, s) => { const n = svgEl('text', { x, y, 'text-anchor': anchor, class: 'chart-t' }); n.textContent = s; return n; };
-  svg.append(txt(L - 5, T + 8, 'end', fmtVal(key, hi)), txt(L - 5, H - B, 'end', fmtVal(key, lo)), txt(L, H - 8, 'start', fmtDay(t0)), txt(W - R, H - 8, 'end', fmtDay(t1)));
+  tankEvents(t).filter((e) => e.type !== 'test' && e.t >= t0).forEach((e) => {
+    const x = sx(e.t).toFixed(1);
+    svg.append(svgEl('line', { x1: x, y1: T, x2: x, y2: H - B, class: 'chart-mark ' + e.type }), svgEl('circle', { cx: x, cy: T, r: 3.5, class: 'chart-mark-dot ' + e.type }));
+  });
+  const txt = (x, y, anchor, str) => { const n = svgEl('text', { x, y, 'text-anchor': anchor, class: 'chart-t' }); n.textContent = str; return n; };
+  svg.append(txt(L - 5, T + 8, 'end', fmtVal(key, hi)), txt(L - 5, H - B, 'end', fmtVal(key, lo)), txt(L, H - 8, 'start', days + ' days ago'), txt(W - R, H - 8, 'end', 'Today'));
   svg.append(svgEl('polyline', { points: pts.map((p) => sx(p.t).toFixed(1) + ',' + sy(p.v).toFixed(1)).join(' '), class: 'chart-line', fill: 'none' }));
   pts.forEach((p) => svg.append(svgEl('circle', { cx: sx(p.t).toFixed(1), cy: sy(p.v).toFixed(1), r: 3.5, class: 'chart-dot' })));
   return svg;
@@ -848,26 +855,14 @@ function logSummaryCard(t) {
   const last = tests[tests.length - 1];
   const checks = entryChecks(t, last);
   const worst = worstLevel(checks);
-  const det = el('details', { class: 'card group-card log-latest' });
-  det.open = latestOpen;
-  det.addEventListener('toggle', () => { latestOpen = det.open; });
-  const dots = el('div', { class: 'log-dots' });
-  checks.forEach((c) => dots.append(el('span', { class: 'log-dot ' + (c.j ? c.j.level : 'ok'), text: LOG_FIELDS[c.key].label })));
-  det.append(el('summary', { class: 'group-sum log-latest-sum' },
-    el('div', { class: 'log-latest-main' },
-      el('div', { class: 'water-line' }, el('h2', { text: 'Latest test' }), el('span', { class: 'pill ' + worst, text: LEVEL_WORDS[worst] })),
-      el('p', { class: 'muted small', text: fmtDay(last.t) + ' · ' + agoText(last.t) }), dots),
-    el('span', { class: 'chev', text: '›' })));
-  const list = el('div', { class: 'log-values' });
-  checks.forEach((c) => {
-    list.append(el('div', { class: 'log-val' },
-      el('div', { class: 'water-line' }, el('span', { text: LOG_FIELDS[c.key].label }), el('strong', { text: fmtVal(c.key, c.val) + (LOG_FIELDS[c.key].unit ? ' ' + LOG_FIELDS[c.key].unit : '') })),
-      c.j && c.j.level !== 'ok' ? el('div', { class: 'log-note ' + c.j.level, text: c.j.text }) : null));
-  });
-  const inner = el('div', { class: 'log-latest-body' }, list);
-  if (daysBetween(last.t, Date.now()) >= 14) inner.append(el('p', { class: 'muted small', text: 'It has been a while. Test again to see where the tank stands now.' }));
-  det.append(inner);
-  return det;
+  const head = el('div', { class: 'water-line' }, el('h2', { text: 'Latest test' }), el('span', { class: 'pill ' + worst, text: worst === 'ok' ? 'All good' : worst === 'warn' ? (checks.filter((c) => c.j && c.j.level === 'warn').length || 1) + ' to watch' : LEVEL_WORDS[worst] }));
+  const grid = el('div', { class: 'wgrid' }, ...checks.map((c) => el('div', { class: 'wcell ' + (c.j ? c.j.level : 'ok') },
+    el('span', { class: 'wcell-k', text: LOG_FIELDS[c.key].label }),
+    el('strong', { text: fmtVal(c.key, c.val) }, LOG_FIELDS[c.key].unit ? el('small', { text: ' ' + LOG_FIELDS[c.key].unit }) : null))));
+  card.append(head, el('p', { class: 'muted small', text: fmtDay(last.t) + ' \u00b7 ' + agoText(last.t) }), grid);
+  checks.filter((c) => c.j && c.j.level !== 'ok').forEach((c) => card.append(el('div', { class: 'log-note ' + c.j.level, text: c.j.text })));
+  if (daysBetween(last.t, Date.now()) >= 14) card.append(el('p', { class: 'muted small', text: 'It has been a while. Test again to see where the tank stands now.' }));
+  return card;
 }
 
 function submitTest(t, inputs, dateInput, noteInput) {
@@ -944,8 +939,8 @@ function logFormCard(t) {
   const core = keys.filter((k) => LOG_CORE.includes(k));
   const more = keys.filter((k) => !LOG_CORE.includes(k));
   card.append(el('h2', { text: 'Log a test' }), el('p', { class: 'muted small', text: 'Fill in only what you tested.' }),
-    el('div', { class: 'log-grid' }, ...core.map(field)));
-  if (more.length) card.append(el('details', { class: 'log-more' }, el('summary', { text: 'More tests' }), el('div', { class: 'log-grid' }, ...more.map(field))));
+    el('div', { class: 'wgrid' }, ...core.map(field)));
+  if (more.length) card.append(el('details', { class: 'log-more' }, el('summary', { text: 'More tests' }), el('div', { class: 'wgrid' }, ...more.map(field))));
   card.append(el('label', { class: 'log-field' }, el('span', { class: 'label', text: 'Date' }), dateInput), noteInput,
     el('div', { class: 'row-actions' },
       el('button', { type: 'button', class: 'btn primary small', text: 'Save test', onclick: () => submitTest(t, inputs, dateInput, noteInput) }),
@@ -962,40 +957,49 @@ function logTrendCard(t) {
   if (!keys.includes(logParam)) logParam = keys.includes('nh3') ? 'nh3' : keys[0];
   const vals = tests.filter((e) => e.v[logParam] != null).map((e) => e.v[logParam]);
   const diff = vals[vals.length - 1] - vals[0];
-  const card = el('div', { class: 'card' }, el('h2', { text: 'Trends' }),
-    el('div', { class: 'chips' }, ...keys.map((k) => el('button', { type: 'button', class: 'chip-btn' + (k === logParam ? ' on' : ''), 'aria-pressed': k === logParam ? 'true' : 'false', text: LOG_FIELDS[k].label, onclick: () => { logParam = k; renderLog(); } }))),
-    logChart(t, logParam),
-    el('p', { class: 'muted small', text: 'Latest ' + fmtVal(logParam, vals[vals.length - 1]) + (LOG_FIELDS[logParam].unit ? ' ' + LOG_FIELDS[logParam].unit : '') + (diff === 0 ? ', unchanged since your first reading.' : ', ' + (diff > 0 ? 'up' : 'down') + ' from ' + fmtVal(logParam, vals[0]) + ' at your first reading.') + (judgeBand(t, logParam) ? ' The shaded band is the good range.' : '') }));
+  const range = el('div', { class: 'chips', role: 'group', 'aria-label': 'Time range' }, ...[30, 60, 90].map((d) => el('button', { type: 'button', class: 'chip-btn' + (trendDays === d ? ' on' : ''), 'aria-pressed': String(trendDays === d), text: String(d), 'aria-label': d + ' days', onclick: () => { trendDays = d; renderLog(); } })));
+  const card = el('div', { class: 'card' }, el('div', { class: 'water-line' }, el('h2', { text: 'Trends' }), range),
+    el('div', { class: 'chips' }, ...keys.map((k) => el('button', { type: 'button', class: 'chip-btn' + (k === logParam ? ' on' : ''), 'aria-pressed': k === logParam ? 'true' : 'false', text: LOG_FIELDS[k].label, onclick: () => { logParam = k; renderLog(); } }))));
+  const chart = logChart(t, logParam, trendDays);
+  card.append(chart || el('p', { class: 'muted small', text: 'Not enough ' + LOG_FIELDS[logParam].label + ' readings in the last ' + trendDays + ' days. Try a longer range.' }));
+  card.append(el('p', { class: 'muted small', text: 'Latest ' + fmtVal(logParam, vals[vals.length - 1]) + (LOG_FIELDS[logParam].unit ? ' ' + LOG_FIELDS[logParam].unit : '') + (diff === 0 ? ', unchanged since your first reading.' : ', ' + (diff > 0 ? 'up' : 'down') + ' from ' + fmtVal(logParam, vals[0]) + ' at your first reading.') + (judgeBand(t, logParam) && chart ? ' The shaded band is the good range.' : '') }));
+  const ev = tankEvents(t);
+  const startTs = startOfDay(Date.now()) - (trendDays - 1) * DAY_MS;
+  const marks = ev.filter((e) => e.type !== 'test' && e.t >= startTs).slice(-4).reverse();
+  if (marks.length) {
+    card.append(el('h3', { class: 'gear-h', text: 'What changed' }));
+    marks.forEach((e) => card.append(el('div', { class: 'tl-row' }, el('i', { class: 'tl-tick ' + e.type }), el('span', { class: 'tl-text', text: e.text }), el('span', { class: 'muted small', text: agoText(e.t) }))));
+  }
+  const sus = tlSuspects(ev);
+  if (sus) card.append(el('p', { class: 'tl-sus', text: 'Your latest test needs a look. Before it: ' + sus.before.slice(-3).map((e) => e.text + ' (' + Math.max(0, daysBetween(e.t, sus.test.t)) + (daysBetween(e.t, sus.test.t) === 1 ? ' day' : ' days') + ' before)').join('; ') + '.' }));
   return card;
 }
 
-let histOpen = false; // water history stays collapsed until opened
 function logHistoryCard(t) {
   if (!t.log.length) return null;
   const rows = t.log.slice().reverse();
-  const shown = logAll ? rows : rows.slice(0, 10);
-  const card = el('details', { class: 'card tank-settings' }, el('summary', null, 'History ', el('span', { class: 'summary-count', text: String(rows.length) })));
-  card.open = histOpen;
-  card.addEventListener('toggle', () => { histOpen = card.open; });
+  const shown = logAll ? rows : rows.slice(0, 3);
+  const card = el('div', { class: 'card' }, el('div', { class: 'water-line' }, el('h2', { text: 'Recent history' }), el('span', { class: 'summary-count', text: rows.length + (rows.length === 1 ? ' entry' : ' entries') })));
   shown.forEach((e) => {
     let line, pill = null;
     if (e.k === 'change') line = 'Water change' + (e.pct ? ', ' + e.pct + '%' : '');
     else if (e.k === 'treat') line = 'Treatment: ' + e.name;
     else {
       const checks = entryChecks(t, e);
-      line = checks.map((c) => LOG_FIELDS[c.key].label + ' ' + fmtVal(c.key, c.val)).join(' · ');
+      line = checks.map((c) => LOG_FIELDS[c.key].label + ' ' + fmtVal(c.key, c.val)).join(' \u00b7 ');
       const w = worstLevel(checks);
       pill = el('span', { class: 'pill ' + w, text: w === 'ok' ? 'Good' : w === 'warn' ? 'Watch' : 'Act' });
     }
-    const confirming = logDelete === e.id;
+    const menuOpen = logDelete === e.id;
     card.append(el('div', { class: 'log-row' },
-      el('div', { class: 'log-row-main' }, el('div', { class: 'water-line' }, el('strong', { text: fmtDay(e.t) }), pill), el('span', { class: 'muted small', text: line }), e.note ? el('span', { class: 'muted small', text: '“' + e.note + '”' }) : null),
-      el('button', { type: 'button', class: 'btn link small-link', text: confirming ? 'Tap to confirm' : 'Delete', 'aria-label': 'Delete the ' + fmtDay(e.t) + ' entry', onclick: () => {
-        if (!confirming) { logDelete = e.id; renderLog(); return; }
-        t.log = t.log.filter((x) => x.id !== e.id); logDelete = ''; saveState(); renderLog();
-      } })));
+      el('div', { class: 'log-row-main' }, el('div', { class: 'water-line' }, el('strong', { text: fmtDay(e.t) }), pill), el('span', { class: 'muted small', text: line }), e.note ? el('span', { class: 'muted small', text: '\u201c' + e.note + '\u201d' }) : null),
+      el('button', { type: 'button', class: 'dots-btn', 'aria-label': 'More options for the ' + fmtDay(e.t) + ' entry', 'aria-expanded': String(menuOpen), text: '\u00b7\u00b7\u00b7', onclick: () => { logDelete = menuOpen ? '' : e.id; renderLog(); } })));
+    if (menuOpen) card.append(el('div', { class: 'log-menu' },
+      el('span', { class: 'muted small', text: 'Delete this entry?' }),
+      el('button', { type: 'button', class: 'btn small', text: 'Cancel', onclick: () => { logDelete = ''; renderLog(); } }),
+      el('button', { type: 'button', class: 'btn small danger', text: 'Delete', onclick: () => { t.log = t.log.filter((x) => x.id !== e.id); logDelete = ''; saveState(); renderLog(); } })));
   });
-  if (rows.length > 10) card.append(el('button', { type: 'button', class: 'btn link', text: logAll ? 'Show fewer' : 'Show all ' + rows.length, onclick: () => { logAll = !logAll; renderLog(); } }));
+  if (rows.length > 3) card.append(el('button', { type: 'button', class: 'btn link', text: logAll ? 'Show fewer' : 'View all history \u203a', onclick: () => { logAll = !logAll; renderLog(); } }));
   return card;
 }
 
@@ -1060,8 +1064,7 @@ function treatCard(t) {
   const card = el('div', { class: 'card treat-card' }, el('div', { class: 'water-line' }, el('h2', { text: 'What to do' }),
     r.list.length ? el('button', { type: 'button', class: 'btn small', text: 'Clear', 'aria-label': 'Clear these treatments', onclick: () => { lastTest.cleared = true; saveState(); renderLog(); toast('Cleared. A new test will bring them back if needed.'); } }) : null));
   if (!r.list.length) {
-    card.append(el('p', { class: 'muted', text: 'No treatments needed. Your latest test looks fine for ' + tankLabel(t) + '.' }));
-    return card;
+    return el('div', { class: 'todo-ok' }, el('strong', { text: 'What to do' }), el('span', { text: 'Nothing needed. Your latest test looks fine.' }));
   }
   r.list.forEach((x) => {
     card.append(el('div', { class: 'tip-row ' + x.level },
@@ -1198,14 +1201,13 @@ function renderLog() {
   if (!t) return;
   syncWaterDot(t);
   putAll(body, logSummaryCard(t));
-  putAll(body, timelineCard(t));
   if (logForm) putAll(body, logFormCard(t));
   else putAll(body, el('div', { class: 'row-actions wide' },
     el('button', { type: 'button', class: 'btn primary small', text: 'Scan a test', onclick: openScanSheet }),
     el('button', { type: 'button', class: 'btn small', text: 'Log a test', onclick: () => { logForm = { mode: 'test' }; renderLog(); } }),
     el('button', { type: 'button', class: 'btn small', text: 'Water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } }),
     el('button', { type: 'button', class: 'btn small', text: 'Treatment', onclick: () => { logForm = { mode: 'treat' }; renderLog(); } })));
-  putAll(body, treatCard(t), ...suppliesCards(t), logTrendCard(t), logHistoryCard(t));
+  putAll(body, treatCard(t), logTrendCard(t), logHistoryCard(t));
   putAll(body, el('p', { class: 'muted small', text: 'These checks are general guidance. Your own fish and your test kit come first.' }));
 }
 
@@ -2868,6 +2870,8 @@ function renderGear() {
   body.replaceChildren(...g.parts);
   $('tank-ideas-count').textContent = g.needed ? String(g.needed) : '';
   $('tank-ideas-body').replaceChildren(...g.ip);
+  const slot = $('tank-supplies-slot');
+  if (slot) slot.replaceChildren(...suppliesCards(t));
 }
 // Water tab: chemicals, supplements, salt, salinity tools and test kits.
 let supOpen = false;
