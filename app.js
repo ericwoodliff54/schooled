@@ -2204,7 +2204,7 @@ function renderTank() {
   if (document.activeElement !== notes) notes.value = t.notes;
 
 
-  const SECS = [['fish', 'Fish and plants'], ['water', 'Water'], ['care', 'Care']];
+  const SECS = [['fish', t.type === 'Saltwater' ? 'Fish and coral' : 'Fish and plants'], ['water', 'Water'], ['care', 'Care']];
   const dueHere = t.tasks.filter((k) => taskInfo(k).diff <= 0).length;
   $('tank-seg').replaceChildren(...SECS.map(([k, label]) => el('button', { type: 'button', class: 'seg-btn' + (k === tankSection ? ' on' : ''), 'aria-pressed': k === tankSection ? 'true' : 'false',
     text: label + (k === 'care' && dueHere ? ' (' + dueHere + ')' : ''), onclick: () => { tankSection = k; renderTank(); } })));
