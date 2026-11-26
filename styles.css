@@ -934,7 +934,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 
 .add-pop { position: fixed; inset: 0; z-index: 60; background: rgba(15,30,50,.45); display: flex; align-items: flex-start; justify-content: center; padding: 12vh 14px 14px; }
 .add-pop[hidden] { display: none; }
-.add-pop-card { width: 100%; max-width: 520px; background: var(--card); border-radius: 18px; padding: 14px; box-shadow: var(--shadow); }
+.add-pop-card { width: 100%; max-width: 520px; max-height: 84vh; overflow-y: auto; background: var(--card); border-radius: 18px; padding: 14px; box-shadow: var(--shadow); }
 .add-pop-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 
 .home-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

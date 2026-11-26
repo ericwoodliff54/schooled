@@ -1730,16 +1730,22 @@ function closeAddMenu() {
   $('tank-add-fish').setAttribute('aria-expanded', 'false');
 }
 function renderTankAddMenu() {
-  const box = $('tank-add-menu');
+  const box = $('tank-add-list');
   const t = getTank(openTankId);
+  if (!box) return;
   box.replaceChildren();
   if (!t) return;
+  const startCheck = (inputId) => () => {
+    closeFishImage(); fishCheck = null; fishCheckTankId = t.id; fishCheckNone = false; fishCheckFrom = 'tank';
+    closeAddMenu(); showView('fishcheck');
+    if ($(inputId)) $(inputId).click();
+  };
   putAll(box,
     featureBtn({ icon: 'scan', color: 'blue', title: 'Scan the whole tank', text: 'Photograph the tank and name every fish, plant and coral',
       go: () => { state.activeId = t.id; saveState(); closeAddMenu(); $('gallery-input').click(); } }),
-    featureBtn({ icon: 'fish', color: 'aqua', title: 'Check one fish', text: 'Photograph a fish and see if it fits ' + tankLabel(t),
-      go: () => { closeFishImage(); fishCheck = null; fishCheckTankId = t.id; fishCheckNone = false; fishCheckFrom = 'tank'; closeAddMenu(); showView('fishcheck'); } }),
-    featureBtn({ icon: 'plus', color: 'orange', title: 'Type a name', text: 'See its details first, then add it',
+    featureBtn({ icon: 'camera', color: 'aqua', title: 'Take a picture', text: 'Photograph one fish and see if it fits ' + tankLabel(t), go: startCheck('fishcheck-camera') }),
+    featureBtn({ icon: 'upload', color: 'purple', title: 'Upload a photo', text: 'Choose a photo of one fish from your device', go: startCheck('fishcheck-gallery') }),
+    featureBtn({ icon: 'plus', color: 'orange', title: 'Enter a name', text: 'See its details first, then add it',
       go: () => { closeAddMenu(); openAddPop(); } }));
 }
 if ($('tank-add-fish')) $('tank-add-fish').addEventListener('click', () => {
@@ -1748,6 +1754,8 @@ if ($('tank-add-fish')) $('tank-add-fish').addEventListener('click', () => {
   $('tank-add-fish').setAttribute('aria-expanded', String(!box.hidden));
   if (!box.hidden) renderTankAddMenu();
 });
+if ($('tank-add-close')) $('tank-add-close').addEventListener('click', closeAddMenu);
+if ($('tank-add-menu')) $('tank-add-menu').addEventListener('click', (ev) => { if (ev.target === $('tank-add-menu')) closeAddMenu(); });
 
 $('setup-skip').addEventListener('click', () => {
   if (state.setupDone) { showView('home'); return; }
@@ -1804,6 +1812,8 @@ const FEATURE_ICONS = {
   chat: ['M4 5h16v11H9l-5 4z'],
   scan: ['M4 8V5a1 1 0 0 1 1-1h3', 'M16 4h3a1 1 0 0 1 1 1v3', 'M20 16v3a1 1 0 0 1-1 1h-3', 'M8 20H5a1 1 0 0 1-1-1v-3', 'M8 12c1.5-2 4-2 6 0-2 2-4.5 2-6 0z', 'M14 12l2-1.2v2.4z'],
   plus: ['M12 5v14', 'M5 12h14'],
+  camera: ['M4 8h3l2-3h6l2 3h3v11H4z', 'M12 10a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z'],
+  upload: ['M12 16V5', 'M7.5 9.5L12 5l4.5 4.5', 'M5 19h14'],
   lfs: ['M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8', 'M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8', 'M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16', 'M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16', 'M7 12c2-2.6 5.2-3 7.6-1.2L17 9.5v5l-2.4-1.3C12.2 15 9 14.6 7 12z', 'M10 11.6h.01'],
   sparkle: ['M12 3.5l1.6 4.2 4.2 1.6-4.2 1.6L12 15.1l-1.6-4.2-4.2-1.6 4.2-1.6z', 'M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z', 'M5.5 15.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z'],
   gear: ['M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z', 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'],
@@ -4668,12 +4678,6 @@ function renderFishCheck() {
     el('button', { type: 'button', class: 'btn primary', text: 'Take photo', onclick: () => $('fishcheck-camera').click() }),
     el('button', { type: 'button', class: 'btn', text: 'Choose photo', onclick: () => $('fishcheck-gallery').click() }));
   body.append(actions);
-  const nameSearch = createSearch({
-    placeholder: 'Or type its name', label: 'Type a fish, plant or coral name',
-    type: () => (t ? t.type : 'Freshwater'),
-    onPick: (name, entry) => startNamedCheck(name, entry)
-  });
-  body.append(el('p', { class: 'label', text: 'Read its name on the tank?' }), nameSearch.root);
   if (!fc) return;
   if (fc.photoUrl && fc.picker) {
     const pk = fc.picker;
