@@ -2347,6 +2347,9 @@ function renderTank() {
       el('button', { type: 'button', class: 'round', 'aria-label': 'One more ' + f.name, text: '+', onclick: () => changeCount(t, f, 1) }));
   };
   const salt = t.type === 'Saltwater';
+  const addLabel = salt ? 'New Fish/Coral' : 'New Fish/Plants';
+  const addBtn = $('tank-add-fish');
+  if (addBtn && addBtn.lastChild && addBtn.lastChild.nodeType === 3) addBtn.lastChild.textContent = addLabel;
   const second = salt ? { key: 'coral', title: 'Corals', kinds: ['coral'], empty: 'No corals yet.' } : { key: 'plant', title: 'Plants', kinds: ['plant'], empty: 'No plants yet.' };
   const groups = [{ key: 'fish', title: 'Fish', kinds: ['fish'], empty: 'No fish yet.' }, second];
   const taken = new Set(groups.flatMap((g) => g.kinds));
@@ -2360,7 +2363,7 @@ function renderTank() {
         el('span', { class: 'group-thumb' }, items.length ? rowAvatar(items[0]) : kindAvatar(g.kinds ? g.kinds[0] : 'invert')),
         el('span', { class: 'group-text' }, el('strong', { text: g.title }), el('span', { text: total ? total + ' in your tank' : 'None yet' })),
         chevron()),
-      el('div', { class: 'group-body' }, ...(items.length ? items.map(rowFor) : [el('p', { class: 'muted small', text: g.empty + ' Tap + New Fish to start.' })])));
+      el('div', { class: 'group-body' }, ...(items.length ? items.map(rowFor) : [el('p', { class: 'muted small', text: g.empty + ' Tap + ' + addLabel + ' to start.' })])));
     if (groupOpen[g.key]) det.open = true;
     det.addEventListener('toggle', () => { groupOpen[g.key] = det.open; });
     list.append(det);
@@ -2368,7 +2371,6 @@ function renderTank() {
   const ins = $('tank-insights');
   const strip = summaryStrip(t);
   ins.replaceChildren(strip.row, ...(strip.showMates ? [mateCheckCard(t)] : []));
-  strip.row.append(timelineCard(t));
   renderGear();
   if (photoState.tank !== t.id || photoState.list === null) { photoState.list = null; loadProgressPhotos(); } else renderProgress();
 }
