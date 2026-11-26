@@ -1,6 +1,6 @@
 // Schooled service worker: keeps the app opening when offline.
 // Network first, so new uploads show up right away; falls back to the saved copy.
-const CACHE = 'schooled-shell-v161';
+const CACHE = 'schooled-shell-v162';
 const SHELL = [
   'species.json',
   './',
@@ -50,6 +50,6 @@ self.addEventListener('fetch', (event) => {
         }
         return res;
       })
-      .catch(() => caches.match(req).then((hit) => hit || caches.match('index.html')))
+      .catch(() => caches.match(req).then((hit) => hit || (req.mode === 'navigate' ? caches.match('index.html') : Response.error()))) // only pages fall back to index.html; a missing script must fail honestly, not return HTML
   );
 });

@@ -111,6 +111,18 @@ async function loadSpecies() {
         if (q && !DB.bySquash.has(q)) DB.bySquash.set(q, e);
       });
     });
+    // Many colour morphs share one scientific name. Searching by that name should find the plain species, not whichever morph sorts first.
+    const sciMain = { 'Carassius auratus': 'Goldfish', 'Amphiprion ocellaris': 'Ocellaris Clownfish', 'Apistogramma cacatuoides': 'Cockatoo Dwarf Cichlid', 'Trigonostigma espei': 'Espei Rasbora', 'Hyphessobrycon eques': 'Jewel Tetra', 'Pseudocheilinus hexataenia': 'Six-Line Wrasse' };
+    const bySci = new Map();
+    DB.list.forEach((e) => {
+      if (!e.s) return;
+      const cur = bySci.get(e.s);
+      const want = sciMain[e.s];
+      if (want) { if (e.n === want) bySci.set(e.s, e); else if (!cur) bySci.set(e.s, e); return; }
+      const rank = (x) => x.n.split(' ').length * 100 + x.n.length;
+      if (!cur || rank(e) < rank(cur)) bySci.set(e.s, e);
+    });
+    bySci.forEach((e, sci) => { const k = normKey(sci); if (k) DB.byKey.set(k, e); });
     DB.derived = new Set();
     const nameMap = loadNameMap();
     Object.keys(nameMap).forEach((k) => {
@@ -424,8 +436,15 @@ function cleanTank(raw) {
 
 // ---------- Water log and reminders ----------
 const DAY_MS = 86400000;
+// Temperatures are always stored in °F. This only changes what the keeper sees and types.
+function tempUnit() { try { return localStorage.getItem('schooled.tempunit') === 'C' ? 'C' : 'F'; } catch (err) { return 'F'; } }
+function setTempUnit(u) { try { localStorage.setItem('schooled.tempunit', u === 'C' ? 'C' : 'F'); } catch (err) { /* choice just won't be remembered */ } }
+function tDisp(f) { return tempUnit() === 'C' ? (f - 32) * 5 / 9 : f; }
+function tStore(x) { return tempUnit() === 'C' ? x * 9 / 5 + 32 : x; }
+function tNum(f, d) { const v = tDisp(f); const k = Math.pow(10, d == null ? 0 : d); return String(Math.round(v * k) / k); }
+function tRange(lo, hi) { return tNum(lo) + '-' + tNum(hi) + '\u00b0' + tempUnit(); }
 const LOG_FIELDS = {
-  temp: { label: 'Temperature', unit: '°F', min: 32, max: 110, hint: '78' },
+  temp: { label: 'Temperature', get unit() { return '\u00b0' + tempUnit(); }, min: 32, max: 110, get hint() { return tempUnit() === 'C' ? '26' : '78'; } },
   ph: { label: 'pH', unit: '', min: 0, max: 14, hint: '7.2' },
   nh3: { label: 'Ammonia', unit: 'ppm', min: 0, max: 20, hint: '0' },
   no2: { label: 'Nitrite', unit: 'ppm', min: 0, max: 20, hint: '0' },
@@ -532,6 +551,7 @@ function dateFromInput(str) {
   return Math.min(d.getTime(), Date.now());
 }
 function fmtVal(key, v) {
+  if (key === 'temp') return tNum(v, tempUnit() === 'C' ? 1 : 2);
   return key === 'sg' ? v.toFixed(3) : String(Math.round(v * 100) / 100);
 }
 function fieldLabel(key) {
@@ -602,9 +622,9 @@ function judgeValue(t, key, v) {
     const r = rangeFor(t, 't');
     const d = v < r.lo ? r.lo - v : v > r.hi ? v - r.hi : 0;
     const who = r.roster ? 'your animals' : 'this kind of tank';
-    if (d <= 1) return mk('ok', 'Temperature suits ' + who + ' (' + rangeText(r, '°F') + ').');
-    if (d <= 4) return mk('warn', 'A little outside what ' + who + ' prefer (' + rangeText(r, '°F') + '). Check the heater and thermometer.');
-    return mk('bad', 'Well outside what ' + who + ' want (' + rangeText(r, '°F') + '). Check the heater now and adjust slowly.');
+    if (d <= 1) return mk('ok', 'Temperature suits ' + who + ' (' + tRange(r.lo, r.hi) + ').');
+    if (d <= 4) return mk('warn', 'A little outside what ' + who + ' prefer (' + tRange(r.lo, r.hi) + '). Check the heater and thermometer.');
+    return mk('bad', 'Well outside what ' + who + ' want (' + tRange(r.lo, r.hi) + '). Check the heater now and adjust slowly.');
   }
   if (key === 'sg') {
     if (salt) {
@@ -778,8 +798,10 @@ function submitTest(t, inputs, dateInput, noteInput) {
     if (!raw) return;
     const n = parseFloat(raw.replace(',', '.'));
     const f = LOG_FIELDS[key];
-    if (!isFinite(n) || n < f.min || n > f.max) bad = bad || f.label + ' should be between ' + f.min + ' and ' + f.max + '.';
-    else v[key] = n;
+    const isT = key === 'temp';
+    const n2 = isT ? tStore(n) : n;
+    if (!isFinite(n) || n2 < f.min - 0.05 || n2 > f.max + 0.05) bad = bad || f.label + ' should be between ' + (isT ? tNum(f.min) : f.min) + ' and ' + (isT ? tNum(f.max) : f.max) + '.';
+    else v[key] = isT ? Math.round(n2 * 10) / 10 : n;
   });
   if (bad) { toast(bad); return; }
   if (!Object.keys(v).length) { toast('Enter at least one reading.'); return; }
@@ -1002,7 +1024,7 @@ function renderScanSheet() {
   } else {
     const inputs = {};
     const rows = scanState.rows.map((r) => {
-      inputs[r.key] = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: String(r.value), 'aria-label': LOG_FIELDS[r.key].label });
+      inputs[r.key] = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: r.key === 'temp' ? tNum(r.value, 1) : String(r.value), 'aria-label': LOG_FIELDS[r.key].label });
       return el('label', { class: 'scan-row' },
         el('span', {}, el('span', { text: fieldLabel(r.key) }), r.confident ? null : el('span', { class: 'pill warn', text: 'Not sure' })), inputs[r.key]);
     });
@@ -1024,8 +1046,10 @@ function saveScanned(t, inputs) {
     if (!raw) return;
     const n = parseFloat(raw.replace(',', '.'));
     const f = LOG_FIELDS[key];
-    if (!isFinite(n) || n < f.min || n > f.max) bad = bad || f.label + ' should be between ' + f.min + ' and ' + f.max + '.';
-    else v[key] = n;
+    const isT = key === 'temp';
+    const n2 = isT ? tStore(n) : n;
+    if (!isFinite(n) || n2 < f.min - 0.05 || n2 > f.max + 0.05) bad = bad || f.label + ' should be between ' + (isT ? tNum(f.min) : f.min) + ' and ' + (isT ? tNum(f.max) : f.max) + '.';
+    else v[key] = isT ? Math.round(n2 * 10) / 10 : n;
   });
   if (bad) { toast(bad); return; }
   if (!Object.keys(v).length) { toast('Enter at least one reading.'); return; }
@@ -1927,6 +1951,13 @@ function renderBackup() {
     el('div', { class: 'theme-seg', role: 'group', 'aria-label': 'Appearance' },
       ...[['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([k, label]) =>
         el('button', { type: 'button', class: 'btn' + (tp === k ? ' on' : ''), text: label, 'aria-pressed': tp === k ? 'true' : 'false', onclick: () => { setThemePref(k); renderBackup(); } })))));
+  const tu = tempUnit();
+  body.append(el('div', { class: 'card' },
+    el('h2', { text: 'Temperature' }),
+    el('p', { class: 'muted small', text: 'Choose how temperatures are shown and typed.' }),
+    el('div', { class: 'theme-seg', role: 'group', 'aria-label': 'Temperature unit' },
+      ...[['F', '\u00b0F'], ['C', '\u00b0C']].map(([k, label]) =>
+        el('button', { type: 'button', class: 'btn' + (tu === k ? ' on' : ''), text: label, 'aria-pressed': tu === k ? 'true' : 'false', onclick: () => { setTempUnit(k); renderBackup(); } })))));
   const on = contribState() === 'yes';
   body.append(el('div', { class: 'card' },
     el('h2', { text: 'Help improve fish ID' }),
@@ -2574,7 +2605,7 @@ function renderGear() {
   } });
 
   const skipped = t.gearSkip;
-  const equip = gearSuggestions(t).filter((s) => WATER_KINDS.indexOf(s.kind) === -1); // chemicals and tests live on the Water page
+  const equip = gearSuggestions(t); // test kits and conditioner are the first things a beginner needs, so they stay in this list
   const isOwned = (s) => t.gear.some((g) => g.kind === s.kind);
   const hiddenCount = equip.filter((s) => !isOwned(s) && skipped.indexOf(s.title) !== -1).length;
   const needed = equip.filter((s) => !isOwned(s) && skipped.indexOf(s.title) === -1);
@@ -3059,6 +3090,7 @@ function friendlyError(code, status) {
     case 'limit_reached': return 'You have used this month\u2019s photo scans. They come back on the 1st.';
     case 'busy_today': return 'Photo scans are very busy today. Please try again tomorrow.';
     case 'bad_image': return "That photo couldn't be read. Try a different one.";
+    case 'forbidden': return 'This copy of Schooled is not allowed to reach the server. Please update or reopen the app.';
     case 'too_large': return 'That photo is too large. Try a smaller one.';
     case 'server_not_configured': return 'Schooled is having a problem on our end. Please try again later.';
     default: return status ? 'Something went wrong (' + status + '). Try again.' : 'Something went wrong. Try again.';
@@ -3690,7 +3722,7 @@ function pairIssues(a, b) {
   }
   if (a.k !== 'plant' && b.k !== 'plant') {
     const tg = rangeGap(a.c.t, b.c.t);
-    const range = (e) => Math.round(e.c.t[0]) + '-' + Math.round(e.c.t[1]) + '°F';
+    const range = (e) => tRange(e.c.t[0], e.c.t[1]);
     if (tg > 6) out.push({ level: 'bad', text: a.n + ' (' + range(a) + ') and ' + b.n + ' (' + range(b) + ') want very different temperatures' });
     else if (tg >= 3) out.push({ level: 'warn', text: a.n + ' (' + range(a) + ') and ' + b.n + ' (' + range(b) + ') like different temperatures' });
     const pg = rangeGap(a.c.p, b.c.p);
@@ -3982,7 +4014,7 @@ function factRow(label, value) {
 }
 function speciesFacts(e) {
   const c = e.c;
-  const temp = Math.round(c.t[0]) + '-' + Math.round(c.t[1]) + '°F';
+  const temp = tRange(c.t[0], c.t[1]);
   const ph = c.p[0] + '-' + c.p[1];
   if (e.k === 'plant') {
     const light = hasTag(e, 'highlight') ? 'Bright light' : hasTag(e, 'lowlight') ? 'Low light' : 'Medium light';
@@ -4259,7 +4291,7 @@ async function startFishCheck(file, fromVideo) {
 // For a species that is not in the app's list, the AI gives a rough care sheet. Shown clearly as an estimate.
 function estimateFacts(ce) {
   const rows = [['Adult size', ce.adult_size_in + ' in'], ['Smallest tank', ce.min_tank_gal + ' gal']];
-  if (ce.temp_low_f !== null && ce.temp_high_f !== null) rows.push(['Temperature', Math.round(ce.temp_low_f) + '-' + Math.round(ce.temp_high_f) + '°F']);
+  if (ce.temp_low_f !== null && ce.temp_high_f !== null) rows.push(['Temperature', tRange(ce.temp_low_f, ce.temp_high_f)]);
   if (ce.ph_low !== null && ce.ph_high !== null) rows.push(['pH', ce.ph_low + '-' + ce.ph_high]);
   if (ce.temperament) rows.push(['Temperament', ce.temperament === 'peaceful' ? 'Peaceful' : ce.temperament === 'aggressive' ? 'Aggressive' : 'Semi-aggressive']);
   if (ce.eats) rows.push(['Eats', ce.eats]);

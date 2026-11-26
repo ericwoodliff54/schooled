@@ -805,11 +805,11 @@ async function careEstimate(request, env, origin) {
   let body;
   try { body = await request.json(); } catch (err) { return json({ ok: false, error: 'bad_request' }, 400, origin); }
   const name = clean(body && body.name, 60).replace(/["\n\r]/g, ' ');
-  const sci = clean(body && body.scientific, 80).replace(/["\n\r]/g, ' ');
+  const sci = cleanSci(body && body.scientific);
   if (!name) return json({ ok: false, error: 'bad_request' }, 400, origin);
   // Shared community cache: the first person to look up a species pays for the AI answer, everyone after gets it free.
   const kv = env.LIMITS;
-  const cacheKey = 'care:' + normKey(name).slice(0, 80);
+  const cacheKey = 'care:' + normKey(name).slice(0, 80) + (sci ? '|' + normKey(sci).slice(0, 60) : ''); // the scientific name is part of the key so one caller cannot seed a wrong sheet for everyone
   if (kv && normKey(name)) {
     try {
       const hit = await kv.get(cacheKey, 'json');
@@ -993,7 +993,8 @@ async function dream(request, env, origin) {
   const deviceKey = 'dream:' + (device || ip) + ':' + monthKey();
   const dayKeyName = 'dream:all:' + dayKey();
   if (kv) {
-    const [mine, all] = await Promise.all([kv.get(deviceKey), kv.get(dayKeyName)]);
+    let mine = 0, all = 0;
+    try { [mine, all] = await Promise.all([kv.get(deviceKey), kv.get(dayKeyName)]); } catch (err) { /* store down: let it through */ }
     if ((Number(mine) || 0) >= DREAM_PER_MONTH) return json({ ok: false, error: 'limit_reached' }, 429, origin);
     if ((Number(all) || 0) >= DREAM_PER_DAY_ALL) console.warn('dream daily total passed ' + DREAM_PER_DAY_ALL + ' (warning only)');
     if (await ipOver(env, 'dream', ip, request)) return json({ ok: false, error: 'limit_reached' }, 429, origin);
@@ -1099,11 +1100,13 @@ async function dream(request, env, origin) {
 
   // Only a finished picture counts against the monthly limit.
   if (kv && image) {
-    const [mine, all] = await Promise.all([kv.get(deviceKey), kv.get(dayKeyName)]);
-    await Promise.all([
-      kv.put(deviceKey, String((Number(mine) || 0) + 1), { expirationTtl: 3456000 }),
-      kv.put(dayKeyName, String((Number(all) || 0) + 1), { expirationTtl: 172800 })
-    ]);
+    try {
+      const [mine, all] = await Promise.all([kv.get(deviceKey), kv.get(dayKeyName)]);
+      await Promise.all([
+        kv.put(deviceKey, String((Number(mine) || 0) + 1), { expirationTtl: 3456000 }),
+        kv.put(dayKeyName, String((Number(all) || 0) + 1), { expirationTtl: 172800 })
+      ]);
+    } catch (err) { /* the picture is already made: never throw it away over a counter */ }
   }
   return json({ ok: true, title, summary, species, image, image_model: imageModel, image_error: image ? '' : imageErrors.join('; ').slice(0, 300), usage: { plan: planUsage, image: imageUsage }, enforced: !!kv }, 200, origin);
 }
@@ -1161,7 +1164,7 @@ async function askTank(request, env, origin) {
   const dayKeyName = 'ask:all:' + dayKey();
   let mine = 0, all = 0;
   if (kv && !tester) {
-    [mine, all] = (await Promise.all([kv.get(deviceKey), kv.get(dayKeyName)])).map((v) => Number(v) || 0);
+    try { [mine, all] = (await Promise.all([kv.get(deviceKey), kv.get(dayKeyName)])).map((v) => Number(v) || 0); } catch (err) { /* store down: let it through */ }
     if (mine >= ASK_PER_MONTH) return json({ ok: false, error: 'limit_reached' }, 429, origin);
     if (all >= ASK_PER_DAY_ALL) console.warn('ask daily total passed ' + ASK_PER_DAY_ALL + ' (warning only)');
     if (await ipOver(env, 'ask', ip, request)) return json({ ok: false, error: 'limit_reached' }, 429, origin);
@@ -1201,10 +1204,12 @@ async function askTank(request, env, origin) {
       const u = data.usageMetadata || {};
       const usage = { input: Number(u.promptTokenCount) || 0, output: (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0) };
       if (kv && !tester) {
-        await Promise.all([
-          kv.put(deviceKey, String(mine + 1), { expirationTtl: 3456000 }),
-          kv.put(dayKeyName, String(all + 1), { expirationTtl: 172800 })
-        ]);
+        try {
+          await Promise.all([
+            kv.put(deviceKey, String(mine + 1), { expirationTtl: 3456000 }),
+            kv.put(dayKeyName, String(all + 1), { expirationTtl: 172800 })
+          ]);
+        } catch (err) { /* the answer is already made: do not lose it over a counter */ }
       }
       return json({ ok: true, answer, suggestions, model, usage, left: kv ? Math.max(0, ASK_PER_MONTH - mine - 1) : null }, 200, origin);
     } catch (err) {
@@ -1216,13 +1221,15 @@ async function askTank(request, env, origin) {
 
 export default {
   async fetch(request, env) {
+    // More allowed origins (a custom domain, or an app-store wrapper such as capacitor://localhost) come from the ALLOWED_ORIGINS variable, comma separated.
+    if (env.ALLOWED_ORIGINS) String(env.ALLOWED_ORIGINS).split(',').map((x) => x.trim()).filter(Boolean).forEach((o) => { if (!ALLOWED_ORIGINS.includes(o)) ALLOWED_ORIGINS.push(o); });
     const origin = request.headers.get('Origin') || '';
     const url = new URL(request.url);
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 38, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 39, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {
