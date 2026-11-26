@@ -8,9 +8,6 @@ const WORKER_URL = 'https://schooled-worker.ericwoodliff.workers.dev';
 const STORE_KEY = 'schooled.v1';
 const MAX_PHOTO_SIDE = 1280; // preview and zoom-set whole picture
 const SINGLE_SIDE = 2048; // the one sharp picture sent first
-const MAX_VERIFY = 6; // most kinds double-checked with close-ups in one scan
-const MONTAGE_CROP_MIN = 200; // close-ups are shown to the AI at least this big (pixels)
-const MONTAGE_CROP_MAX = 480;
 const MONTAGE_MAX_W = 1400;
 const KIND_LIST = ['fish', 'shrimp', 'snail', 'plant', 'coral', 'invert', 'other'];
 
@@ -423,7 +420,7 @@ function cleanTank(raw) {
   t.style = typeof raw.style === 'string' && STYLES[t.type].includes(raw.style) ? raw.style : '';
   t.filter = FILTER_KEYS.includes(raw.filter) ? raw.filter : '';
   t.photo = typeof raw.photo === 'string' && raw.photo.startsWith('data:image/') ? raw.photo : '';
-  t.started = typeof raw.started === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.started) ? raw.started : '';
+  t.started = typeof raw.started === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.started) && isFinite(Date.parse(raw.started + 'T12:00:00')) ? raw.started : '';
   t.notes = typeof raw.notes === 'string' ? raw.notes.slice(0, 400) : '';
   t.fish = cleanFish(raw.fish);
   t.log = cleanLog(raw.log);
@@ -1097,7 +1094,7 @@ function renderLog() {
   else putAll(body, el('div', { class: 'row-actions wide' },
     el('button', { type: 'button', class: 'btn primary small', text: 'Scan a test', onclick: openScanSheet }),
     el('button', { type: 'button', class: 'btn small', text: 'Log a test', onclick: () => { logForm = { mode: 'test' }; renderLog(); } }),
-    el('button', { type: 'button', class: 'btn small', text: 'Log a water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } })));
+    el('button', { type: 'button', class: 'btn small', text: 'Water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } })));
   putAll(body, treatCard(t), logTrendCard(t), logHistoryCard(t));
   putAll(body, el('p', { class: 'muted small', text: 'These checks are general guidance. Your own fish and your test kit come first.' }));
 }
@@ -1170,7 +1167,7 @@ function taskRow(t, k) {
     row.append(el('div', { class: 'task-edit' },
       el('p', { class: 'muted small', text: 'Last done ' + fmtDay(k.last) + '.' }),
       el('label', { class: 'log-field' }, el('span', { class: 'label', text: 'How often' }), sel),
-      info.diff <= 0 ? el('button', { type: 'button', class: 'btn small', text: 'Snooze a day', onclick: () => { k.snooze = startOfDay(Date.now()) + DAY_MS; remEdit = ''; saveState(); updateBadge(); renderReminders(); } }) : null,
+      info.diff <= 0 ? el('button', { type: 'button', class: 'btn small', text: 'Snooze a day', onclick: () => { k.snooze = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime(); })(); remEdit = ''; saveState(); updateBadge(); renderReminders(); } }) : null,
       el('button', { type: 'button', class: 'btn link', text: remDelete === k.id ? 'Tap again to remove' : 'Remove this reminder', onclick: () => {
         if (remDelete !== k.id) { remDelete = k.id; renderReminders(); return; }
         t.tasks = t.tasks.filter((x) => x.id !== k.id); remEdit = ''; remDelete = ''; saveState(); updateBadge(); renderReminders();
@@ -1632,7 +1629,7 @@ function renderTankAddMenu() {
     featureBtn({ icon: 'scan', color: 'blue', title: 'Scan the whole tank', text: 'Photograph the tank and name every fish, plant and coral',
       go: () => { state.activeId = t.id; saveState(); closeAddMenu(); $('gallery-input').click(); } }),
     featureBtn({ icon: 'fish', color: 'aqua', title: 'Check one fish', text: 'Photograph a fish and see if it fits ' + tankLabel(t),
-      go: () => { fishCheck = null; fishCheckTankId = t.id; fishCheckNone = false; fishCheckFrom = 'tank'; closeAddMenu(); showView('fishcheck'); } }),
+      go: () => { closeFishImage(); fishCheck = null; fishCheckTankId = t.id; fishCheckNone = false; fishCheckFrom = 'tank'; closeAddMenu(); showView('fishcheck'); } }),
     featureBtn({ icon: 'plus', color: 'orange', title: 'Type a name', text: 'See its details first, then add it',
       go: () => { closeAddMenu(); openAddPop(); } }));
 }
@@ -1687,14 +1684,6 @@ function kindTotals(t) {
 
 
 
-const WATER_TOOLS = [
-  { icon: 'drop', color: 'aqua', title: 'Water care', text: 'Conditioner and test kit picks for this tank', go: () => { state.activeId = openTankId; saveState(); waterFrom = 'tank'; showView('water'); } },
-];
-const TANK_TOOLS = []; // Get Schooled moved to a button on the tank photo (#tank-ask)
-const FEATURES = [
-  { icon: 'sparkle', color: 'purple', title: 'Dream Tank', text: 'Picture the tank you dream of, we\'ll bring it to life!', go: () => showView('dream') },
-  { icon: 'drop', color: 'aqua', title: 'Water care', text: 'Conditioner and test kit picks for your tank', go: () => showView('water') }
-];
 const FEATURE_ICONS = {
   fish: KIND_ICONS.fish,
   search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'M20 20l-4-4'],
@@ -1787,7 +1776,7 @@ function renderHome() {
       putAll(body, card);
     }
   }
-  putAll(body, heroBtn('At Your LFS?', 'Photograph one fish and see if it fits your tank', 'lfs', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
+  putAll(body, heroBtn('At Your LFS?', 'Photograph one fish and see if it fits your tank', 'lfs', true, () => { closeFishImage(); fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
   putAll(body, heroBtn('Dream Tank', 'Picture the tank you dream of, we\'ll bring it to life!', 'sparkle', true, () => showView('dream')));
   putAll(body, heroBtn('Settings', '', 'gear', true, () => { restorePending = null; showView('backup'); }));
   updateBadge();
@@ -2034,6 +2023,7 @@ function renderWaterRecs(t) {
     parts.push(el('div', { class: 'water-rec' },
       el('strong', { text: s.title }), el('span', { class: 'sub', text: s.why }),
       ...picks.map((p) => el('button', { type: 'button', class: 'pick', 'aria-label': 'I have ' + p.name, onclick: () => {
+        if (t.gear.some((g) => g.name === p.name.slice(0, 60))) { toast('Already in your equipment list.'); return; }
         if (t.gear.length >= 40) { toast('That is the most equipment one tank can list.'); return; }
         t.gear.push({ id: uid(), kind: s.kind, name: p.name.slice(0, 60), qty: 1, note: '', added: todayISO() });
         saveState(); renderWaterRecs(t); toast('Added to ' + (t.name || 'your tank') + '.');
@@ -2043,11 +2033,6 @@ function renderWaterRecs(t) {
   box.replaceChildren(...parts);
 }
 
-// ---------- My Tanks (list) ----------
-function lastTestLine(t) {
-  const tests = t.log.filter((e) => e.k === 'test');
-  return tests.length ? 'Last water test ' + agoText(tests[tests.length - 1].t) : '';
-}
 
 
 // ---------- One tank ----------
@@ -2095,7 +2080,7 @@ function datePill(t) {
   const input = el('input', { type: 'date', value: t.started, max: todayString(), 'aria-label': 'Running since' });
   input.addEventListener('click', () => { try { if (input.showPicker) input.showPicker(); } catch (err) { /* older browsers open it themselves */ } });
   input.addEventListener('change', () => {
-    t.started = /^\d{4}-\d{2}-\d{2}$/.test(input.value) ? input.value : '';
+    t.started = /^\d{4}-\d{2}-\d{2}$/.test(input.value) && isFinite(Date.parse(input.value + 'T12:00:00')) ? input.value : '';
     saveState();
     renderTank();
   });
@@ -2196,7 +2181,6 @@ function renderTank() {
   $('tank-photo-gallery').textContent = t.photo ? 'Change' : 'Choose photo';
 
   if (menuTank !== t.id) { menuTank = t.id; closeAddMenu(); }
-  if ($('tank-tools')) $('tank-tools').replaceChildren(...TANK_TOOLS.map(featureBtn));
   const nameInput = $('tank-title-input');
   if (document.activeElement !== nameInput) nameInput.value = t.name;
 
@@ -2428,17 +2412,23 @@ function gearPicks(kind, t) {
         'Large canister filter with a 925 GPH pump, rated up to 400 gal each.' + (n6 > 1 ? ' Run ' + (n6 === 2 ? 'two' : n6) + ' side by side for about ' + (n6 * 925).toLocaleString('en-US') + ' GPH. That spreads a heavy waste load across more media and keeps the tank filtered while you clean one.' : ''));
     }
   } else if (kind === 'Heater' && gal > 0) {
-    const aq = AQUEON.find((m) => gal <= m[1]);
+    const nano = gal <= 5; // a 50 W heater is too much for a nano tank, so only the smallest model is offered
+    const aq = nano ? null : AQUEON.find((m) => gal <= m[1]);
     if (aq) P('Budget', 'Aqueon Pro Adjustable ' + aq[0] + 'W', 'Shatterproof plastic body with an electronic thermostat. Rated up to ' + aq[1] + ' gal by the maker.');
-    const fe = FLUVAL_E.find((m) => gal <= m[1]);
+    const fe = nano ? null : FLUVAL_E.find((m) => gal <= m[1]);
     if (fe) P('Popular', 'Fluval E ' + fe[0] + 'W', 'Electronic heater with a digital display of the real water temperature and a built-in guard. Rated up to ' + fe[1] + ' gal by the maker, freshwater or saltwater.');
     const h = JAGER.find((m) => gal > m[0] && gal <= m[1]) || (gal <= 5 ? JAGER[0] : null);
     if (h) P('Popular', 'EHEIM Jäger TruTemp ' + h[2] + 'W', 'Rated ' + h[0] + ' to ' + h[1] + ' gal by the maker. Go up a size if your room runs cold.');
-    const fh = FINNEX_HMA.find((m) => gal <= m[1]);
-    const ft2 = FINNEX_TH.find((m) => gal >= m[1] && gal <= m[2]);
+    const fh = nano ? null : FINNEX_HMA.find((m) => gal <= m[1]);
+    const ft2 = nano ? null : FINNEX_TH.find((m) => gal >= m[1] && gal <= m[2]);
+    if (gal > 264) P('Popular', Math.ceil(gal / 200) + ' x EHEIM J\u00e4ger TruTemp 300W', 'Very large tanks use several heaters spread around the tank, so one failing does not chill it. Each is rated to 264 gal by the maker; this count leaves room to spare.');
     if (fh) P('Pro', 'Finnex HMA-S ' + fh[0] + 'W titanium', 'Titanium heater with a plastic guard and an attached controller. Sold for up to ' + fh[1] + ' gal.');
     else if (ft2) P('Pro', 'Finnex TH-' + ft2[0] + ' titanium tube', 'Titanium heating tube for ' + ft2[1] + ' to ' + ft2[2] + ' gal. It has no thermostat, so pair it with a separate controller such as the Finnex HC-820M.');
   } else if (kind === 'Test kit') {
+    if (t.type === 'Brackish') {
+      P('Popular', 'API Freshwater Master Test Kit', 'Liquid tests for pH, ammonia, nitrite and nitrate, which matter in brackish water too. About 800 tests.');
+      P('Budget', 'Instant Ocean Hydrometer', 'Floating glass hydrometer that reads salinity. Check its scale and the water temperature it was made for.');
+    }
     if (fresh) P('Popular', 'API Freshwater Master Test Kit', 'Liquid tests for pH, high range pH, ammonia, nitrite and nitrate. About 800 tests.');
     if (salt) {
       P('Budget', 'Salifert KH/Alkalinity and Calcium kits', 'Single-parameter liquid kits sold separately. Cheap ways to watch the two numbers that drift fastest in a reef.');
@@ -2607,8 +2597,8 @@ function renderGear() {
   const skipped = t.gearSkip;
   const equip = gearSuggestions(t); // test kits and conditioner are the first things a beginner needs, so they stay in this list
   const isOwned = (s) => t.gear.some((g) => g.kind === s.kind);
-  const hiddenCount = equip.filter((s) => !isOwned(s) && skipped.indexOf(s.title) !== -1).length;
-  const needed = equip.filter((s) => !isOwned(s) && skipped.indexOf(s.title) === -1);
+  const hiddenCount = equip.filter((s) => !isOwned(s) && skipped.indexOf(s.kind) !== -1).length;
+  const needed = equip.filter((s) => !isOwned(s) && skipped.indexOf(s.kind) === -1); // keyed on the kind, so a size change does not bring a dismissed idea back
   const covered = equip.filter(isOwned);
   const sugg = needed.concat(covered); // what is still missing stays on top, owned goes to the end
 
@@ -2641,7 +2631,7 @@ function renderGear() {
     const sum = el('summary', null,
       el('span', { class: 'gear-acc-title' }, el('strong', { text: s.kind }), hint ? el('span', { class: 'gear-acc-hint', text: hint }) : null),
       owned ? el('span', { class: 'owned-pill', text: '✓ Owned' }) : (picks.length ? el('span', { class: 'gear-acc-count', text: picks.length + (picks.length === 1 ? ' pick' : ' picks') }) : null),
-      owned ? null : el('button', { type: 'button', class: 'gear-x', 'aria-label': 'Dismiss ' + s.kind, text: '×', onclick: (e) => { e.preventDefault(); e.stopPropagation(); t.gearSkip.push(s.title); t.gearSkip = t.gearSkip.slice(-30); saveState(); renderGear(); } }));
+      owned ? null : el('button', { type: 'button', class: 'gear-x', 'aria-label': 'Dismiss ' + s.kind, text: '×', onclick: (e) => { e.preventDefault(); e.stopPropagation(); t.gearSkip.push(s.kind); t.gearSkip = t.gearSkip.slice(-30); saveState(); renderGear(); } }));
     d.appendChild(sum);
     const body2 = el('div', { class: 'gear-acc-body' }, el('p', { class: 'sub gear-why', text: s.why }));
     picks.forEach((p) => {
@@ -2919,6 +2909,7 @@ $('tank-delete').addEventListener('click', () => {
   }
   resetDelete();
   PhotoDB.delTank(t.id).catch(() => {});
+  try { const as = askLoad(); if (as && as.chats && as.chats[t.id]) { delete as.chats[t.id]; askSave(as); } } catch (err) { /* the chat is just left behind */ }
   state.tanks = state.tanks.filter((x) => x !== t);
   if (state.activeId === t.id) state.activeId = state.tanks[0] ? state.tanks[0].id : '';
   saveState();
@@ -3040,11 +3031,6 @@ function makeSingle(image) {
   return { images: [sharp.split(',')[1]], previewUrl: preview };
 }
 
-// ---------- Photo quality check (free, runs on the phone) ----------
-// Only catches clearly dark or clearly blurry photos, so it never nags about a decent shot.
-function photoQualityTip(image) {
-  return photoQuality(image).tip;
-}
 
 function photoQuality(image) {
   try {
@@ -3776,7 +3762,7 @@ function stocking(t) {
     known++;
     let mine = 0;
     if (e.k === 'fish') mine = f.count * e.c.z * (hasTag(e, 'heavy') ? 2 : 1);
-    else if (isMobile(e)) mine = f.count * e.c.z * 0.25;
+    else if (isMobile(e)) mine = f.count * e.c.z * (e.c.z < 2 ? 0.1 : 0.25); // shrimp and small snails weigh far less than a big snail or crab
     load += mine;
     if (e.k !== 'plant' && e.c.g > 0 && e.c.g / (gal || 1) > need / (gal || 1)) { need = e.c.g; needName = e.n; needOwn = mine; }
   });
@@ -4154,9 +4140,6 @@ function renderSpecies() {
   if (mates) body.append(el('div', { class: 'card' }, el('h2', { text: 'Tank mates' }), mates));
 }
 
-function stockCard(t) {
-  return el('div', { class: 'card' }, el('div', { class: 'card-head' }, el('h2', { text: 'Stocking' })), stockBar(t));
-}
 
 // ---------- Fish Check ----------
 const SCAN_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75] };
@@ -4260,7 +4243,9 @@ async function pickFish(index) {
   await runFish(false);
 }
 
+function closeFishImage() { try { if (fishCheck && fishCheck.image && fishCheck.image.done) fishCheck.image.done(); } catch (err) { /* already closed */ } }
 async function startFishCheck(file, fromVideo) {
+  closeFishImage();
   fishCheck = { photoUrl: '', loading: true, error: '', result: null, name: '', count: 1, runs: [], images: null, deep: false };
   const mineFc = fishCheck;
   renderFishCheck();
@@ -4387,7 +4372,7 @@ function compatBox(entry, t, opts) {
   if (!lists) return null;
   const o = opts || {};
   const item = (n) => (o.onPick && n !== 'Shrimp'
-    ? el('li', { class: 'compat-link', role: 'link', tabindex: '0', text: n + (o.mark ? o.mark(n) : ''), onclick: () => o.onPick(n), onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); o.onPick(n); } } })
+    ? el('li', {}, el('button', { type: 'button', class: 'compat-link', text: n + (o.mark ? o.mark(n) : ''), onclick: () => o.onPick(n) }))
     : el('li', { text: n }));
   const col = (cls, title, names, empty) => el('div', { class: 'compat-col ' + cls },
     el('h3', { text: title }),
@@ -4409,7 +4394,7 @@ function renderFishCheck() {
   const actions = el('div', { class: 'row photo-actions' },
     el('button', { type: 'button', class: 'btn primary', text: 'Take photo', onclick: () => $('fishcheck-camera').click() }),
     el('button', { type: 'button', class: 'btn', text: 'Choose photo', onclick: () => $('fishcheck-gallery').click() }),
-    el('button', { type: 'button', class: 'btn', text: 'Record short video', onclick: () => $('fishcheck-video').click() }));
+    el('button', { type: 'button', class: 'btn', text: 'Short video', onclick: () => $('fishcheck-video').click() }));
   body.append(actions);
   body.append(el('p', { class: 'muted small', text: 'Video: hold steady on one fish for about 3 seconds. We pick the sharpest frame, so it costs the same as one photo.' }));
   const nameSearch = createSearch({
@@ -4569,6 +4554,8 @@ const ASK_ERRORS = {
   too_large: 'That photo is too large. Try a different one.'
 };
 let askBusy = false;
+let askBusyTank = ''; // which tank's question is pending, so another tank's chat does not look busy
+const askBusyHere = () => askBusy && askBusyTank === openTankId;
 let askDraft = '';
 let askPhoto = ''; // photo waiting to be sent with the next question (data URL)
 let askMessage = '';
@@ -4694,11 +4681,11 @@ function renderAsk() {
   chat.forEach((m) => log.append(el('div', { class: 'ask-msg ' + (m.role === 'user' ? 'me' : 'ai') + (m.img ? ' has-img' : '') },
     m.img ? el('img', { class: 'ask-img', src: m.img, alt: 'Your photo' }) : null,
     m.role === 'user' ? el('p', { text: m.text }) : askText(m.text))));
-  if (askBusy) log.append(el('div', { class: 'ask-msg ai busy', 'aria-label': 'Thinking' }, el('span', { class: 'ask-dots' }, el('i'), el('i'), el('i'))));
+  if (askBusyHere()) log.append(el('div', { class: 'ask-msg ai busy', 'aria-label': 'Thinking' }, el('span', { class: 'ask-dots' }, el('i'), el('i'), el('i'))));
   parts.push(log);
 
   const last = chat[chat.length - 1];
-  if (!askBusy && last && last.role === 'model' && Array.isArray(last.sug) && last.sug.length) {
+  if (!askBusyHere() && last && last.role === 'model' && Array.isArray(last.sug) && last.sug.length) {
     parts.push(el('div', { class: 'ask-chips' }, ...last.sug.map((q) => el('button', { type: 'button', class: 'chip-btn', text: q, onclick: () => sendAsk(q) }))));
   }
   if (askMessage) parts.push(el('div', { class: 'notice', role: 'status', text: askMessage }));
@@ -4718,7 +4705,7 @@ function renderAsk() {
   });
   const cam = el('button', { type: 'button', class: 'ask-cam', 'aria-label': askPhoto ? 'Change photo' : 'Add a photo', onclick: () => pick.click() },
     iconSvg(['M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z', 'M12 10a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4z'], 22));
-  if (askBusy || !left) { send.disabled = true; cam.disabled = true; area.disabled = !left; }
+  if (askBusyHere() || !left) { send.disabled = true; cam.disabled = true; area.disabled = !left; }
   const preview = askPhoto ? el('div', { class: 'ask-preview' }, el('img', { src: askPhoto, alt: 'Photo to send' }),
     el('button', { type: 'button', class: 'ask-preview-x', 'aria-label': 'Remove photo', text: '\u00d7', onclick: () => { askPhoto = ''; renderAsk(); } })) : null;
   if (askPhoto && !askDraft) area.placeholder = 'Ask about this photo…';
@@ -4732,7 +4719,8 @@ function renderAsk() {
 async function sendAsk(text) {
   let q = String(text || '').trim().slice(0, 500);
   const t = getTank(openTankId);
-  if (!t || askBusy) return;
+  if (!t) return;
+  if (askBusy) { if (askBusyTank !== t.id) toast('Still answering a question about another tank. One moment.'); return; }
   const photo = askPhoto;
   if (photo && q.length < 2) q = 'What do you see in this photo? Anything I should worry about?';
   if (q.length < 2) { toast('Type a question first.'); return; }
@@ -4751,7 +4739,7 @@ async function sendAsk(text) {
     s.chats[t.id].forEach((m, i, a) => { if (i < a.length - 1) delete m.img; });
     if (!askSave(s)) { delete msg.img; askSave(s); }
   }
-  askDraft = ''; askPhoto = ''; askMessage = ''; askBusy = true;
+  askDraft = ''; askPhoto = ''; askMessage = ''; askBusy = true; askBusyTank = t.id;
   renderAsk();
   window.scrollTo(0, document.body.scrollHeight);
   try {

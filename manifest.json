@@ -2,6 +2,7 @@
   "name": "Schooled",
   "short_name": "Schooled",
   "description": "Photo-based fish ID and water help for your aquarium.",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

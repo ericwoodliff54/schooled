@@ -99,7 +99,7 @@ p { margin: 0; }
 .btn.outline { background: var(--card); color: var(--teal); border: 2px solid var(--teal); }
 .btn.outline:active { background: var(--mist); }
 .btn.big { min-height: 58px; font-size: 17px; border-radius: 18px; }
-.btn.small { min-height: 40px; padding: 0 16px; border-radius: 20px; font-size: 14px; border-color: var(--edge); color: var(--ink); }
+.btn.small { min-height: 44px; padding: 0 16px; border-radius: 20px; font-size: 14px; border-color: var(--edge); color: var(--ink); }
 .btn.link { border: none; background: transparent; color: var(--teal); min-height: 44px; box-shadow: none; }
 .btn.back { align-self: flex-start; padding: 0; min-height: 36px; font-weight: 700; }
 button:focus-visible, input:focus-visible, select:focus-visible {
@@ -184,7 +184,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .item:last-child { border-bottom: none; }
 .item .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .item .name { font-size: 16px; font-weight: 700; overflow-wrap: anywhere; letter-spacing: -0.01em; }
-.item .sub { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; font-weight: 500; }
+.item .sub { font-size: 12.5px; color: var(--muted); overflow-wrap: break-word; font-weight: 500; }
 .item .sci { font-style: italic; }
 
 .avatar {
@@ -231,7 +231,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   cursor: pointer;
 }
 .round:active { background: var(--mist); }
-.item .btn.small { min-height: 40px; padding: 0 14px; }
+.item .btn.small { min-height: 44px; padding: 0 14px; }
 .edit-row { flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
 .edit-row input { flex: 1 1 140px; }
 
@@ -542,32 +542,8 @@ input::placeholder { color: #8AA0BC; }
 .pill-cancel { width: 36px; background: var(--mist); color: var(--teal-dark); font-size: 20px; line-height: 1; }
 
 /* Tank cards */
-.tank-cards { display: flex; flex-direction: column; gap: 14px; }
-.tank-card {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  padding: 0;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  background: var(--card);
-  border: 1px solid rgba(26, 99, 199, 0.08);
-  border-radius: var(--radius);
-  overflow: hidden;
-  box-shadow: var(--shadow);
-  cursor: pointer;
-}
-.tank-card:active { transform: scale(0.99); }
-.tank-card-img { width: 100%; aspect-ratio: 16 / 8; object-fit: cover; display: block; }
-.tank-card-img.empty { display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, #C9DDF7, #E8F1FC); color: rgba(26, 99, 199, 0.55); }
-.tank-card-img.empty svg { width: 40px; height: 40px; }
-.tank-card-body { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px 16px; }
-.tank-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.tank-card .name { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .tank-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag { padding: 4px 10px; border-radius: 999px; background: var(--mist); color: var(--teal-dark); font-size: 12.5px; font-weight: 700; }
-.tank-card .sub { font-size: 13px; color: var(--muted); font-weight: 500; }
 .badge { padding: 3px 10px; border-radius: 999px; background: var(--ok-bg); color: var(--ok); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .badge-row { display: flex; align-items: center; gap: 10px; }
 .badge-row .sub { font-size: 13px; color: var(--muted); font-weight: 500; }
@@ -591,7 +567,6 @@ input::placeholder { color: #8AA0BC; }
   box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.5);
 }
 .toast[hidden] { display: none; }
-.tank-card-img.empty { aspect-ratio: 16 / 5; }
 
 .tell { margin-top: 6px; font-size: 13px; color: #4A5A86; }
 .tell summary { cursor: pointer; font-weight: 600; }
@@ -765,7 +740,7 @@ body[data-view="home"] .brand { display: none; }
 .dream-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .dream-text { width: 100%; min-height: 96px; padding: 12px 14px; border: 1.5px solid var(--edge); border-radius: 16px; font: inherit; font-size: 16px; color: var(--ink); background: var(--card); resize: vertical; }
 .ideas { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
-.chip-btn { padding: 7px 12px; border-radius: 999px; border: 1.5px solid var(--edge); background: var(--mist); color: var(--teal-dark); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; line-height: 1.25; }
+.chip-btn { min-height: 44px; padding: 7px 12px; border-radius: 999px; border: 1.5px solid var(--edge); background: var(--mist); color: var(--teal-dark); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; line-height: 1.25; }
 .chip-btn.on { background: var(--navy); border-color: var(--navy); color: #fff; }
 .dream-row { display: flex; gap: 12px; }
 .dream-row label { flex: 1; display: flex; flex-direction: column; gap: 4px; }
@@ -861,7 +836,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .issue-row .issue { flex: 1; }
 .issue-x { flex-shrink: 0; width: 44px; height: 44px; border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; border-radius: 12px; }
 .issue-x:active { background: var(--mist); }
-.summary-count { margin-left: 8px; font-size: 12px; font-weight: 800; color: var(--blue); }
+.summary-count { margin-left: 8px; font-size: 12px; font-weight: 800; color: var(--teal); }
 .summary-count:empty { display: none; }
 .gear-list { display: flex; flex-direction: column; }
 .gear-row, .gear-idea { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -907,8 +882,6 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .home-head { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px; row-gap: 2px; padding: 0 2px; }
 .home-logo { width: 100%; max-width: 330px; border-radius: 0; box-shadow: none; filter: drop-shadow(0 3px 6px rgba(10, 37, 64, 0.18)); }
 .home-head p { grid-column: 1 / -1; margin: 0 4px; font-size: 14px; color: var(--muted); font-weight: 600; }
-.home-add { width: 48px; height: 48px; border-radius: 50%; border: 1.5px solid var(--edge); background: rgba(255, 255, 255, 0.7); color: var(--ink); display: grid; place-items: center; cursor: pointer; }
-.home-add:active { background: var(--card); }
 .home-tank { min-height: 96px; }
 .home-tank-pic { width: 72px; height: 72px; border-radius: 18px; }
 .add-pill { display: inline-flex; align-items: center; gap: 4px; background: var(--mist); border-color: transparent; font-weight: 700; }
@@ -957,7 +930,6 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .home-logo { width: auto; height: 108px; max-width: 70%; object-fit: contain; filter: none; }
 
 .tank-hero{position:relative}
-.hero-edit{position:absolute;right:10px;bottom:10px;background:rgba(255,255,255,.92)}
 
 .add-pop { position: fixed; inset: 0; z-index: 60; background: rgba(15,30,50,.45); display: flex; align-items: flex-start; justify-content: center; padding: 12vh 14px 14px; }
 .add-pop[hidden] { display: none; }
@@ -1162,7 +1134,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 .gear-acc-count { font-size: 12px; color: #5B6B7F; white-space: nowrap; }
 .owned-pill { font-size: 12px; font-weight: 800; color: #166534; background: #DCFCE7; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
 .gear-acc.owned { background: #F8FBF9; }
-.gear-x { flex: none; width: 32px; height: 32px; border-radius: 999px; border: 0; background: transparent; color: #5B6B7F; font-size: 22px; line-height: 1; cursor: pointer; }
+.gear-x { flex: none; width: 44px; height: 44px; border-radius: 999px; border: 0; background: transparent; color: #5B6B7F; font-size: 22px; line-height: 1; cursor: pointer; }
 .gear-x:active { background: var(--mist, #EEF5FC); }
 .gear-acc-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
 .gear-why { margin: 0 0 2px; font-size: 13px; overflow-wrap: break-word; }
@@ -1237,7 +1209,6 @@ body { min-height: 100vh; min-height: 100dvh; }
 .ask-img { display: block; width: 100%; max-width: 240px; border-radius: 14px; margin: 0 0 8px; }
 .ask-msg.me .ask-img { margin-left: auto; }
 /* Get Schooled button: top right of the tank photo, same style as the settings gear */
-.hero-gear.hero-ask { top: 12px; bottom: auto; }
 
 /* Home add buttons (+ New Tank, care reminders + Add): same feel as the At Your LFS? icon tile */
 .btn.add-pill.add-grad { background: linear-gradient(135deg, #2F8CFF, #1A63C7); color: #fff; border-color: transparent; box-shadow: 0 6px 14px -6px rgba(26, 99, 199, 0.8); padding: 0 16px 0 12px; }
@@ -1337,8 +1308,6 @@ body { min-height: 100vh; min-height: 100dvh; }
 :root[data-theme="dark"] a:visited { color: #B7A6FF; }
 
 /* Get Schooled: labelled pill on the tank photo, plus a card with a sample question under it */
-.hero-gear.hero-ask { width: auto; height: 40px; padding: 0 15px 0 11px; gap: 7px; border-radius: 999px; border: 0; background: #fff; color: #1A63C7; font: inherit; font-size: 14px; font-weight: 800; letter-spacing: -0.01em; white-space: nowrap; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 0 8px 18px -8px rgba(10, 37, 64, 0.6); }
-.hero-gear.hero-ask svg { width: 20px; height: 20px; }
 .ask-card { display: flex; align-items: center; gap: 12px; width: 100%; margin: 12px 0 2px; padding: 12px 14px; text-align: left; font: inherit; color: var(--ink); cursor: pointer; background: linear-gradient(135deg, var(--mist), var(--card) 70%); border: 1.5px solid var(--edge); border-radius: 20px; box-shadow: var(--shadow); }
 .ask-card:active { transform: scale(0.99); }
 .ask-card-icon { flex: none; width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--teal-2), var(--teal)); box-shadow: 0 8px 16px -8px rgba(26, 99, 199, 0.8); }
@@ -1389,7 +1358,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 :root[data-theme="dark"] .ask-bar { background: rgba(10, 21, 35, 0.9); }
 /* equipment quantity */
 .gear-qty { gap: 6px; }
-.gear-qty .round { width: 34px; height: 34px; font-size: 18px; }
+.gear-qty .round { width: 44px; height: 44px; font-size: 18px; }
 .gear-qty .round:disabled { opacity: 0.4; cursor: default; }
 .gear-qty .count { min-width: 22px; text-align: center; font-weight: 800; }
 .gear-name-row { display: flex; gap: 8px; }
@@ -1436,3 +1405,14 @@ body { min-height: 100vh; min-height: 100dvh; }
 #save-banner { position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 60; display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 12px; background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad); font-size: 14px; font-weight: 600; }
 #save-banner[hidden] { display: none; }
 #save-banner button { flex: none; border: 0; border-radius: 10px; padding: 8px 12px; background: var(--bad); color: var(--bg); font-weight: 700; font-size: 14px; }
+
+/* the empty photo boxes need to read on dark cards */
+:root[data-theme="dark"] .photo-empty, :root[data-theme="dark"] .tank-hero-empty { color: #8DBBFF; }
+
+/* chevrons on the two collapsible gear cards, like the other expandable cards */
+#tank-gear > summary, #tank-ideas > summary { list-style: none; display: flex; align-items: center; }
+#tank-gear > summary::-webkit-details-marker, #tank-ideas > summary::-webkit-details-marker { display: none; }
+#tank-gear > summary::after, #tank-ideas > summary::after { content: ''; flex: none; margin-left: auto; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform 0.15s; }
+#tank-gear[open] > summary::after, #tank-ideas[open] > summary::after { transform: rotate(-135deg); }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+button.compat-link { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 4px 0; font: inherit; color: inherit; min-height: 44px; }
