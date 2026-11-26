@@ -1432,3 +1432,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 :root[data-theme="dark"] .seg-dot { border-color: var(--card); }
 :root[data-theme="dark"] .seg-dot.warn { background: #FFB347; }
 :root[data-theme="dark"] .seg-dot.bad { background: #FF7A45; }
+
+#save-banner { position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 60; display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 12px; background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad); font-size: 14px; font-weight: 600; }
+#save-banner[hidden] { display: none; }
+#save-banner button { flex: none; border: 0; border-radius: 10px; padding: 8px 12px; background: var(--bad); color: var(--bg); font-weight: 700; font-size: 14px; }

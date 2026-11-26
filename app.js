@@ -167,6 +167,16 @@ function resolveNamed(common, scientific, where, kind) {
 }
 
 // ---------- Tester usage log (tokens and cost of each AI call, kept on this phone) ----------
+// Tester extras (token lines, usage log, raw error details) show only when this phone has been switched on by opening the app once with ?tester=1 (and off with ?tester=0).
+function testerMode() {
+  try {
+    const q = new URLSearchParams(location.search).get('tester');
+    if (q === '1') localStorage.setItem('schooled.tester', '1');
+    else if (q === '0') localStorage.removeItem('schooled.tester');
+    return localStorage.getItem('schooled.tester') === '1';
+  } catch (err) { return false; }
+}
+const TESTER = testerMode();
 const USAGE_KEY = 'schooled.usage';
 const USAGE_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75], 'gemini-3.7-flash': [0.75, 3.75], 'gemini-3.6-flash': [0.75, 3.75], 'gemini-3.5-flash': [0.75, 3.75], 'gemini-4-hydrogen': [1.5, 7.5] };
 function loadUsage() {
@@ -1034,7 +1044,7 @@ async function runWaterScan(file) {
     const jpeg = drawToJpeg(image.source, 0, 0, image.width, image.height, SINGLE_SIDE, 0.85).split(',')[1];
     const res = await fetch(WORKER_URL + '/water', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: jpeg, mime: 'image/jpeg', kit: scanState.kit, tank_type: t.type, keys: logKeys(t) }),
+      body: JSON.stringify({ image: jpeg, mime: 'image/jpeg', kit: scanState.kit, tank_type: t.type, keys: logKeys(t), device: deviceId() }),
       signal: AbortSignal.timeout(60000)
     });
     const data = await res.json().catch(() => ({}));
@@ -1045,7 +1055,7 @@ async function runWaterScan(file) {
     scanState.note = data.note || '';
     scanState.step = 'confirm';
   } catch (err) {
-    scanState.msg = err && err.message === 'bad_image' ? "That photo couldn't be read. Try a different one." : (err && err.message) || 'Something went wrong. Try again.';
+    scanState.msg = niceError(err, 'Something went wrong. Try again.');
     scanState.step = 'error';
   }
   if (!$('scan-sheet').hidden) renderScanSheet();
@@ -1243,10 +1253,31 @@ function saveState() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
     if (!state.tanks.length) localStorage.removeItem(BACKUP_KEY); // deleted on purpose
+    showSaveBanner(false);
     return true;
   } catch (err) {
-    return false; // private mode or full storage; the app still works for this visit
+    showSaveBanner(true); // private mode or full storage; the app still works for this visit, but say so
+    return false;
   }
+}
+// A bar that stays up while saving is failing, so a change is never silently lost behind an "Added" toast.
+function showSaveBanner(on) {
+  let bar = document.getElementById('save-banner');
+  if (!on) { if (bar) bar.hidden = true; return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'save-banner';
+    bar.setAttribute('role', 'alert');
+    const msg = document.createElement('span');
+    msg.textContent = 'Your latest changes could not be saved on this phone. Storage may be full.';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'Save a backup';
+    btn.addEventListener('click', () => { try { saveBackupFile(); } catch (e) { /* nothing more to do */ } });
+    bar.append(msg, btn);
+    document.body.appendChild(bar);
+  }
+  bar.hidden = false;
 }
 
 let state = loadState();
@@ -1737,12 +1768,12 @@ function renderHome() {
   putAll(body, heroBtn('Settings', '', 'gear', true, () => { restorePending = null; showView('backup'); }));
   updateBadge();
   const misses = loadMisses();
-  const usageN = loadUsage().length;
+  const usageN = TESTER ? loadUsage().length : 0;
   if (usageN) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
     featureIcon('info'),
     el('strong', { text: 'Usage log: ' + usageN + ' AI calls' }),
     chevron()));
-  if (misses.length) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
+  if (TESTER && misses.length) missBox.append(el('button', { type: 'button', class: 'misses-bar', onclick: () => showView('misses') },
     featureIcon('info'),
     el('strong', { text: misses.length + (misses.length === 1 ? ' unmatched species to review' : ' unmatched species to review') }),
     chevron()));
@@ -3029,7 +3060,7 @@ function friendlyError(code, status) {
     case 'busy_today': return 'Photo scans are very busy today. Please try again tomorrow.';
     case 'bad_image': return "That photo couldn't be read. Try a different one.";
     case 'too_large': return 'That photo is too large. Try a smaller one.';
-    case 'server_not_configured': return 'The server is not set up yet. Check the Worker secret.';
+    case 'server_not_configured': return 'Schooled is having a problem on our end. Please try again later.';
     default: return status ? 'Something went wrong (' + status + '). Try again.' : 'Something went wrong. Try again.';
   }
 }
@@ -3049,7 +3080,7 @@ async function askWorker(images, mode, timeoutMs, ctx) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) {
     throw new Error((data.error === 'ai_error' || data.error === 'ai_busy') && data.ai_detail !== undefined
-      ? 'The photo reader had trouble (' + (data.ai_detail || 'error ' + data.ai_status) + '). Please try again in a moment.'
+      ? 'The photo reader had trouble' + (TESTER ? ' (' + (data.ai_detail || 'error ' + data.ai_status) + ')' : '') + '. Please try again in a moment.'
       : friendlyError(data.error, res.status));
   }
   if (data.first_pass && data.first_pass.usage) logUsage('fish', data.first_pass.model, data.first_pass.usage, { detail: 'first look' });
@@ -3217,6 +3248,13 @@ function applyVerified(targets, data) {
   pending.species.forEach(lookalikeGuard);
 }
 
+// Turns any thrown error into words a keeper can use, never a raw code like "bad_image" or "Failed to fetch".
+function niceError(err, fallback) {
+  if (err && err.name === 'TimeoutError') return 'That took too long. Try again, or try a smaller or clearer photo.';
+  if (err instanceof TypeError) return "Couldn't reach the server. Check your connection and try again.";
+  if (err && err.message === 'bad_image') return "That photo couldn't be read. Try a different one.";
+  return (err && err.message) || fallback;
+}
 function showScanError(err) {
   if (err && err.name === 'TimeoutError') pending.error = 'That took too long. Try again, or try a smaller or clearer photo.';
   else if (err instanceof TypeError) pending.error = "Couldn't reach the server. Check your connection and try again.";
@@ -3345,6 +3383,8 @@ async function startScan(file, append, note, force) {
   (scanTank ? scanTank.fish.map((f) => f.name) : []).concat(priorSpecies.filter((sp) => sp.kind !== 'plant').map((sp) => sp.name)).forEach((n) => {
     if (n && known.indexOf(n) === -1 && known.length < 40) known.push(n);
   });
+  const mine = pending; // if the person leaves or starts another scan, a late answer must not touch the new screen
+  const stale = () => pending !== mine;
   showView('results');
   renderResults();
 
@@ -3352,6 +3392,7 @@ async function startScan(file, append, note, force) {
   let qualityTip = '';
   try {
     image = await loadImage(file);
+    if (stale()) { image.done(); return; }
     const quality = photoQuality(image);
     qualityTip = quality.tip;
     if (quality.severe && !force) {
@@ -3374,6 +3415,7 @@ async function startScan(file, append, note, force) {
 
     const ctx = { known, tank_type: scanTank && TYPES.includes(scanTank.type) ? scanTank.type : '' };
     const data = await askWorker(single.images, 'single', 60000, ctx);
+    if (stale()) { image.done(); return; }
     applyResult(data, 'single');
 
     const targets = pending.species.filter(needsVerify).sort((a, b) => a.confidence - b.confidence).slice(0, VERIFY_MAX);
@@ -3384,6 +3426,7 @@ async function startScan(file, append, note, force) {
         const montages = targets.map((sp) => makeMontage(image, sp.boxes));
         const items = targets.map((sp) => ({ name: sp.name, kind: sp.kind, count: sp.count, alternatives: sp.alternatives }));
         const checked = await askWorker(montages, 'verify', 75000, Object.assign({ items }, ctx));
+        if (stale()) { image.done(); return; }
         applyVerified(targets, checked);
         if (checked.usage) pending.debug += '; zoom-in check on ' + targets.length + ': ' + checked.usage.input + ' in, ' + checked.usage.output + ' out';
       } catch (verifyError) {
@@ -3397,8 +3440,10 @@ async function startScan(file, append, note, force) {
       scanCache.set(cacheKey, { t: Date.now(), species: JSON.stringify(pending.species), tips: pending.tips });
     }
   } catch (err) {
+    if (stale()) { if (image) image.done(); return; }
     showScanError(err);
   }
+  if (stale()) { if (image) image.done(); return; }
   return finishScan(more, priorSpecies, priorPhotos, image);
 }
 
@@ -3488,7 +3533,7 @@ function renderResults() {
   const n = pending.species.length;
   $('results-title').textContent = (n === 1 ? 'Found 1 kind' : 'Found ' + n + ' kinds') + (pending.photos > 1 ? ' in ' + pending.photos + ' photos' : '');
   $('add-photo').hidden = false;
-  if (pending.debug) status.append(el('p', { class: 'debug', text: pending.debug }));
+  if (TESTER && pending.debug) status.append(el('p', { class: 'debug', text: pending.debug }));
   if (pending.tips) status.append(el('div', { class: 'status-card tip' }, el('span', { text: 'Tip: ' + pending.tips })));
 
   if (!getTank(pending.tankId)) pending.tankId = activeTank() ? activeTank().id : '';
@@ -4101,10 +4146,12 @@ function fishCheckCostLine(fc) {
 
 async function runFish(deep) {
   const t = fishCheckTank();
+  const mine = fishCheck; // a late answer must not touch a newer Fish Check or a closed one
   fishCheck.loading = true; fishCheck.error = '';
   renderFishCheck();
   try {
-    const data = await askWorker(fishCheck.images, 'fish', 45000, { tank_type: t && TYPES.includes(t.type) ? t.type : '', deep: !!deep });
+    const data = await askWorker(mine.images, 'fish', 45000, { tank_type: t && TYPES.includes(t.type) ? t.type : '', deep: !!deep });
+    if (fishCheck !== mine) return;
     const r = data.fish;
     if (data.first_pass) fishCheck.runs.push({ model: data.first_pass.model, usage: data.first_pass.usage });
     fishCheck.runs.push({ model: data.model, usage: data.usage });
@@ -4126,7 +4173,8 @@ async function runFish(deep) {
       fishCheck.count = hit && hit.c && hit.c.s > 1 ? hit.c.s : (r.care_estimate && r.care_estimate.min_group > 1 ? r.care_estimate.min_group : 1);
     }
   } catch (err) {
-    fishCheck.error = (err && err.message) || 'Something went wrong. Please try again.';
+    if (fishCheck !== mine) return;
+    fishCheck.error = niceError(err, 'Something went wrong. Please try again.');
   }
   fishCheck.loading = false;
   renderFishCheck();
@@ -4153,7 +4201,7 @@ async function fetchCare(fc, r) {
     const res = await fetch(WORKER_URL + '/care', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: r.common_name, scientific: r.scientific_name || '' }),
+      body: JSON.stringify({ name: r.common_name, scientific: r.scientific_name || '', device: deviceId() }),
       signal: AbortSignal.timeout(20000)
     });
     const data = await res.json().catch(() => ({}));
@@ -4182,6 +4230,7 @@ async function pickFish(index) {
 
 async function startFishCheck(file, fromVideo) {
   fishCheck = { photoUrl: '', loading: true, error: '', result: null, name: '', count: 1, runs: [], images: null, deep: false };
+  const mineFc = fishCheck;
   renderFishCheck();
   try {
     if (fromVideo) {
@@ -4191,16 +4240,19 @@ async function startFishCheck(file, fromVideo) {
       file = frames[0];
     }
     const image = await loadImage(file);
+    if (fishCheck !== mineFc) { image.done(); return; }
     const single = makeSingle(image);
     fishCheck.photoUrl = single.previewUrl;
     fishCheck.images = single.images;
     fishCheck.image = image;
   } catch (err) {
-    fishCheck.error = (err && err.message) || 'I could not read that photo. Please try another.';
+    if (fishCheck !== mineFc) return;
+    fishCheck.error = niceError(err, 'I could not read that photo. Please try another.');
     fishCheck.loading = false;
     renderFishCheck();
     return;
   }
+  if (fishCheck !== mineFc) return;
   await runFish(false);
 }
 
@@ -4450,7 +4502,7 @@ function renderFishCheck() {
     renderFishCheck();
   } }));
   card.append(buttons, el('a', { class: 'link-out', href: 'https://www.google.com/search?q=' + encodeURIComponent(((entry && entry.n) || fc.name) + ' aquarium care'), target: '_blank', rel: 'noopener noreferrer', text: 'More photos and care info on Google \u2197'}), el('p', { class: 'muted small', text: 'General guidance, and the AI can be wrong about which species it is. Confirm with the store before you buy.' }));
-  const cl = fishCheckCostLine(fc);
+  const cl = TESTER ? fishCheckCostLine(fc) : '';
   if (cl) card.append(el('p', { class: 'muted small cost-line', text: cl }));
   body.append(card);
 }
@@ -4802,7 +4854,7 @@ async function runDream() {
     if (!j || !j.ok) {
       const code = j && j.error;
       if (code === 'limit_reached') { const s = dreamLoad(); s.used = DREAM_MONTHLY; dreamSave(s); }
-      dreamMessage = (DREAM_ERRORS[code] || 'Something went wrong. Nothing was used. Try again in a minute.') + (j && j.ai_detail ? ' (' + String(j.ai_detail).slice(0, 300) + ')' : '');
+      dreamMessage = (DREAM_ERRORS[code] || 'Something went wrong. Nothing was used. Try again in a minute.') + (TESTER && j && j.ai_detail ? ' (' + String(j.ai_detail).slice(0, 300) + ')' : '');
     } else {
       let image = '';
       if (j.image && j.image.data && /^image\/(png|jpeg|webp)$/.test(j.image.mime)) {
@@ -4816,7 +4868,7 @@ async function runDream() {
       if (image) s.cost = Math.round(((Number(s.cost) || 0) + cost.dollars) * 10000) / 10000;
       s.last = { title: String(j.title || ''), summary: String(j.summary || ''), species: j.species, image, gallons: gal, type: f.type, at: Date.now(), usage: j.usage || null, imageModel: String(j.image_model || '') };
       if (!dreamSave(s)) { s.last.image = ''; dreamSave(s); }
-      dreamMessage = image ? '' : 'The AI made your list but could not make the picture this time, and no picture was used. Try again.' + (j.image_error ? ' (' + String(j.image_error).slice(0, 300) + ')' : '');
+      dreamMessage = image ? '' : 'The AI made your list but could not make the picture this time, and no picture was used. Try again.' + (TESTER && j.image_error ? ' (' + String(j.image_error).slice(0, 300) + ')' : '');
     }
   } catch (err) {
     dreamMessage = 'Could not reach the server. Check your connection. Nothing was used.';
@@ -4954,7 +5006,7 @@ function dreamResultCard(r) {
       toast('Created ' + tankLabel(tmp) + '. Add what you actually own as you go.');
     } }),
     el('p', { class: 'muted small', text: 'Stocking advice is general guidance, and the AI can be wrong. Check each species before you buy.' }),
-    dreamCostLine(r) ? el('p', { class: 'muted small cost-line', text: dreamCostLine(r) }) : null);
+    TESTER && dreamCostLine(r) ? el('p', { class: 'muted small cost-line', text: dreamCostLine(r) }) : null);
   return card;
 }
 
