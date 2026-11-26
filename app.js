@@ -4593,9 +4593,11 @@ function healthCard(h) {
   const box = el('div', { class: 'health-box ' + look[1] });
   box.append(el('div', { class: 'water-line' }, el('strong', { text: 'Health warning' }), el('span', { class: 'pill ' + look[1], text: look[0] })));
   if (h.signs && h.signs.length) box.append(el('ul', { class: 'health-signs' }, ...h.signs.map((x) => el('li', { text: x }))));
-  const tip = h.status === 'unwell'
+  const spotty = (h.signs || []).some((x) => /white|spot|speck|dust|ich|velvet|fuzz/i.test(x));
+  const spotNote = 'White spots on fins can be ich (tiny salt-like grains that spread), lymphocystis (larger, cauliflower-like clumps), or just natural markings or breeding bumps, so check that this species normally has them.';
+  const tip = (spotty ? spotNote + ' ' : '') + (h.status === 'unwell'
     ? 'I would pass on this one. Fish from the same tank can carry the same problem.'
-    : 'Ask to see it eat and swim before you buy. A photo cannot catch everything, and new fish should be kept apart for a few weeks.';
+    : 'A photo cannot catch everything, and new fish should be kept apart for a few weeks.');
   box.append(el('p', { class: 'muted small', text: tip }));
   return box;
 }
