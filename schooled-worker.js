@@ -10,7 +10,7 @@ const LAST_RESORT_MODEL = 'gemini-3.6-flash';
 const FISH_MODEL = 'gemini-3.6-flash'; // Fish Check's first look (env GEMINI_FISH_MODEL overrides). Tested: Flash-Lite 52% right, 3.6 Flash 76%, Hydrogen 80%.
 const VERIFY_MODEL = 'gemini-3.6-flash'; // the close-up check is tiny, so a stronger model costs little there
 const IMAGE_MODEL = 'gemini-3.1-flash-image'; // Dream Tank pictures (env GEMINI_IMAGE_MODEL overrides)
-const DREAM_PER_MONTH = 10; // pictures per device per month, enforced here only when the LIMITS KV store is bound
+const DREAM_PER_MONTH = 3; // pictures per device per month, enforced here only when the LIMITS KV store is bound
 const DREAM_PER_DAY_ALL = 60; // pictures per day across everyone: only a warning in the logs now, never blocks anyone
 const DREAM_RATE_MAX = 3; // and no more than this many tries per 10 minutes from one address
 const ASK_PER_MONTH = 100; // Get Schooled questions per device per month, enforced here only when the LIMITS KV store is bound
@@ -1229,7 +1229,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 41, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 42, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {

@@ -4993,7 +4993,7 @@ async function sendAsk(text) {
 }
 
 // ---------- Dream Tank ----------
-const DREAM_MONTHLY = 10;
+const DREAM_MONTHLY = 3;
 const DREAM_KEY = 'schooled.dream';
 const DEVICE_KEY = 'schooled.device';
 const DREAM_ERRORS = {
