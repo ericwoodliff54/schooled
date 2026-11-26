@@ -1372,3 +1372,17 @@ body { min-height: 100vh; min-height: 100dvh; }
 :root[data-theme="dark"] .stock-fill.over { background: linear-gradient(90deg, #FFB347, #FF8A3D); }
 .hero.slim { min-height: 0; padding: 14px 22px; }
 .hero.slim .hero-icon { width: 46px; height: 46px; }
+/* dark mode: gear and misc text that were too dark */
+:root[data-theme="dark"] .gear-acc-hint, :root[data-theme="dark"] .gear-acc-count, :root[data-theme="dark"] .gear-x { color: #B9CAE0; }
+:root[data-theme="dark"] .gear-acc > summary::after { border-color: #B9CAE0; }
+:root[data-theme="dark"] .gear-x:active { background: var(--mist); }
+:root[data-theme="dark"] .gear-foot { color: #93A8C2; }
+:root[data-theme="dark"] .gpick-add { color: #7FE0D2; }
+:root[data-theme="dark"] .tell { color: #B9CAE0; }
+:root[data-theme="dark"] .danger-text, :root[data-theme="dark"] .viewer .btn.danger { color: #FF9A6A; }
+/* custom reminder entry is always visible */
+.rem-custom { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.rem-custom .rem-custom-title { font-size: 14px; font-weight: 800; color: var(--teal-dark); }
+.rem-custom input[type="text"] { width: 100%; min-height: 48px; padding: 0 14px; border: 1.5px solid var(--edge); border-radius: 14px; background: var(--card); font: inherit; font-size: 16px; color: var(--ink); }
+.rem-custom-row { display: flex; gap: 8px; }
+.rem-custom-row .select { flex: 1; min-width: 0; }

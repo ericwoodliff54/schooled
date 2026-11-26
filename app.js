@@ -1070,7 +1070,7 @@ function renderLog() {
 // ----- Reminders -----
 let remEdit = '';
 let remDelete = '';
-let remCustom = false;
+let remDraft = { name: '', every: 7 };
 
 function everyLabel(n) {
   if (n === 1) return 'every day';
@@ -1171,16 +1171,20 @@ function renderReminders() {
   const have = new Set(t.tasks.map((k) => k.kind));
   const presets = TASK_PRESETS.filter((p) => !have.has(p.kind) && (!p.only || p.only === t.type));
   const add = el('div', { class: 'card' }, el('h2', { text: 'Add a reminder' }),
-    el('div', { class: 'chips' }, ...presets.map((p) => el('button', { type: 'button', class: 'chip-btn', text: p.label, onclick: () => { const k = addTask(t, p.label, p.days, p.kind); if (k) toast('Added ' + p.label.toLowerCase() + '.'); renderReminders(); } })),
-      el('button', { type: 'button', class: 'chip-btn' + (remCustom ? ' on' : ''), text: 'Something else', onclick: () => { remCustom = !remCustom; renderReminders(); } })));
-  if (remCustom) {
-    const name = el('input', { type: 'text', placeholder: 'What needs doing?', maxlength: '40', 'aria-label': 'Reminder name' });
-    const sel = el('select', { class: 'select', 'aria-label': 'How often' }, ...TASK_EVERY.map((n) => el('option', { value: n, text: capital(everyLabel(n)), selected: n === 7 })));
-    add.append(el('div', { class: 'task-edit' }, name, sel, el('button', { type: 'button', class: 'btn primary small', text: 'Add', onclick: () => {
-      if (!name.value.trim()) { toast('Give the reminder a name.'); return; }
-      addTask(t, name.value, Number(sel.value), 'custom'); remCustom = false; renderReminders();
-    } })));
-  }
+    el('div', { class: 'chips' }, ...presets.map((p) => el('button', { type: 'button', class: 'chip-btn', text: p.label, onclick: () => { const k = addTask(t, p.label, p.days, p.kind); if (k) toast('Added ' + p.label.toLowerCase() + '.'); renderReminders(); } }))));
+  const name = el('input', { type: 'text', placeholder: 'For example, clean the glass', maxlength: '40', 'aria-label': 'Your own reminder', value: remDraft.name });
+  name.addEventListener('input', () => { remDraft.name = name.value; });
+  const sel = el('select', { class: 'select', 'aria-label': 'How often' }, ...TASK_EVERY.map((n) => el('option', { value: n, text: capital(everyLabel(n)), selected: n === remDraft.every })));
+  sel.addEventListener('change', () => { remDraft.every = Number(sel.value); });
+  const addCustom = () => {
+    if (!name.value.trim()) { toast('Type what you want to be reminded about.'); name.focus(); return; }
+    if (addTask(t, name.value, Number(sel.value), 'custom')) { remDraft = { name: '', every: 7 }; toast('Added ' + name.value.trim().slice(0, 40) + '.'); renderReminders(); }
+  };
+  name.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addCustom(); } });
+  add.append(el('div', { class: 'rem-custom' },
+    el('span', { class: 'rem-custom-title', text: 'Or add your own' }),
+    name,
+    el('div', { class: 'rem-custom-row' }, sel, el('button', { type: 'button', class: 'btn primary small', text: 'Add', onclick: addCustom }))));
   putAll(body, add, el('p', { class: 'muted small', text: 'Due reminders show on Home too. Tap Done when you have done it, and the clock restarts.' }));
 }
 
@@ -1366,7 +1370,7 @@ function showTank(id, section, form) {
   logDelete = '';
   remEdit = '';
   remDelete = '';
-  remCustom = false;
+  remDraft = { name: "", every: 7 };
   editingSize = false;
   resetDelete();
   showView('tank');
