@@ -402,6 +402,7 @@ function cleanFish(list) {
     .map((f) => {
       const item = { name: f.name.trim().slice(0, 60), count: Math.min(999, Math.max(1, Math.round(Number(f.count)) || 1)) };
       if (KIND_LIST.includes(f.kind)) item.kind = f.kind;
+      if (isFinite(Number(f.at)) && Number(f.at) > 0) item.at = Math.round(Number(f.at));
       if (typeof f.photo === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(f.photo) && f.photo.length < 600000) item.photo = f.photo;
       return item;
     });
@@ -485,7 +486,7 @@ function cleanLog(list) {
     if (!r || typeof r !== 'object') return;
     const t = Number(r.t);
     if (!isFinite(t) || t <= 0) return;
-    const e = { id: typeof r.id === 'string' && r.id ? r.id.slice(0, 40) : uid(), t: Math.round(t), k: r.k === 'change' ? 'change' : 'test', v: {}, note: typeof r.note === 'string' ? r.note.slice(0, 200) : '' };
+    const e = { id: typeof r.id === 'string' && r.id ? r.id.slice(0, 40) : uid(), t: Math.round(t), k: r.k === 'change' ? 'change' : r.k === 'treat' ? 'treat' : 'test', v: {}, note: typeof r.note === 'string' ? r.note.slice(0, 200) : '' };
     if (r.v && typeof r.v === 'object') {
       Object.keys(LOG_FIELDS).forEach((key) => {
         const n = Number(r.v[key]);
@@ -493,7 +494,10 @@ function cleanLog(list) {
         if (r.v[key] != null && r.v[key] !== '' && isFinite(n) && n >= f.min && n <= f.max) e.v[key] = n;
       });
     }
-    if (e.k === 'change') {
+    if (e.k === 'treat') {
+      e.name = typeof r.name === 'string' ? r.name.trim().slice(0, 60) : '';
+      if (!e.name) return;
+    } else if (e.k === 'change') {
       const p = Number(r.pct);
       e.pct = isFinite(p) && p > 0 && p <= 100 ? Math.round(p) : 0;
     } else if (!Object.keys(e.v).length) return;
@@ -834,7 +838,7 @@ function addLogEntry(t, e) {
   t.log.sort((a, b) => a.t - b.t);
   if (t.log.length > MAX_LOG) t.log = t.log.slice(-MAX_LOG);
   const kind = e.k === 'change' ? 'change' : 'test';
-  t.tasks.forEach((k) => { if (k.kind === kind && e.t > k.last) { k.last = e.t; k.snooze = 0; } });
+  if (e.k !== 'treat') t.tasks.forEach((k) => { if (k.kind === kind && e.t > k.last) { k.last = e.t; k.snooze = 0; } });
   if (!saveState()) toast('Could not save. Your phone storage may be full.');
   updateBadge();
 }
@@ -843,6 +847,21 @@ function logFormCard(t) {
   const card = el('div', { class: 'card log-form' });
   const dateInput = el('input', { type: 'date', class: 'date-input', value: todayStr(), max: todayStr(), 'aria-label': 'Date' });
   const noteInput = el('input', { type: 'text', placeholder: 'Note (optional)', maxlength: '200', 'aria-label': 'Note' });
+  if (logForm.mode === 'treat') {
+    card.append(el('h2', { text: 'Log a treatment' }));
+    const nameIn = el('input', { type: 'text', placeholder: 'What did you add? (medication, additive, dechlorinator)', maxlength: '60', 'aria-label': 'Treatment name' });
+    card.append(el('label', { class: 'log-field' }, el('span', { class: 'label', text: 'Treatment' }), nameIn),
+      el('label', { class: 'log-field' }, el('span', { class: 'label', text: 'Date' }), dateInput), noteInput,
+      el('div', { class: 'row-actions' },
+        el('button', { type: 'button', class: 'btn primary small', text: 'Save', onclick: () => {
+          const nm = nameIn.value.trim();
+          if (!nm) { toast('Type what you added.'); return; }
+          addLogEntry(t, { id: uid(), t: dateFromInput(dateInput.value), k: 'treat', v: {}, name: nm.slice(0, 60), note: noteInput.value.trim().slice(0, 200) });
+          logForm = null; renderLog();
+        } }),
+        el('button', { type: 'button', class: 'btn link', text: 'Cancel', onclick: () => { logForm = null; renderLog(); } })));
+    return card;
+  }
   if (logForm.mode === 'change') {
     card.append(el('h2', { text: 'Log a water change' }));
     const chips = el('div', { class: 'chips' }, ...[10, 20, 25, 30, 50].map((p) => el('button', { type: 'button', class: 'chip-btn' + (logForm.pct === p ? ' on' : ''), 'aria-pressed': logForm.pct === p ? 'true' : 'false', text: p + '%', onclick: () => { logForm.pct = p; renderLog(); } })));
@@ -900,6 +919,7 @@ function logHistoryCard(t) {
   shown.forEach((e) => {
     let line, pill = null;
     if (e.k === 'change') line = 'Water change' + (e.pct ? ', ' + e.pct + '%' : '');
+    else if (e.k === 'treat') line = 'Treatment: ' + e.name;
     else {
       const checks = entryChecks(t, e);
       line = checks.map((c) => LOG_FIELDS[c.key].label + ' ' + fmtVal(c.key, c.val)).join(' · ');
@@ -1117,11 +1137,13 @@ function renderLog() {
   if (!t) return;
   syncWaterDot(t);
   putAll(body, logSummaryCard(t));
+  putAll(body, timelineCard(t));
   if (logForm) putAll(body, logFormCard(t));
   else putAll(body, el('div', { class: 'row-actions wide' },
     el('button', { type: 'button', class: 'btn primary small', text: 'Scan a test', onclick: openScanSheet }),
     el('button', { type: 'button', class: 'btn small', text: 'Log a test', onclick: () => { logForm = { mode: 'test' }; renderLog(); } }),
-    el('button', { type: 'button', class: 'btn small', text: 'Water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } })));
+    el('button', { type: 'button', class: 'btn small', text: 'Water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } }),
+    el('button', { type: 'button', class: 'btn small', text: 'Treatment', onclick: () => { logForm = { mode: 'treat' }; renderLog(); } })));
   putAll(body, treatCard(t), logTrendCard(t), logHistoryCard(t));
   putAll(body, el('p', { class: 'muted small', text: 'These checks are general guidance. Your own fish and your test kit come first.' }));
 }
@@ -1503,9 +1525,11 @@ function addToTank(tank, name, count, mode, kind, photo) {
     if (mode === 'add') existing.count = Math.min(999, existing.count + count);
     else if (mode === 'scan') existing.count = Math.max(existing.count, count); // a scan can only add or confirm, never lower
     else existing.count = count;
+    if (existing.count > before) existing.at = Date.now();
     return existing.count > before ? 'raised' : 'same';
   }
   const row = kind && KIND_LIST.includes(kind) ? { name: clean, count, kind } : { name: clean, count };
+  row.at = Date.now();
   if (photo) row.photo = photo;
   tank.fish.push(row);
   return 'new';
@@ -2309,6 +2333,7 @@ function renderTank() {
   const ins = $('tank-insights');
   const strip = summaryStrip(t);
   ins.replaceChildren(strip.row, ...(strip.showMates ? [mateCheckCard(t)] : []));
+  strip.row.append(timelineCard(t));
   renderGear();
   if (photoState.tank !== t.id || photoState.list === null) { photoState.list = null; loadProgressPhotos(); } else renderProgress();
 }
@@ -3909,6 +3934,69 @@ function iconSvg(paths, size) {
 }
 // Two small cards side by side: how full the tank is, and whether the fish get along.
 // A slim full-width Stocking card, with a Compatibility pill under it that opens to show any issues.
+// ---------- What changed: a slim timeline of everything done to the tank ----------
+let tlOpen = false;
+let tlDays = 30;
+const TL_TYPES = { change: 'Water change', fish: 'New fish', treat: 'Treatment', gear: 'Equipment', test: 'Water test' };
+function tankEvents(t) {
+  const out = [];
+  t.log.forEach((e) => {
+    if (e.k === 'change') out.push({ t: e.t, type: 'change', text: 'Water change' + (e.pct ? ', ' + e.pct + '%' : '') });
+    else if (e.k === 'treat') out.push({ t: e.t, type: 'treat', text: 'Treatment: ' + e.name });
+    else { const lv = worstLevel(entryChecks(t, e)); out.push({ t: e.t, type: 'test', text: 'Water test' + (lv === 'warn' ? ': watch' : lv === 'bad' ? ': needs action' : ''), level: lv }); }
+  });
+  t.fish.forEach((f) => { if (f.at) out.push({ t: f.at, type: 'fish', text: 'Added ' + (f.count > 1 ? f.count + ' ' : '') + f.name }); });
+  t.gear.forEach((g) => {
+    const ts = g.added ? Date.parse(g.added + 'T12:00:00') : 0;
+    if (ts && isFinite(ts)) out.push({ t: ts, type: 'gear', text: 'Added ' + g.name });
+  });
+  return out.sort((a, b) => a.t - b.t);
+}
+function agoText(ts) {
+  const n = Math.max(0, daysBetween(ts, Date.now()));
+  return n === 0 ? 'today' : n === 1 ? 'yesterday' : n + ' days ago';
+}
+// If the latest test needs attention, name what was done in the five days before it.
+function tlSuspects(ev) {
+  const tests = ev.filter((e) => e.type === 'test');
+  const last = tests[tests.length - 1];
+  if (!last || (last.level !== 'warn' && last.level !== 'bad')) return null;
+  const before = ev.filter((e) => e.type !== 'test' && e.t <= last.t && e.t >= last.t - 5 * DAY_MS);
+  return before.length ? { test: last, before } : null;
+}
+function timelineCard(t) {
+  const ev = tankEvents(t);
+  const wrap = el('div', { class: 'stock-slim tl-card' });
+  const days = tlDays;
+  const end = Date.now();
+  const start = startOfDay(end) - (days - 1) * DAY_MS;
+  const inWin = ev.filter((e) => e.t >= start);
+  const acts = ev.filter((e) => e.type !== 'test');
+  const lastAct = acts[acts.length - 1];
+  const note = lastAct ? lastAct.text + ', ' + agoText(lastAct.t) : ev.length ? 'Only water tests so far' : 'Nothing logged yet';
+  const head = el('button', { type: 'button', class: 'tl-head', 'aria-expanded': String(tlOpen), onclick: () => { tlOpen = !tlOpen; renderTankOrLog(); } },
+    el('span', { class: 'sum-k', text: 'What changed' }), el('span', { class: 'stock-slim-note', text: note }), chevron());
+  const track = el('div', { class: 'tl-track', role: 'img', 'aria-label': inWin.length + ' events in the last ' + days + ' days' });
+  inWin.forEach((e) => {
+    const pct = Math.min(99, Math.max(1, (e.t - start) / (end - start) * 100));
+    track.append(el('span', { class: 'tl-tick ' + e.type + (e.level === 'bad' || e.level === 'warn' ? ' ' + e.level : ''), style: 'left:' + pct.toFixed(1) + '%' }));
+  });
+  wrap.append(head, track, el('div', { class: 'tl-scale' }, el('span', { text: days + ' days ago' }), el('span', { text: 'Today' })));
+  const sus = tlSuspects(ev);
+  if (sus) wrap.append(el('p', { class: 'tl-sus', text: 'Your latest test needs a look. Before it: ' + sus.before.slice(-3).map((e) => e.text + ' (' + Math.max(0, daysBetween(e.t, sus.test.t)) + (daysBetween(e.t, sus.test.t) === 1 ? ' day' : ' days') + ' before)').join('; ') + '.' }));
+  if (tlOpen) {
+    const legend = el('div', { class: 'tl-legend' }, ...['change', 'fish', 'treat', 'gear', 'test'].map((k) => el('span', {}, el('i', { class: 'tl-tick ' + k }), TL_TYPES[k])));
+    const toggle = el('div', { class: 'chips' }, ...[30, 90].map((d) => el('button', { type: 'button', class: 'chip-btn' + (tlDays === d ? ' on' : ''), 'aria-pressed': String(tlDays === d), text: d + ' days', onclick: () => { tlDays = d; renderTankOrLog(); } })));
+    wrap.append(legend, toggle);
+    const list = ev.filter((e) => e.t >= start).reverse().slice(0, 60);
+    if (!list.length) wrap.append(el('p', { class: 'muted small', text: 'Nothing in the last ' + days + ' days. Water changes, tests, new fish, equipment and treatments show up here.' }));
+    list.forEach((e) => wrap.append(el('div', { class: 'tl-row' }, el('i', { class: 'tl-tick ' + e.type + (e.level === 'bad' || e.level === 'warn' ? ' ' + e.level : '') }), el('span', { class: 'tl-text', text: e.text }), el('span', { class: 'muted small', text: fmtDay(e.t) }))));
+    if (!t.fish.some((f) => f.at)) wrap.append(el('p', { class: 'muted small', text: 'Fish added before this feature are not on the timeline.' }));
+  }
+  return wrap;
+}
+function renderTankOrLog() { renderTank(); renderLog(); }
+
 function summaryStrip(t) {
   const s = stocking(t);
   const stock = el('div', { class: 'stock-slim' });

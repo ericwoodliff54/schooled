@@ -1421,3 +1421,26 @@ body { min-height: 100vh; min-height: 100dvh; }
 #tank-gear[open] > summary::after, #tank-ideas[open] > summary::after { transform: rotate(-135deg); }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 button.compat-link { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 4px 0; font: inherit; color: inherit; min-height: 44px; }
+
+/* What changed timeline */
+.tl-card { margin-top: 0; }
+.tl-head { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0; background: none; border: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.tl-head .stock-slim-note { flex: 1; }
+.tl-head .chev, .tl-head > svg { color: var(--muted); flex-shrink: 0; }
+.tl-head[aria-expanded="true"] > svg { transform: rotate(180deg); }
+.tl-track { position: relative; height: 22px; margin: 2px 4px 0; border-bottom: 2px solid var(--edge, #d6e2f3); }
+.tl-tick { position: absolute; bottom: -5px; width: 8px; height: 18px; margin-left: -4px; border-radius: 4px; background: #2F8CFF; opacity: 0.9; }
+.tl-tick.change { background: #2F8CFF; }
+.tl-tick.fish { background: #2BAE66; }
+.tl-tick.treat { background: #E0564B; }
+.tl-tick.gear { background: #8B5CD6; }
+.tl-tick.test { background: #9AA7B8; height: 10px; }
+.tl-tick.test.warn { background: #E8A317; }
+.tl-tick.test.bad { background: #D6453A; }
+.tl-scale { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.tl-sus { margin: 8px 0 0; font-size: 13px; color: var(--warn); font-weight: 600; }
+.tl-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 12px 0 8px; font-size: 12px; color: var(--muted); }
+.tl-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.tl-legend .tl-tick, .tl-row .tl-tick { position: static; display: inline-block; width: 8px; height: 12px; margin: 0; flex-shrink: 0; }
+.tl-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--edge, #e3ecf8); }
+.tl-text { flex: 1; font-size: 14px; font-weight: 600; }
