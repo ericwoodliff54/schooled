@@ -1737,8 +1737,8 @@ function renderTankAddMenu() {
   if (!t) return;
   const startCheck = (inputId) => () => {
     closeFishImage(); fishCheck = null; fishCheckTankId = t.id; fishCheckNone = false; fishCheckFrom = 'tank';
-    closeAddMenu(); showView('fishcheck');
-    if ($(inputId)) $(inputId).click();
+    closeAddMenu();
+    if ($(inputId)) $(inputId).click(); // the Fish Check page only opens once a photo is chosen
   };
   putAll(box,
     featureBtn({ icon: 'scan', color: 'blue', title: 'Scan the whole tank', text: 'Photograph the tank and name every fish, plant and coral',
@@ -4830,7 +4830,10 @@ function renderFishCheck() {
 ['fishcheck-camera', 'fishcheck-gallery'].forEach((id) => $(id).addEventListener('change', (event) => {
   const file = event.target.files && event.target.files[0];
   event.target.value = '';
-  if (file) startFishCheck(file);
+  if (file) {
+    if (currentView !== 'fishcheck') showView('fishcheck');
+    startFishCheck(file);
+  }
 }));
 if ($('fishcheck-video')) $('fishcheck-video').addEventListener('change', (event) => {
   const file = event.target.files && event.target.files[0];
