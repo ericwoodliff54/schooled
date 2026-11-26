@@ -1400,3 +1400,27 @@ body { min-height: 100vh; min-height: 100dvh; }
 .gear-qty-field { flex: none; display: flex; flex-direction: column; gap: 2px; width: 76px; }
 .gear-qty-field .label { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
 .gear-name-row #gear-qty { width: 100%; }
+
+/* ===== Layered depth for cards inside cards =====
+   Each nesting level gets its own surface, a light top rim and a shadow that falls on the tile behind it,
+   so the tiles stop blending into one another. */
+:root {
+  --layer2: #F1F6FD;
+  --layer3: #FFFFFF;
+  --rim: rgba(255, 255, 255, 0.95);
+  --lift2: 0 -6px 16px -4px rgba(15, 23, 42, 0.12), 0 8px 16px -10px rgba(15, 23, 42, 0.22);
+  --lift3: 0 -5px 12px -4px rgba(15, 23, 42, 0.12), 0 6px 12px -8px rgba(15, 23, 42, 0.22);
+}
+:root[data-theme="dark"] {
+  --layer2: #223A59;
+  --layer3: #2B4A72;
+  --rim: rgba(255, 255, 255, 0.16);
+  --lift2: 0 -6px 16px -4px rgba(0, 0, 0, 0.5), 0 8px 16px -10px rgba(0, 0, 0, 0.6);
+  --lift3: 0 -5px 12px -4px rgba(0, 0, 0, 0.5), 0 6px 12px -8px rgba(0, 0, 0, 0.6);
+}
+.gear-acc { background: var(--layer2); border: 1px solid var(--line); border-top: 1px solid var(--rim); box-shadow: var(--lift2); }
+.gear-acc.owned { background: var(--layer2); }
+:root[data-theme="dark"] .gear-acc.owned { background: #1D3B3A; }
+.gear-acc .gpick, .gear-acc .pick, .lookalike { background: var(--layer3); border: 1px solid var(--line); border-top: 1px solid var(--rim); box-shadow: var(--lift3); }
+:root[data-theme="dark"] .gear-acc .gpick, :root[data-theme="dark"] .gear-acc .pick, :root[data-theme="dark"] .lookalike { border-color: rgba(150, 195, 255, 0.18); border-top-color: var(--rim); }
+:root[data-theme="dark"] .gear-acc { border-color: rgba(150, 195, 255, 0.16); border-top-color: var(--rim); }
