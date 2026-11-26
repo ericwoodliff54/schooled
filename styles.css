@@ -1335,3 +1335,20 @@ body { min-height: 100vh; min-height: 100dvh; }
 .theme-seg .btn.on { background: var(--teal); border-color: var(--teal); color: #fff; }
 :root[data-theme="dark"] a { color: #8DBBFF; }
 :root[data-theme="dark"] a:visited { color: #B7A6FF; }
+
+/* Get Schooled: labelled pill on the tank photo, plus a card with a sample question under it */
+.hero-gear.hero-ask { width: auto; height: 40px; padding: 0 15px 0 11px; gap: 7px; border-radius: 999px; border: 0; background: #fff; color: #1A63C7; font: inherit; font-size: 14px; font-weight: 800; letter-spacing: -0.01em; white-space: nowrap; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 0 8px 18px -8px rgba(10, 37, 64, 0.6); }
+.hero-gear.hero-ask svg { width: 20px; height: 20px; }
+.ask-card { display: flex; align-items: center; gap: 12px; width: 100%; margin: 12px 0 2px; padding: 12px 14px; text-align: left; font: inherit; color: var(--ink); cursor: pointer; background: linear-gradient(135deg, var(--mist), var(--card) 70%); border: 1.5px solid var(--edge); border-radius: 20px; box-shadow: var(--shadow); }
+.ask-card:active { transform: scale(0.99); }
+.ask-card-icon { flex: none; width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--teal-2), var(--teal)); box-shadow: 0 8px 16px -8px rgba(26, 99, 199, 0.8); }
+.ask-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ask-card-text strong { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; color: var(--teal-dark); }
+.ask-card-text small { font-size: 13px; color: var(--muted); }
+.ask-card-text em { font-style: normal; font-size: 13px; font-weight: 600; color: var(--teal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-card-go { flex: none; font-size: 26px; line-height: 1; color: var(--teal); }
+:root[data-theme="dark"] .hero-gear.hero-ask { background: var(--teal); color: #fff; box-shadow: 0 8px 18px -8px rgba(0, 0, 0, 0.7); }
+:root[data-theme="dark"] .ask-card { border-color: rgba(120, 175, 255, 0.4); background: linear-gradient(135deg, #234672, var(--card) 75%); }
+:root[data-theme="dark"] .ask-card-text em, :root[data-theme="dark"] .ask-card-go { color: #8DBBFF; }
+:root[data-theme="dark"] .seg-sticky { background: rgba(10, 21, 35, 0.82); }
+.ask-card-text em { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }

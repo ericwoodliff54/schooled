@@ -2084,6 +2084,29 @@ function sizePill(t) {
   });
 }
 
+// A sample question under the tank photo: tapping it opens Get Schooled with the question already typed in.
+function askSample(t) {
+  const pool = !t.fish.length
+    ? ['What fish would suit a tank this size?', 'How do I cycle a new tank?', 'What equipment do I need to get started?']
+    : ['Is my tank overstocked?', 'Which fish would make good tank mates for mine?', 'How often should I do water changes?', 'What should I feed my fish?'];
+  if (t.fish.length && t.log && t.log.length) pool.push('Are my water test results okay?');
+  let h = Math.floor(Date.now() / 864e5);
+  for (const c of String(t.id)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return pool[h % pool.length];
+}
+function renderAskCard(t) {
+  const card = $('tank-ask-card');
+  const q = askSample(t);
+  const ic = $('tank-ask').querySelector('svg').cloneNode(true);
+  ic.setAttribute('width', '26');
+  ic.setAttribute('height', '26');
+  card.replaceChildren(
+    el('span', { class: 'ask-card-icon' }, ic),
+    el('span', { class: 'ask-card-text' }, el('strong', { text: 'Get Schooled' }), el('small', { text: 'Ask anything about this tank' }), el('em', { text: 'Try: \u201c' + q + '\u201d' })),
+    el('span', { class: 'ask-card-go', 'aria-hidden': 'true', text: '\u203a' }));
+  card.onclick = () => { askDraft = q; openAsk(openTankId); };
+}
+
 function renderTank() {
   const t = getTank(openTankId);
   if (!t) { showView('home'); return; }
@@ -2092,6 +2115,7 @@ function renderTank() {
     t.photo ? el('img', { src: t.photo, alt: 'Photo of ' + tankLabel(t) }) : el('div', { class: 'tank-hero-empty' }, kindIcon('fish'), el('span', { text: 'No photo yet' })),
     el('div', { class: 'hero-shade' }),
     el('div', { class: 'hero-title' }, el('h1', { text: tankLabel(t) })));
+  renderAskCard(t);
   $('sheet-photo-thumb').replaceChildren(t.photo ? el('img', { src: t.photo, alt: '' }) : el('span', { text: 'No photo' }));
   $('tank-photo-remove').hidden = !t.photo;
   $('tank-photo-camera').textContent = t.photo ? 'Retake' : 'Take photo';
