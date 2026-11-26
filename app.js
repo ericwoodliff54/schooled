@@ -2324,7 +2324,7 @@ function gearPicks(kind, t) {
     if (td) P('Popular', 'Seachem Tidal ' + td[0], 'Hang-on filter with an adjustable flow dial. Rated up to ' + td[1] + ' gal, ' + td[2] + ' GPH.');
     if (fresh && (ft === 'sponge' || (!ft && gal <= 55))) {
       const cs = gal <= 10 ? 'Nano' : gal <= 30 ? 'Medium' : 'Large';
-      P('Budget', 'Aquarium Co-Op Easy Flow Sponge Filter (' + cs + ')', 'Sponge filter that runs on an air pump. Retailers list the nano for up to 10 gal, medium for 10 to 30 and large for 30 to 55+. Safe for fry and shrimp.');
+      P('Popular', 'Aquarium Co-Op Easy Flow Sponge Filter (' + cs + ')', 'Sponge filter that runs on an air pump. Retailers list the nano for up to 10 gal, medium for 10 to 30 and large for 30 to 55+. Safe for fry and shrimp.');
     }
     const sp = ft === 'sponge' ? (HYDRO_SPONGE.find((m) => gal <= m[1]) || null) : null;
     if (sp) P('Budget', 'Hydro-Sponge ' + sp[0], 'Sponge filter that runs off an air pump. Sold for up to ' + sp[1] + ' gal.');
@@ -2402,7 +2402,7 @@ function gearPicks(kind, t) {
     if (gal <= 50) P('Pro', 'EcoTech VorTech MP10', 'Wireless-ready, programmable wavemaker. Maker rates it for 2.5 to 50+ gal and glass up to 0.375 in thick.');
     else P('Pro', 'EcoTech VorTech MP40', 'Wireless-ready, programmable wavemaker. Maker rates it for 50 to 500+ gal and glass up to 0.75 in thick.');
   } else if (kind === 'Pump or wavemaker' && !salt && gal >= 20 && gal <= 300) {
-    P('Budget', 'Aquarium Co-Op Power Head', '211 GPH at 10 W. Fits the Co-Op sponge filter or runs on its own to add circulation. Extra-long cord.');
+    P('Popular', 'Aquarium Co-Op Power Head', '211 GPH at 10 W. Fits the Co-Op sponge filter or runs on its own to add circulation. Extra-long cord.');
     if (gal <= 75) P('Budget', 'Marineland Maxi-Jet 400', 'Powerhead, 110 GPH, 8 W, with a suction-cup mount. Works in freshwater or saltwater.');
     P('Popular', 'Marineland Maxi-Jet 600', 'Powerhead at 160 GPH, or 750 GPH with the circulation-pump kit. 8 W, freshwater or saltwater.');
     P('Pro', 'Innovative Marine AquaGadget WaveLink AIO', 'Digital-controlled powerhead, 165 to 1,500 GPH. Magnetic mount for glass up to 15 mm. Freshwater or saltwater.');
@@ -2411,7 +2411,7 @@ function gearPicks(kind, t) {
     if (gal <= 105) P('Popular', 'Fluval SK400 Surface Skimmer', 'Powered skimmer, 400 L/h (about 105 GPH) at about 3 W, with an intake dial. The maker lists it for tanks up to 400 L (105 gal).');
     P('Pro', 'Sicce Shark Mini Skim 350 Plus', 'Powered surface skimmer sold for freshwater tanks. Takes floating plant debris, dust and biofilm.');
   } else if (kind === 'Fertilizer' && !salt) {
-    P('Budget', 'Aquarium Co-Op Easy Green', 'All-in-one liquid fertilizer. Safe for fish, shrimp and snails. Follow the label for how much to dose.');
+    P('Popular', 'Aquarium Co-Op Easy Green', 'All-in-one liquid fertilizer. Safe for fish, shrimp and snails. Follow the label for how much to dose.');
     P('Budget', 'Seachem Flourish', 'Liquid plant supplement with trace elements and micronutrients. Follow the label for how much to dose.');
     P('Popular', 'Aquarium Co-Op Easy Root Tabs', 'Substrate tabs for root feeders such as Amazon swords and cryptocoryne. Push them into the gravel near the roots.');
     P('Popular', 'Fluval Plant Gro+', 'Liquid fertilizer that adds macro and micro nutrients. Follow the label for how much to dose.');
@@ -2442,8 +2442,8 @@ function gearPicks(kind, t) {
     if (gal > 40) P('Popular', 'Active Aqua AAPA15L', 'Four outlets, 15 L/min, 6 W. For bigger tanks or several stones and filters.');
   } else if (kind === 'CO2 system' && fresh && gal > 0) {
     const co = FLUVAL_CO2.find((m) => gal <= m[1]);
-    P('Budget', 'Aquarium Co-Op Aquario Neo CO2 Diffuser', 'Diffuser only. Pair it with a regulator and a CO2 tank.');
-    P('Budget', 'Aquarium Co-Op CO2 Stainless Steel Check Valve', 'Check valve for a CO2 line. Stops water from backing up toward the regulator.');
+    P('Popular', 'Aquarium Co-Op Aquario Neo CO2 Diffuser', 'Diffuser only. Pair it with a regulator and a CO2 tank.');
+    P('Popular', 'Aquarium Co-Op CO2 Stainless Steel Check Valve', 'Check valve for a CO2 line. Stops water from backing up toward the regulator.');
     P('Pro', 'Aquarium Co-Op CO2 Regulator Expansion Manifold', 'Add-on for a CO2 regulator, sold by Aquarium Co-Op.');
     if (co) P('Popular', 'Fluval ' + co[0], 'Complete kit with regulator and diffuser. Made for planted tanks up to ' + co[1] + ' gal.');
   } else if (kind === 'Fan or chiller' && gal > 0) {
