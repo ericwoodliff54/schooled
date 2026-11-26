@@ -2979,6 +2979,7 @@ $('edit-sheet-close').addEventListener('click', closeEditSheet);
 $('edit-sheet-done').addEventListener('click', closeEditSheet);
 $('edit-sheet-dim').addEventListener('click', closeEditSheet);
 $('home-add').addEventListener('click', () => startAddTank());
+$('tank-back').addEventListener('click', () => goBack(() => showView('home')));
 $('home-settings').addEventListener('click', () => { restorePending = null; showView('backup'); });
 
 $('tank-title-input').addEventListener('change', () => {
@@ -5143,11 +5144,9 @@ function dreamPhotoButtons(rerender) {
     try { dreamPhoto = await photoFromFile(file, 1024); rerender(); } catch (err) { toast("This device couldn't open that photo. Try another one."); }
   });
   wire(cam); wire(gal);
-  const t = activeTank();
   return el('div', { class: 'row photo-actions' },
     el('button', { type: 'button', class: 'btn small', text: 'Take photo', onclick: () => cam.click() }),
     el('button', { type: 'button', class: 'btn small', text: 'Choose photo', onclick: () => gal.click() }),
-    t && t.photo && dreamPhoto !== t.photo ? el('button', { type: 'button', class: 'btn small', text: 'Use my tank', onclick: () => { dreamPhoto = t.photo; rerender(); } }) : null,
     dreamPhoto ? el('button', { type: 'button', class: 'btn small', text: 'Remove', onclick: () => { dreamPhoto = ''; rerender(); } }) : null,
     cam, gal);
 }
@@ -5185,7 +5184,7 @@ function renderDream() {
   const size = el('input', { type: 'number', inputmode: 'numeric', min: 5, max: 2000, class: 'dream-size', value: dreamForm.size, 'aria-label': 'Tank size in gallons' });
   size.addEventListener('input', () => { dreamForm.size = size.value; });
   const wishCard = el('div', { class: 'card' },
-    el('h2', { text: 'What do you want?' }), area,
+    el('h2', { text: 'Describe Your Dream Tank...' }), area,
     el('div', { class: 'dream-row' }, el('label', {}, el('span', { class: 'label', text: 'Water' }), typeSel), el('label', {}, el('span', { class: 'label', text: 'Gallons' }), size)));
   body.append(wishCard);
 
@@ -5206,6 +5205,7 @@ function dreamResultCard(r) {
       el('p', { class: 'muted small', text: 'On an iPhone, press and hold the picture to save it. This is an AI picture, so real fish and plants will look a little different.' }));
   }
   card.append(el('h2', { text: r.title }), r.summary ? el('p', { text: r.summary }) : null);
+  card.append(el('button', { type: 'button', class: 'btn link small-link dream-clear', text: 'Clear this result', onclick: () => { const s2 = dreamLoad(); delete s2.last; dreamSave(s2); renderDream(); } }));
 
   const check = tankCheck(tmp);
   const bad = check.issues.some((i) => i.level === 'bad');

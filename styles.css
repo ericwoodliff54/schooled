@@ -1447,3 +1447,7 @@ button.compat-link { display: block; width: 100%; text-align: left; background: 
 .row-actions.wide { display: grid; grid-template-columns: 1fr 1fr; }
 .row-actions.wide .btn { white-space: nowrap; padding-left: 10px; padding-right: 10px; }
 .sup-h { margin: 14px 0 6px; font-size: 14px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.hero-back { position: absolute; left: 10px; top: 10px; width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.45); background: rgba(10, 46, 92, 0.45); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; z-index: 3; }
+.hero-back:active { background: rgba(10, 46, 92, 0.7); }
+.tank-top .tank-hero-empty { padding-left: 56px; }
+.dream-clear { margin-top: 4px; }
