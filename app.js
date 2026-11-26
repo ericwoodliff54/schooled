@@ -237,6 +237,24 @@ function noteMiss(common, scientific, kind, how, matched, where) {
   if (scientific && !m.sci) m.sci = String(scientific).slice(0, 80);
   saveMisses(list);
 }
+// ---------- Corrections: what the AI said, and what the keeper says it really was ----------
+const FIX_KEY = 'schooled.fixes';
+function loadFixes() {
+  try { const v = JSON.parse(localStorage.getItem(FIX_KEY)); return Array.isArray(v) ? v : []; } catch (err) { return []; }
+}
+function noteCorrection(ai, actual, kind, conf, where) {
+  const a = String(ai || '').trim().slice(0, 60), b = String(actual || '').trim().slice(0, 60);
+  if (!a || !b || normKey(a) === normKey(b)) return;
+  const key = normKey(a) + '>' + normKey(b);
+  const list = loadFixes();
+  let m = list.find((x) => x.key === key);
+  if (!m) { m = { key, ai: a, actual: b, kind: kind || '', conf: typeof conf === 'number' ? Math.round(conf * 100) : '', where: where || '', n: 0 }; list.push(m); }
+  m.n += 1;
+  try { localStorage.setItem(FIX_KEY, JSON.stringify(list.slice(-300))); } catch (err) { /* storage full or blocked */ }
+}
+function fixesText(list) {
+  return list.map((m) => [m.ai, '->', m.actual, '|', m.kind || '-', '|', m.conf === '' ? '-' : m.conf + '%', '|', m.where || '-', '|', m.n + 'x'].join(' ')).join('\n');
+}
 function missesText(list) {
   return list.map((m) => [m.name, m.sci || '-', m.kind || '-', m.how + (m.matched ? ' -> ' + m.matched : ''), m.where || '-', m.n + 'x'].join(' | ')).join('\n');
 }
@@ -265,6 +283,23 @@ function renderMisses() {
           setTimeout(() => URL.revokeObjectURL(url), 2000);
         } }),
         el('button', { type: 'button', class: 'btn', text: 'Clear log', onclick: () => { saveUsage([]); renderMisses(); } })));
+  }
+  const fixes = loadFixes();
+  body.append(el('h2', { class: 'section', text: 'Corrections' }),
+    el('p', { class: 'muted', text: 'Times you changed the AI\u2019s answer to what it really was. Send this list to Claude to fix look-alikes and names.' }));
+  if (!fixes.length) body.append(el('p', { class: 'muted', text: 'Nothing yet. Fix a wrong answer and it shows up here.' }));
+  else {
+    body.append(el('div', { class: 'row photo-actions' },
+      el('button', { type: 'button', class: 'btn primary', text: 'Copy corrections', onclick: () => {
+        const text = fixesText(fixes);
+        const done = () => toast('Copied ' + fixes.length + ' corrections.');
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => { fallbackCopy(text); done(); });
+        else { fallbackCopy(text); done(); }
+      } }),
+      el('button', { type: 'button', class: 'btn', text: 'Clear corrections', onclick: () => { try { localStorage.removeItem(FIX_KEY); } catch (err) { /* ignore */ } renderMisses(); } })));
+    body.append(el('div', { class: 'card' }, ...fixes.slice().sort((x, y) => y.n - x.n).map((m) => el('div', { class: 'miss-row' },
+      el('strong', { text: m.ai + ' \u2192 ' + m.actual + (m.n > 1 ? ' (' + m.n + 'x)' : '') }),
+      el('span', { class: 'muted small', text: [m.kind, m.conf === '' ? '' : 'AI was ' + m.conf + '% sure', m.where].filter(Boolean).join(' \u00b7 ') })))));
   }
   body.append(el('h2', { class: 'section', text: 'Names I could not match' }),
     el('p', { class: 'muted', text: 'Names the AI used that were not in my species list, or matched only loosely. Send this list to Claude to grow the list.' }));
@@ -3282,6 +3317,14 @@ function isGenericName(name) {
   return /^((african|malawi|tanganyika|lake victoria|small|large|mixed|dwarf)\s+)?(cichlid|cichlids|mbuna|haplochromis)$/i.test(String(name || '').trim()) || /^peacock cichlid$/i.test(String(name || '').trim());
 }
 
+// Big groups (all LPS corals, all marine angels, 60 Malawi cichlids) hold species that look nothing alike. Only a small group, or a relative in the same genus, counts as a real look-alike.
+function closeMembers(list, ref) {
+  if (list.length < 12) return list;
+  const gen = (e) => (e && /^[A-Z][a-z]{3,}\b/.test(String(e.s || '')) ? String(e.s).split(/\s+/)[0].toLowerCase() : '');
+  const genus = gen(ref);
+  if (!genus) return [];
+  return list.filter((e) => gen(e) === genus);
+}
 function lookalikeGuard(sp) {
   if (isGenericName(sp.name)) sp.confidence = Math.min(sp.confidence, 0.6);
   if (!DB.ready || sp.kind === 'plant' || !sp.group || !DB.groups[sp.group]) return;
@@ -3289,7 +3332,7 @@ function lookalikeGuard(sp) {
   const tank = getTank(pending && pending.tankId);
   const key = canonKey(sp.name);
   const members = DB.list.filter((e) => e.g === sp.group && normKey(e.n) !== key);
-  const padding = group.h ? members.map((e) => e.n) : [];
+  const padding = group.h ? closeMembers(members, lookupSpecies(sp.name)).map((e) => e.n) : [];
   const inTank = members.filter((e) => tank && tank.fish.some((f) => canonKey(f.name) === normKey(e.n)));
   const seen = new Set([key]);
   const alts = [];
@@ -3795,6 +3838,7 @@ $('save-scan').addEventListener('click', () => {
   const before = new Set(target.fish.filter((f) => f.photo).map((f) => f));
   const shared = pending.species.filter((sp) => sp.crop && sp.kind !== 'other' && (sp.edited || (Number(sp.confidence) || 0) >= 0.7))
     .map((sp) => ({ name: sp.name, sci: sp.scientific || '', kind: sp.kind, src: sp.edited ? 'user' : 'ai', ai: sp.ai || '', conf: sp.edited ? 1 : sp.confidence, water: target.type, image: sp.crop }));
+  pending.species.forEach((sp) => { if (sp.edited && sp.ai) noteCorrection(sp.ai, sp.name, sp.kind, null, 'Tank scan'); });
   pending.species.forEach((sp) => { const r = addToTank(target, sp.name, sp.count, 'scan', sp.kind, sp.thumb || ''); if (r) out[r] += 1; });
   if (!saveState()) { target.fish.forEach((f) => { if (f.photo && !before.has(f)) delete f.photo; }); saveState(); }
   pending = null;
@@ -4655,7 +4699,7 @@ function renderFishCheck() {
   // Members of the look-alike group, in the order the tell-apart tip mentions them (the usual mix-ups come first).
   const tipText = group && group.tip ? group.tip.toLowerCase() : '';
   const tipPos = (n) => { const k = tipText.indexOf(n.toLowerCase().split(/[\s-]/)[0]); return k < 0 ? 9999 : k; };
-  const members = group && group.h ? DB.list.filter((e) => e.g === entry.g).map((e) => e.n).sort((x, y) => tipPos(x) - tipPos(y)) : [];
+  const members = group && group.h ? closeMembers(DB.list.filter((e) => e.g === entry.g && e.n !== entry.n), entry).map((e) => e.n).sort((x, y) => tipPos(x) - tipPos(y)) : [];
   const seenAlt = new Set();
   const alts = typed ? [] : r.alternatives.concat(members).map((x) => lookupSpecies(x) ? lookupSpecies(x).n : x)
     .filter((x) => { const k = canonKey(x); if (k === canonKey(fc.name) || seenAlt.has(k) || !sameKindAs(x, fc.name)) return false; seenAlt.add(k); return true; }).slice(0, 3);
@@ -4668,9 +4712,28 @@ function renderFishCheck() {
         const chunk = chunks.find((ch) => ch.label.toLowerCase().split(/[\s\/(]/)[0] === fw) || chunks.find((ch) => ch.label.toLowerCase().indexOf(fw) >= 0);
         const desc = chunk ? chunk.text : (hit && hit.s ? hit.s : '');
         return el('button', { type: 'button', class: 'lookalike', 'aria-label': 'Switch to ' + x, onclick: () => {
+          noteCorrection(r.common_name, x, r.kind, r.confidence, 'Fish Check');
           fc.name = x; fc.userPick = true; const h2 = lookupSpecies(x); fc.count = h2 && h2.c && h2.c.s > 1 ? h2.c.s : 1; renderFishCheck();
         } }, el('strong', { text: x }), desc ? el('span', { text: desc }) : null);
       })));
+  }
+  if (!typed) {
+    const fixBox = createSearch({
+      placeholder: 'Type the real name', label: 'Real name',
+      type: () => { const tk = activeTank(); return tk ? tk.type : 'Freshwater'; },
+      onPick: (name, hit) => {
+        const nm = hit ? hit.n : name;
+        noteCorrection(r.common_name, nm, r.kind, r.confidence, 'Fish Check (typed)');
+        if (hit && hit.c) {
+          fc.name = hit.n; fc.userPick = true; fc.count = hit.c.s > 1 ? hit.c.s : 1; renderFishCheck();
+        } else {
+          const keep = { photoUrl: fc.photoUrl, image: fc.image };
+          startNamedCheck(nm, hit);
+          if (fishCheck) { fishCheck.photoUrl = keep.photoUrl; fishCheck.image = keep.image; }
+        }
+      }
+    });
+    card.append(el('details', { class: 'tell fc-fix' }, el('summary', { text: 'Not right? Type what it really is' }), fixBox.root));
   }
   const care = entry && entry.c ? entry : null;
   if (care) {
