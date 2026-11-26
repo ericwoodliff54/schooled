@@ -333,14 +333,12 @@ const FISH_PROMPT =
   'If you cannot see a single clear animal or plant, say so in note and keep confidence low. If it is not an aquarium animal or plant, set is_aquarium to false. ' +
   'Also give main_box: a tight bounding box around the animal you identified, as [ymin, xmin, ymax, xmax] in whole numbers from 0 to 1000 relative to the whole image (0,0 is the top left). ' +
   'If the photo also shows other clearly different KINDS of fish, coral or invertebrates (a different species, not just more of the same one), list up to 4 of them in others, each with look (2 to 5 plain words, such as "blue barred cichlid") and its own box in the same format. Skip tiny, blurry or mostly hidden ones, and never list a second fish of the same kind. If there is only one kind, leave others empty. ' +
-  'Also check its visible health, only from what you can actually see. Go through health.checks one item at a time and do NOT assume the fish is healthy. ' +
-  'For each item answer none (you can see that area and it looks normal), possible (a small or uncertain sign), clear (obvious), or not_visible (that part is hidden or too small to judge). ' +
-  'Items: bloating (swollen or sunken belly), scales (raised pinecone scales or missing scales), spots (white salt-like spots, gold dust, ich or velvet), fins (clamped, torn, frayed, shortened or white-edged), ' +
-  'eyes (cloudy or bulging), mouth (white, grey or cottony patches or erosion around the lips, cotton mouth), skin (fuzzy patches, sores, red streaks, wounds), ' +
-  'color (very faded or washed out for this species), posture (hanging at the surface, sitting on the bottom, tilted, or clearly breathing hard). For plants use skin for melting, yellowing or holes; for corals use skin for bleaching, tissue loss or slime. ' +
-  'Look closely at the fins and the edges of the body, and mark possible for anything you cannot rule out. Store tanks have glare and stressed fish can look pale, so a pale or hiding fish with no other sign is only possible at most, never clear. ' +
-  'Set health.visibility to good (most of the body is visible), partial, or poor (mostly hidden, extremely blurry or far too tiny). Mild glare, store lighting and a head-on view do not make visibility poor. ' +
-  'List up to four short visible signs in health.signs (plain words, only real concerns). The app works out the score from your checks, so do not give a score. ' +
+  'HEALTH, fish only: if the animal is a FISH, add a health object and check only for OBVIOUS illness that you can plainly see. Go through health.checks one item at a time. ' +
+  'For each item answer none (that area is visible and looks normal), clear (an unmistakable sign), or not_visible (hidden, blurry or too small to judge). Never guess: if you are unsure it is none or not_visible. A pale, shy or hiding fish, glare, store lighting and a head-on view are NOT signs of illness. ' +
+  'Items: bloating (clearly swollen or sunken belly), scales (raised pinecone scales or missing scales), spots (white salt-like spots, gold dust, ich or velvet), fins (clamped, torn, rotting or frayed fins), ' +
+  'eyes (cloudy or bulging), mouth (white, grey or cottony patches around the lips), skin (fuzzy patches, sores, red streaks, wounds), color (extremely faded), posture (hanging at the surface, sitting on the bottom, tilted, or clearly breathing hard). ' +
+  'Set health.visibility to good (most of the body is visible), partial, or poor (mostly hidden, extremely blurry or far too tiny). List up to four short visible signs in health.signs (plain words, only real concerns). The app does not show a score, so do not give one. ' +
+  'For corals, plants, snails, shrimp and other invertebrates, leave the health object out completely. ' +
   'Strong color tints from store lighting or photo filters change how a fish looks, so do not rely on color alone to tell look-alike species apart, and lower your confidence when the colors look unnatural.';
 
 const HEALTH_ITEMS = ['bloating', 'scales', 'spots', 'fins', 'eyes', 'mouth', 'skin', 'color', 'posture'];
@@ -366,7 +364,7 @@ const FISH_SCHEMA = {
         visibility: { type: 'STRING', enum: ['good', 'partial', 'poor'] },
         checks: {
           type: 'OBJECT',
-          properties: Object.fromEntries(HEALTH_ITEMS.map((k) => [k, { type: 'STRING', enum: ['none', 'possible', 'clear', 'not_visible'] }])),
+          properties: Object.fromEntries(HEALTH_ITEMS.map((k) => [k, { type: 'STRING', enum: ['none', 'clear', 'not_visible'] }])),
           required: HEALTH_ITEMS
         },
         signs: { type: 'ARRAY', items: { type: 'STRING' } }
@@ -374,7 +372,7 @@ const FISH_SCHEMA = {
       required: ['visibility', 'checks']
     }
   },
-  required: ['features', 'is_aquarium', 'common_name', 'kind', 'confidence', 'health']
+  required: ['features', 'is_aquarium', 'common_name', 'kind', 'confidence']
 };
 
 function cleanBox(b) {
@@ -420,7 +418,7 @@ function sanitizeFish(parsed) {
       note: clean(parsed.note, 160),
       main_box: cleanBox(parsed.main_box),
       others: sanitizeOthers(parsed, cleanBox(parsed.main_box)),
-      health: sanitizeHealth(parsed.health)
+      health: sanitizeHealth(parsed.health, KINDS.includes(parsed.kind) ? parsed.kind : 'fish')
     }
   };
 }
@@ -445,40 +443,16 @@ function sanitizeCare(c) {
   };
 }
 
-const HEALTH_STATES = ['healthy', 'some_concerns', 'unwell', 'cannot_tell'];
-// How much each finding takes off 100: [possible, clear]
-const HEALTH_WEIGHTS = { bloating: [8, 22], scales: [10, 25], spots: [12, 30], fins: [6, 16], eyes: [8, 20], mouth: [10, 22], skin: [10, 25], color: [4, 10], posture: [8, 18] };
-function sanitizeHealth(h) {
-  if (!h || typeof h !== 'object') return { status: 'cannot_tell', score: null, signs: [] };
-  const signs = (Array.isArray(h.signs) ? h.signs : []).map((x) => clean(x, 80)).filter(Boolean).slice(0, 4);
+// Warn-only: a health card is shown only when a fish has clear, visible signs of illness. There is no score and no "healthy" badge,
+// because a photo cannot show that a fish is well. Corals, plants and invertebrates never get a health card.
+function sanitizeHealth(h, kind) {
+  if (kind !== 'fish' || !h || typeof h !== 'object') return null;
   const checks = h.checks && typeof h.checks === 'object' ? h.checks : null;
-  if (!checks) {
-    // an older style answer with a status and score: keep it, but never let "healthy" read as a perfect score
-    const status = HEALTH_STATES.includes(h.status) ? h.status : 'cannot_tell';
-    let score = Number(h.score);
-    score = status === 'cannot_tell' || !isFinite(score) ? null : Math.round(Math.min(100, Math.max(0, score)));
-    if (score !== null) {
-      if (status === 'healthy') score = Math.min(92, Math.max(score, 75));
-      else if (status === 'some_concerns') score = Math.min(74, Math.max(score, 40));
-      else score = Math.min(score, 45);
-    }
-    return { status, score, signs: status === 'healthy' ? [] : signs };
-  }
-  const seen = HEALTH_ITEMS.filter((k) => checks[k] === 'none' || checks[k] === 'possible' || checks[k] === 'clear');
-  if (h.visibility === 'poor' || seen.length < 4) return { status: 'cannot_tell', score: null, signs: signs.length ? signs : ['Too hidden or blurry to judge'] };
-  let score = 100;
-  let flagged = 0;
-  HEALTH_ITEMS.forEach((k) => {
-    const v = checks[k];
-    if (v === 'possible') { score -= HEALTH_WEIGHTS[k][0]; flagged++; }
-    else if (v === 'clear') { score -= HEALTH_WEIGHTS[k][1]; flagged++; }
-  });
-  // a partly hidden fish can't earn a near-perfect score
-  if (h.visibility === 'partial') score = Math.min(score, 88);
-  score = Math.round(Math.max(5, Math.min(100, score)));
-  const status = score >= 88 && flagged <= 1 ? 'healthy' : score >= 60 ? 'some_concerns' : 'unwell';
-  const shown = status === 'healthy' ? Math.min(score, 97) : status === 'some_concerns' ? Math.min(score, 84) : Math.min(score, 59);
-  return { status, score: shown, signs: status === 'healthy' ? [] : signs };
+  if (!checks || h.visibility === 'poor') return null;
+  const clear = HEALTH_ITEMS.filter((k) => checks[k] === 'clear');
+  if (!clear.length) return null;
+  const signs = (Array.isArray(h.signs) ? h.signs : []).map((x) => clean(x, 80)).filter(Boolean).slice(0, 4);
+  return { status: clear.length >= 2 ? 'unwell' : 'some_concerns', score: null, signs };
 }
 
 // A Fish Check answer is worth a second opinion when the cheap model is unsure, or gives a vague label instead of a species.

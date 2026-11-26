@@ -4559,27 +4559,20 @@ function fishVerdict(t, name, count) {
   return { tmp, fresh };
 }
 
+// Warn-only: shown only when a fish has clear, visible signs of illness. No score and no "looks healthy" badge, because a photo cannot show that a fish is well.
 const HEALTH_LOOK = {
-  healthy: ['Looks healthy', 'ok'],
-  some_concerns: ['Some concerns', 'warn'],
-  unwell: ['Looks unwell', 'bad'],
-  cannot_tell: ["Can't tell from this photo", 'warn']
+  some_concerns: ['Possible concern', 'warn'],
+  unwell: ['Looks unwell', 'bad']
 };
 function healthCard(h) {
-  const hh = h && HEALTH_LOOK[h.status] ? h : { status: 'cannot_tell', score: null, signs: [] };
-  const look = HEALTH_LOOK[hh.status];
+  if (!h || !HEALTH_LOOK[h.status]) return null;
+  const look = HEALTH_LOOK[h.status];
   const box = el('div', { class: 'health-box ' + look[1] });
-  box.append(el('div', { class: 'water-line' }, el('strong', { text: 'Health check' }), el('span', { class: 'pill ' + look[1], text: look[0] })));
-  if (hh.score !== null && hh.score !== undefined) {
-    box.append(el('div', { class: 'health-score' }, el('span', { class: 'health-num', text: hh.score + '/100' }),
-      el('div', { class: 'health-bar', role: 'img', 'aria-label': 'Health score ' + hh.score + ' out of 100' }, el('span', { style: 'width:' + hh.score + '%' }))));
-  }
-  if (hh.signs && hh.signs.length) box.append(el('ul', { class: 'health-signs' }, ...hh.signs.map((x) => el('li', { text: x }))));
-  const tip = hh.status === 'unwell'
+  box.append(el('div', { class: 'water-line' }, el('strong', { text: 'Health warning' }), el('span', { class: 'pill ' + look[1], text: look[0] })));
+  if (h.signs && h.signs.length) box.append(el('ul', { class: 'health-signs' }, ...h.signs.map((x) => el('li', { text: x }))));
+  const tip = h.status === 'unwell'
     ? 'I would pass on this one. Fish from the same tank can carry the same problem.'
-    : hh.status === 'cannot_tell'
-      ? 'Try a sharper, evenly lit photo with natural colors. Watch it swim before you buy.'
-      : 'A photo cannot catch everything. Ask to see it eat, and keep new fish apart for a few weeks before adding them.';
+    : 'Ask to see it eat and swim before you buy. A photo cannot catch everything, and new fish should be kept apart for a few weeks.';
   box.append(el('p', { class: 'muted small', text: tip }));
   return box;
 }
@@ -4693,7 +4686,8 @@ function renderFishCheck() {
   card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), typed ? null : el('span', { class: 'pill ' + sure[1], text: sure[0] })));
   if (entry && entry.s) card.append(el('p', { class: 'muted small', text: entry.s }));
   if (entry && entry.c && entry.c.n) card.append(el('p', { class: 'fc-about', text: entry.c.n }));
-  if (!typed) card.append(healthCard(r.health));
+  const hCard = typed ? null : healthCard(r.health);
+  if (hCard) card.append(hCard);
   if (r.label_text) card.append(el('p', { class: 'muted small', text: 'Read from the tag: ' + r.label_text }));
   if (young) card.append(el('p', { class: 'muted small', text: 'This looks like a young fish. Young fish are hard to tell apart because their adult colors and patterns have not come in yet. Check the tank\'s sign or ask the store what it is before you buy, and plan for the adult size below.' }));
   if (!typed && !young && conf < 0.95 && conf >= 0.6 && !switched) card.append(el('p', { class: 'muted small', text: 'Worth a second look. Check the other names below, or try a closer side-on photo.' }));
