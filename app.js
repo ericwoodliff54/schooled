@@ -969,11 +969,14 @@ function logTrendCard(t) {
   return card;
 }
 
+let histOpen = false; // water history stays collapsed until opened
 function logHistoryCard(t) {
   if (!t.log.length) return null;
   const rows = t.log.slice().reverse();
   const shown = logAll ? rows : rows.slice(0, 10);
-  const card = el('div', { class: 'card' }, el('h2', { text: 'History' }));
+  const card = el('details', { class: 'card tank-settings' }, el('summary', null, 'History ', el('span', { class: 'summary-count', text: String(rows.length) })));
+  card.open = histOpen;
+  card.addEventListener('toggle', () => { histOpen = card.open; });
   shown.forEach((e) => {
     let line, pill = null;
     if (e.k === 'change') line = 'Water change' + (e.pct ? ', ' + e.pct + '%' : '');
@@ -1202,7 +1205,7 @@ function renderLog() {
     el('button', { type: 'button', class: 'btn small', text: 'Log a test', onclick: () => { logForm = { mode: 'test' }; renderLog(); } }),
     el('button', { type: 'button', class: 'btn small', text: 'Water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } }),
     el('button', { type: 'button', class: 'btn small', text: 'Treatment', onclick: () => { logForm = { mode: 'treat' }; renderLog(); } })));
-  putAll(body, treatCard(t), suppliesCard(t), logTrendCard(t), logHistoryCard(t));
+  putAll(body, treatCard(t), ...suppliesCards(t), logTrendCard(t), logHistoryCard(t));
   putAll(body, el('p', { class: 'muted small', text: 'These checks are general guidance. Your own fish and your test kit come first.' }));
 }
 
@@ -1459,8 +1462,8 @@ function goBack(fallback) {
 function overlayOpen() {
   const pop = $('add-pop');
   const menu = $('tank-add-menu');
-  const es = $('edit-sheet'), gs = $('gallery-sheet'), ss = $('scan-sheet');
-  return !!((pop && !pop.hidden) || (menu && !menu.hidden) || (es && !es.hidden) || (gs && !gs.hidden) || (ss && !ss.hidden));
+  const es = $('edit-sheet'), gs = $('gallery-sheet'), ss = $('scan-sheet'), cp = $('compat-pop');
+  return !!((cp && !cp.hidden) || (pop && !pop.hidden) || (menu && !menu.hidden) || (es && !es.hidden) || (gs && !gs.hidden) || (ss && !ss.hidden));
 }
 window.addEventListener('popstate', (ev) => {
   const st = ev.state;
@@ -2358,7 +2361,7 @@ function renderTank() {
   if (document.activeElement !== notes) notes.value = t.notes;
 
 
-  const SECS = [['fish', 'Stocking'], ['water', 'Water'], ['care', 'Care'], ['setup', 'Setup']];
+  const SECS = [['fish', 'Stocking'], ['water', 'Water'], ['care', 'Care'], ['setup', 'Equipment']];
   const dueHere = t.tasks.filter((k) => taskInfo(k).diff <= 0).length;
   $('tank-seg').replaceChildren(...SECS.map(([k, label]) => el('button', { type: 'button', class: 'seg-btn' + (k === tankSection ? ' on' : ''), 'aria-pressed': k === tankSection ? 'true' : 'false',
     text: label + (k === 'care' && dueHere ? ' (' + dueHere + ')' : ''), onclick: () => { tankSection = k; renderTank(); } })));
@@ -2417,6 +2420,7 @@ function renderTank() {
   const strip = summaryStrip(t);
   ins.replaceChildren(strip.row, ...(strip.showMates ? [mateCheckCard(t)] : []));
   renderGear();
+  syncCompatPop();
 }
 
 // ---------- Equipment and progress photos (one expandable card each, inside every tank) ----------
@@ -2867,14 +2871,20 @@ function renderGear() {
 }
 // Water tab: chemicals, supplements, salt, salinity tools and test kits.
 let supOpen = false;
-function suppliesCard(t) {
+let supRecOpen = false;
+function suppliesCards(t) {
   const g = gearParts(t, 'supply');
-  const d = el('details', { class: 'card tank-settings', id: 'tank-supplies' },
-    el('summary', null, 'Water supplies ', el('span', { class: 'summary-count', text: g.needed ? String(g.needed) : '' })),
-    el('div', {}, el('h3', { class: 'sup-h', text: 'My supplies' }), ...g.parts, el('h3', { class: 'sup-h', text: 'Recommended' }), ...g.ip));
-  d.open = supOpen;
-  d.addEventListener('toggle', () => { supOpen = d.open; });
-  return d;
+  const mine = el('details', { class: 'card tank-settings', id: 'tank-supplies' },
+    el('summary', null, 'My supplies ', el('span', { class: 'summary-count', text: g.mine ? String(g.mine) : '' })),
+    el('div', {}, ...g.parts));
+  mine.open = supOpen;
+  mine.addEventListener('toggle', () => { supOpen = mine.open; });
+  const rec = el('details', { class: 'card tank-settings', id: 'tank-supplies-rec' },
+    el('summary', null, 'Recommended supplies ', el('span', { class: 'summary-count', text: g.needed ? String(g.needed) : '' })),
+    el('div', {}, ...g.ip));
+  rec.open = supRecOpen;
+  rec.addEventListener('toggle', () => { supRecOpen = rec.open; });
+  return [mine, rec];
 }
 
 // Progress photos live in the browser's database (IndexedDB), not in the small saved-settings space.
@@ -3138,7 +3148,7 @@ function openEditSheet(focusName) {
   if (focusName) setTimeout(() => { try { $('tank-title-input').focus(); } catch (e) { /* ignore */ } }, 50);
 }
 function closeEditSheet() { const sh = $('edit-sheet'); if (sh) sh.hidden = true; }
-function closeSheets() { closeEditSheet(); closeGallery(); closeScanSheet(); }
+function closeSheets() { closeEditSheet(); closeGallery(); closeScanSheet(); closeCompatPop(); }
 $('tank-edit').addEventListener('click', () => openEditSheet(false));
 $('edit-sheet-close').addEventListener('click', closeEditSheet);
 $('edit-sheet-done').addEventListener('click', closeEditSheet);
@@ -4127,7 +4137,22 @@ function stockBar(t) {
 
 let mateShowAll = false;
 const groupOpen = {};
-let mateOpen = false; // the Compatibility pill stays collapsed until tapped
+let mateOpen = false; // true while the Compatibility popup is showing
+function syncCompatPop() {
+  const pop = $('compat-pop');
+  if (!pop) return;
+  const t = getTank(openTankId);
+  if (!mateOpen || !t || currentView !== 'tank') { pop.hidden = true; return; }
+  $('compat-pop-body').replaceChildren(mateCheckCard(t));
+  pop.hidden = false;
+}
+function closeCompatPop() {
+  mateOpen = false;
+  const pop = $('compat-pop');
+  if (pop) pop.hidden = true;
+}
+if ($('compat-pop-close')) $('compat-pop-close').addEventListener('click', closeCompatPop);
+if ($('compat-pop')) $('compat-pop').addEventListener('click', (ev) => { if (ev.target === $('compat-pop')) closeCompatPop(); });
 function iconSvg(paths, size) {
   return svgEl('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' }, ...paths.map((d) => svgEl('path', { d })));
 }
@@ -4185,7 +4210,7 @@ function timelineCard(t) {
   if (sus) wrap.append(el('p', { class: 'tl-sus', text: 'Your latest test needs a look. Before it: ' + sus.before.slice(-3).map((e) => e.text + ' (' + Math.max(0, daysBetween(e.t, sus.test.t)) + (daysBetween(e.t, sus.test.t) === 1 ? ' day' : ' days') + ' before)').join('; ') + '.' }));
   if (tlOpen) {
     const legend = el('div', { class: 'tl-legend' }, ...['change', 'fish', 'treat', 'gear', 'test'].map((k) => el('span', {}, el('i', { class: 'tl-tick ' + k }), TL_TYPES[k])));
-    const toggle = el('div', { class: 'chips' }, ...[30, 90].map((d) => el('button', { type: 'button', class: 'chip-btn' + (tlDays === d ? ' on' : ''), 'aria-pressed': String(tlDays === d), text: d + ' days', onclick: () => { tlDays = d; renderTankOrLog(); } })));
+    const toggle = el('div', { class: 'chips' }, ...[30, 60, 90].map((d) => el('button', { type: 'button', class: 'chip-btn' + (tlDays === d ? ' on' : ''), 'aria-pressed': String(tlDays === d), text: d + ' days', onclick: () => { tlDays = d; renderTankOrLog(); } })));
     wrap.append(legend, toggle);
     const list = ev.filter((e) => e.t >= start).reverse().slice(0, 60);
     if (!list.length) wrap.append(el('p', { class: 'muted small', text: 'Nothing in the last ' + days + ' days. Water changes, tests, new fish, equipment and treatments show up here.' }));
@@ -4215,7 +4240,7 @@ function summaryStrip(t) {
   const cleared = allIssues.length - issues.length;
   const bad = issues.some((i) => i.level === 'bad');
   const canOpen = issues.length > 0 || cleared > 0;
-  const open = canOpen && mateOpen === true;
+  const open = false; // the list opens in a popup, not inline
   let tone = 'ok', head = cleared ? 'Cleared' : 'All clear';
   if (!t.fish.length) { tone = 'none'; head = 'Add fish'; }
   else if (issues.length) { tone = bad ? 'bad' : 'warn'; head = issues.length + ' to look at'; }
@@ -4226,7 +4251,7 @@ function summaryStrip(t) {
     canOpen ? chevron() : null
   ];
   const pill = canOpen
-    ? el('button', { type: 'button', class: 'compat-pill', 'aria-expanded': String(open), onclick: () => { mateOpen = !open; renderTank(); } }, ...inner)
+    ? el('button', { type: 'button', class: 'compat-pill', 'aria-haspopup': 'dialog', onclick: () => { mateOpen = true; renderTank(); } }, ...inner)
     : el('div', { class: 'compat-pill static' }, ...inner);
   return { row: el('div', { class: 'sum-stack' }, stock, el('div', { class: 'compat-wrap' + (open ? ' open' : '') }, pill, open ? mateCheckCard(t) : null)), showMates: false };
 }
