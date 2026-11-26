@@ -168,9 +168,7 @@ function resolveNamed(common, scientific, where, kind) {
 
 // ---------- Tester usage log (tokens and cost of each AI call, kept on this phone) ----------
 const USAGE_KEY = 'schooled.usage';
-// Flash models are on an introductory price until Dec 31, 2026, then $1.50 / $7.50 per 1M tokens.
-const FLASH_PRICE = Date.now() < Date.UTC(2027, 0, 1) ? [0.75, 3.75] : [1.5, 7.5];
-const USAGE_PRICES = { 'gemini-4-hydrogen': [1.5, 7.5], 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': FLASH_PRICE, 'gemini-3.7-flash': FLASH_PRICE, 'gemini-3.6-flash': FLASH_PRICE, 'gemini-3.5-flash': [0.75, 3.75] };
+const USAGE_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75], 'gemini-3.7-flash': [0.75, 3.75], 'gemini-3.6-flash': [0.75, 3.75], 'gemini-3.5-flash': [0.75, 3.75], 'gemini-4-hydrogen': [1.5, 7.5] };
 function loadUsage() {
   try { const v = JSON.parse(localStorage.getItem(USAGE_KEY)); return Array.isArray(v) ? v : []; } catch (err) { return []; }
 }
@@ -1036,12 +1034,11 @@ async function runWaterScan(file) {
     const jpeg = drawToJpeg(image.source, 0, 0, image.width, image.height, SINGLE_SIDE, 0.85).split(',')[1];
     const res = await fetch(WORKER_URL + '/water', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: jpeg, mime: 'image/jpeg', kit: scanState.kit, tank_type: t.type, keys: logKeys(t), device: deviceId() }),
+      body: JSON.stringify({ image: jpeg, mime: 'image/jpeg', kit: scanState.kit, tank_type: t.type, keys: logKeys(t) }),
       signal: AbortSignal.timeout(60000)
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(friendlyError(data.error, res.status));
-    noteScansLeft(data);
     if (data.usage) logUsage('water', data.model, data.usage, { detail: 'test scan, ' + (data.kit_type || '') });
     scanState.rows = data.readings || [];
     scanState.chart = !!data.chart_visible;
@@ -1732,7 +1729,7 @@ function renderHome() {
   }
   putAll(body, heroBtn('At Your LFS?', 'Photograph one fish and see if it fits your tank', 'lfs', true, () => { fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
   putAll(body, heroBtn('Dream Tank', 'Picture the tank you dream of, we\'ll bring it to life!', 'sparkle', true, () => showView('dream')));
-  putAll(body, heroBtn('Settings', lastBackupText() + ' \u00b7 Backup, dark mode, legal', 'gear', true, () => { restorePending = null; showView('backup'); }));
+  putAll(body, heroBtn('Settings', lastBackupText() + ' \u00b7 Backup, sharing, legal', 'gear', true, () => { restorePending = null; showView('backup'); }));
   updateBadge();
   const misses = loadMisses();
   const usageN = loadUsage().length;
@@ -1751,6 +1748,23 @@ function renderHome() {
 const SITE_URL = 'https://www.twinravensdigital.com';
 const LEGAL = { privacy: SITE_URL + '/schooled-privacy.html', support: SITE_URL + '/support.html#schooled', page: SITE_URL + '/schooled.html', email: 'contact@twinravensdigital.com' };
 const APP_VERSION = '1.0';
+
+// ---------- Appearance (Auto follows the phone) ----------
+function themePref() {
+  try { const p = localStorage.getItem('schooled.theme'); return p === 'light' || p === 'dark' ? p : 'auto'; } catch (err) { return 'auto'; }
+}
+function applyTheme() {
+  const p = themePref();
+  const dark = p === 'dark' || (p === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute('content', dark ? '#0A1523' : '#1A63C7');
+}
+function setThemePref(p) {
+  try { if (p === 'auto') localStorage.removeItem('schooled.theme'); else localStorage.setItem('schooled.theme', p); } catch (err) { /* choice just won't be remembered */ }
+  applyTheme();
+}
+try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch (err) { /* older browsers */ }
 function extLink(href, text) { return el('a', { href, target: '_blank', rel: 'noopener noreferrer', text }); }
 
 // ---------- Community fish photos (opt-in) ----------
@@ -1870,13 +1884,13 @@ function renderBackup() {
       el('h2', { text: 'Save a backup' }),
       el('p', { class: 'muted small', text: lastBackupText() + (tn ? '. ' + tn + (tn === 1 ? ' tank' : ' tanks') + ' with their fish, water logs, reminders, equipment and progress photos.' : '.') }),
       el('button', { type: 'button', class: 'btn primary', text: 'Save backup file', disabled: tn ? null : '', onclick: () => { saveBackupFile().catch(() => toast("Couldn't make the backup file.")); } })));
-  const theme = window.schooledTheme ? window.schooledTheme.get() : 'auto';
-  const themeBtn = (v, label) => el('button', { type: 'button', class: 'chip-btn theme-opt' + (theme === v ? ' on' : ''), 'aria-pressed': theme === v ? 'true' : 'false', text: label,
-    onclick: () => { if (window.schooledTheme) window.schooledTheme.set(v); renderBackup(); } });
+  const tp = themePref();
   body.append(el('div', { class: 'card' },
     el('h2', { text: 'Appearance' }),
-    el('p', { class: 'muted small', text: 'Match phone switches between light and dark with your phone\u2019s setting.' }),
-    el('div', { class: 'theme-row', role: 'group', 'aria-label': 'Appearance' }, themeBtn('auto', 'Match phone'), themeBtn('light', 'Light'), themeBtn('dark', 'Dark'))));
+    el('p', { class: 'muted small', text: 'Auto matches your phone’s light or dark setting.' }),
+    el('div', { class: 'theme-seg', role: 'group', 'aria-label': 'Appearance' },
+      ...[['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([k, label]) =>
+        el('button', { type: 'button', class: 'btn' + (tp === k ? ' on' : ''), text: label, 'aria-pressed': tp === k ? 'true' : 'false', onclick: () => { setThemePref(k); renderBackup(); } })))));
   const on = contribState() === 'yes';
   body.append(el('div', { class: 'card' },
     el('h2', { text: 'Help improve fish ID' }),
@@ -2966,37 +2980,13 @@ function friendlyError(code, status) {
   switch (code) {
     case 'rate_limited': return 'Lots of scans right now. Wait a minute and try again.';
     case 'ai_busy': return 'The photo reader is busy. Try again in a moment.';
-    case 'limit_reached': return 'You\u2019ve been busy! You\u2019ve used all ' + SCAN_MONTHLY + ' scans this month. They reset on ' + resetDateText() + '.';
-    case 'day_limit': return 'You\u2019ve scanned a lot today! Scans open up again tomorrow.';
+    case 'limit_reached': return 'You have used this month\u2019s photo scans. They come back on the 1st.';
     case 'busy_today': return 'Photo scans are very busy today. Please try again tomorrow.';
     case 'bad_image': return "That photo couldn't be read. Try a different one.";
     case 'too_large': return 'That photo is too large. Try a smaller one.';
     case 'server_not_configured': return 'The server is not set up yet. Check the Worker secret.';
     default: return status ? 'Something went wrong (' + status + '). Try again.' : 'Something went wrong. Try again.';
   }
-}
-
-// ---------- Monthly scan pool (each phone has its own) ----------
-// Fish Check uses 1, a whole-tank scan 3, a water test read 1. The server keeps the real count.
-const SCAN_MONTHLY = 150;
-const SCAN_WARN_KEY = 'schooled.scanwarn';
-function resetDateText() {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth() + 1, 1).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-// The counter stays out of sight until scans run low, then a short note appears once at 30, 10, 3 and 0 left.
-function noteScansLeft(data) {
-  if (!data || typeof data.scans_left !== 'number') return;
-  const left = data.scans_left;
-  const month = new Date().toISOString().slice(0, 7);
-  let w = null;
-  try { w = JSON.parse(localStorage.getItem(SCAN_WARN_KEY)); } catch (err) { w = null; }
-  if (!w || w.m !== month) w = { m: month, at: 9999 };
-  const step = [30, 10, 3, 0].filter((n) => left <= n).pop();
-  if (step === undefined || step >= w.at) return;
-  w.at = step;
-  try { localStorage.setItem(SCAN_WARN_KEY, JSON.stringify(w)); } catch (err) { /* optional */ }
-  toast(left === 0 ? 'That was your last scan this month. Scans reset on ' + resetDateText() + '.' : left + (left === 1 ? ' scan' : ' scans') + ' left this month. They reset on ' + resetDateText() + '.');
 }
 
 async function askWorker(images, mode, timeoutMs, ctx) {
@@ -3017,7 +3007,6 @@ async function askWorker(images, mode, timeoutMs, ctx) {
       ? 'The photo reader had trouble (' + (data.ai_detail || 'error ' + data.ai_status) + '). Please try again in a moment.'
       : friendlyError(data.error, res.status));
   }
-  noteScansLeft(data);
   if (data.first_pass && data.first_pass.usage) logUsage('fish', data.first_pass.model, data.first_pass.usage, { detail: 'first look' });
   if (data.usage) logUsage(mode === 'zoom' || mode === 'verify' ? 'zoom' : mode === 'fish' ? 'fish' : 'scan', data.model, data.usage, { detail: mode + (ctx.deep ? ' deep' : '') + ', ' + (images || []).length + ' img, ' + Math.round(JSON.stringify(images || []).length / 1024) + ' KB' });
   return data;
@@ -4048,7 +4037,7 @@ function stockCard(t) {
 }
 
 // ---------- Fish Check ----------
-const SCAN_PRICES = USAGE_PRICES;
+const SCAN_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75] };
 let fishCheckTankId = '';
 let fishCheckNone = false;
 function fishCheckTank() { return fishCheckNone ? null : (getTank(fishCheckTankId) || activeTank()); }
@@ -4119,7 +4108,7 @@ async function fetchCare(fc, r) {
     const res = await fetch(WORKER_URL + '/care', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: r.common_name, scientific: r.scientific_name || '', device: deviceId() }),
+      body: JSON.stringify({ name: r.common_name, scientific: r.scientific_name || '' }),
       signal: AbortSignal.timeout(20000)
     });
     const data = await res.json().catch(() => ({}));
@@ -4678,11 +4667,11 @@ async function sendAsk(text) {
 }
 
 // ---------- Dream Tank ----------
-const DREAM_MONTHLY = 3;
+const DREAM_MONTHLY = 10;
 const DREAM_KEY = 'schooled.dream';
 const DEVICE_KEY = 'schooled.device';
 const DREAM_ERRORS = {
-  limit_reached: 'You\u2019ve made all ' + DREAM_MONTHLY + ' dream tanks this month. More on ' + resetDateText() + '.',
+  limit_reached: 'You have used this month’s dream pictures. They come back next month.',
   busy_today: 'Dream Tank has been very busy today. Please try again tomorrow.',
   rate_limited: 'That was a few too many tries in a row. Wait a few minutes and try again.',
   not_aquarium: 'That did not sound like an aquarium. Describe the fish, plants and style you want.',
