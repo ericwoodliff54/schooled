@@ -847,8 +847,8 @@ async function careEstimate(request, env, origin) {
 }
 
 // ---------- Water test reader ----------
-const WATER_LIMITS = { temp: [32, 110], ph: [0, 14], nh3: [0, 20], no2: [0, 20], no3: [0, 500], sg: [1, 1.04], gh: [0, 60], kh: [0, 40], tds: [0, 3000], po4: [0, 20], ca: [0, 800], alk: [0, 20], mg: [0, 2000] };
-const WATER_NAMES = { temp: 'temperature (F)', ph: 'pH', nh3: 'ammonia (ppm)', no2: 'nitrite (ppm)', no3: 'nitrate (ppm)', sg: 'salinity (specific gravity)', gh: 'general hardness (dGH)', kh: 'carbonate hardness (dKH)', tds: 'TDS (ppm)', po4: 'phosphate (ppm)', ca: 'calcium (ppm)', alk: 'alkalinity (dKH)', mg: 'magnesium (ppm)' };
+const WATER_LIMITS = { temp: [32, 110], ph: [0, 14], nh3: [0, 20], no2: [0, 20], no3: [0, 500], sg: [1, 1.04], gh: [0, 60], kh: [0, 40], tds: [0, 3000], po4: [0, 20], ca: [0, 800], alk: [0, 20], mg: [0, 2000], cl2: [0, 10], cu: [0, 10], fe: [0, 5] };
+const WATER_NAMES = { temp: 'temperature (F)', ph: 'pH', nh3: 'ammonia (ppm)', no2: 'nitrite (ppm)', no3: 'nitrate (ppm)', sg: 'salinity (specific gravity)', gh: 'general hardness (dGH)', kh: 'carbonate hardness (dKH)', tds: 'TDS (ppm)', po4: 'phosphate (ppm)', ca: 'calcium (ppm)', alk: 'alkalinity (dKH)', mg: 'magnesium (ppm)', cl2: 'chlorine (ppm)', cu: 'copper (ppm)', fe: 'iron (ppm)' };
 const WATER_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -1229,7 +1229,7 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response('Schooled API is running (version 40, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
+      return new Response('Schooled API is running (version 41, limits ' + (env.LIMITS ? 'on' : 'off') + ', photos ' + (env.CROPS ? 'on' : 'off') + ': ' + (env.GEMINI_MODEL || DEFAULT_MODEL) + ', backup ' + FALLBACK_MODEL + ')', { headers: corsHeaders(origin) });
     }
 
     if (request.method === 'POST' && url.pathname === '/dream') {

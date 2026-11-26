@@ -453,12 +453,15 @@ const LOG_FIELDS = {
   po4: { label: 'Phosphate', unit: 'ppm', min: 0, max: 20, hint: '' },
   ca: { label: 'Calcium', unit: 'ppm', min: 0, max: 800, hint: '420' },
   alk: { label: 'Alkalinity', unit: 'dKH', min: 0, max: 20, hint: '8' },
-  mg: { label: 'Magnesium', unit: 'ppm', min: 0, max: 2000, hint: '1300' }
+  mg: { label: 'Magnesium', unit: 'ppm', min: 0, max: 2000, hint: '1300' },
+  cl2: { label: 'Chlorine', unit: 'ppm', min: 0, max: 10, hint: '0' },
+  cu: { label: 'Copper', unit: 'ppm', min: 0, max: 10, hint: '0' },
+  fe: { label: 'Iron', unit: 'ppm', min: 0, max: 5, hint: '' }
 };
 const LOG_SETS = {
-  Freshwater: ['temp', 'ph', 'nh3', 'no2', 'no3', 'gh', 'kh', 'tds', 'po4'],
-  Saltwater: ['temp', 'sg', 'ph', 'nh3', 'no2', 'no3', 'po4', 'ca', 'alk', 'mg'],
-  Brackish: ['temp', 'sg', 'ph', 'nh3', 'no2', 'no3', 'kh', 'gh']
+  Freshwater: ['temp', 'ph', 'nh3', 'no2', 'no3', 'gh', 'kh', 'tds', 'po4', 'cl2', 'cu', 'fe'],
+  Saltwater: ['temp', 'sg', 'ph', 'nh3', 'no2', 'no3', 'po4', 'ca', 'alk', 'mg', 'cu'],
+  Brackish: ['temp', 'sg', 'ph', 'nh3', 'no2', 'no3', 'kh', 'gh', 'cl2', 'cu']
 };
 const LOG_CORE = ['temp', 'sg', 'ph', 'nh3', 'no2', 'no3'];
 const MAX_LOG = 500;
@@ -645,6 +648,21 @@ function judgeValue(t, key, v) {
     if (v < 3) return mk('warn', 'KH is low, so pH can swing. Raise it gradually.');
     return mk('ok', 'KH gives pH a stable buffer.');
   }
+  if (key === 'cl2') {
+    if (v < 0.05) return mk('ok', 'No chlorine. Good.');
+    if (v <= 0.2) return mk('warn', 'A trace of chlorine. It harms fish gills and filter bacteria, so use conditioner on new water.');
+    return mk('bad', 'Chlorine is present and toxic to fish and filter bacteria. Use a water conditioner and do a water change.');
+  }
+  if (key === 'cu') {
+    if (v < 0.02) return mk('ok', 'No copper. Good.');
+    if (v <= 0.1) return mk('warn', 'A little copper. Shrimp, snails, corals and other invertebrates are very sensitive to it.');
+    return mk('bad', 'Copper is high and toxic to invertebrates and many fish. Do water changes and check pipes and medications.');
+  }
+  if (key === 'fe') {
+    if (v <= 0.5) return mk('ok', 'Iron is in a normal range.');
+    if (v <= 1) return mk('warn', 'Iron is a little high. Planted tanks use it, but extra can feed algae.');
+    return mk('bad', 'Iron is high and can feed algae. Ease off fertilizer and do water changes.');
+  }
   if (key === 'alk') {
     if (v >= 7 && v <= 11) return mk('ok', 'Alkalinity is in a good range.');
     if (v >= 6 && v <= 12) return mk('warn', 'Alkalinity is a bit off (aim for 7-11 dKH). Adjust slowly.');
@@ -671,6 +689,9 @@ function judgeBand(t, key) {
   if (key === 'no3') return [0, isReef(t) ? 10 : 20];
   if (key === 'sg') return t.type === 'Saltwater' ? [1.023, 1.026] : t.type === 'Brackish' ? [1.002, 1.018] : null;
   if (key === 'po4') return [0, t.type === 'Saltwater' ? 0.1 : 1];
+  if (key === 'cl2') return [0, 0.05];
+  if (key === 'cu') return [0, 0.02];
+  if (key === 'fe') return [0, 0.5];
   if (key === 'alk') return [7, 11];
   if (key === 'ca') return [380, 450];
   if (key === 'mg') return [1200, 1450];
@@ -929,6 +950,12 @@ function treatmentsFor(t) {
       const nm = LOG_FIELDS[c.key].label;
       if (low) add(nm + ' is low', 'A reef supplement made for ' + nm.toLowerCase() + ' raises it. Change it slowly and test again before the next dose.', REEF_SUPPLEMENT, 'Other');
       else add(nm + ' is high', 'Stop adding ' + nm.toLowerCase() + ' for now and let water changes bring it down. Test again in a few days.');
+    } else if (c.key === 'cl2') {
+      add('Chlorine is present', 'Dose a water conditioner now and do a partial water change. Always treat new water before it goes in the tank.', cond, 'Water conditioner');
+    } else if (c.key === 'cu') {
+      add('Copper is present', 'Do water changes. Check for copper medications, old pipes or tap water as the source. Invertebrates are at risk.');
+    } else if (c.key === 'fe') {
+      add('Iron is high', 'Cut back on iron fertilizer and do a water change. Test again in a few days.');
     } else if (c.key === 'temp') {
       add('Temperature is off', 'Check the heater and thermometer. Adjust slowly, no more than a degree or two a day.');
     }
