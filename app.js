@@ -988,7 +988,7 @@ function addPickToGear(t, kind, name) {
   if (t.gear.length >= 40) { toast('That is the most equipment one tank can list.'); return; }
   t.gear.push({ id: uid(), kind: GEAR_KINDS.includes(kind) ? kind : 'Other', name: name.slice(0, 60), qty: 1, note: '', added: todayISO() });
   saveState();
-  toast('Added to your equipment list.');
+  toast(SUPPLY_KINDS.indexOf(kind) !== -1 ? 'Added to your water supplies.' : 'Added to your equipment list.');
 }
 
 function treatCard(t) {
@@ -1144,7 +1144,7 @@ function renderLog() {
     el('button', { type: 'button', class: 'btn small', text: 'Log a test', onclick: () => { logForm = { mode: 'test' }; renderLog(); } }),
     el('button', { type: 'button', class: 'btn small', text: 'Water change', onclick: () => { logForm = { mode: 'change', pct: 0 }; renderLog(); } }),
     el('button', { type: 'button', class: 'btn small', text: 'Treatment', onclick: () => { logForm = { mode: 'treat' }; renderLog(); } })));
-  putAll(body, treatCard(t), logTrendCard(t), logHistoryCard(t));
+  putAll(body, treatCard(t), suppliesCard(t), logTrendCard(t), logHistoryCard(t));
   putAll(body, el('p', { class: 'muted small', text: 'These checks are general guidance. Your own fish and your test kit come first.' }));
 }
 
@@ -2660,7 +2660,9 @@ function gearPicks(kind, t) {
 }
 
 const WATER_KINDS = ['Water conditioner', 'Test kit'];
+const SUPPLY_KINDS = ['Test kit', 'Water conditioner', 'Fertilizer', 'Salinity tool', 'Salt mix', 'RO/DI system', 'Reef supplements'];
 const gearState = { kind: 'Filter', name: '', qty: 1, note: '', skipOpen: false };
+const supplyState = { kind: 'Test kit', name: '', qty: 1, note: '' };
 
 const gearOpenKinds = new Set();
 // Turn a pick's spec sentence into small tags (size, flow, power) plus one short note.
@@ -2677,14 +2679,17 @@ function pickTags(spec) {
   return { tags: tags.slice(0, 3), note: note.length > 90 ? note.slice(0, 87).replace(/\s+\S*$/, '') + '…' : note };
 }
 
-function renderGear() {
-  const t = getTank(openTankId);
-  const body = $('tank-gear-body');
-  if (!t || !body) return;
-  $('tank-gear-count').textContent = t.gear.length ? String(t.gear.length) : '';
+// Builds the list, add form and recommendations for one kind of gear: 'equip' (hardware) or 'supply' (water chemistry, test kits, salt).
+function gearParts(t, scope) {
+  const supply = scope === 'supply';
+  const inScope = (k) => (SUPPLY_KINDS.indexOf(k) !== -1) === supply;
+  const gs = supply ? supplyState : gearState;
+  const pre = supply ? 'sup-' : 'gear-';
+  const noun = supply ? 'supplies' : 'equipment';
+  const redo = () => { renderGear(); renderLog(); };
 
-  const setQty = (g, n) => { g.qty = Math.min(99, Math.max(1, n)); saveState(); renderGear(); };
-  const mine = t.gear.map((g) => el('div', { class: 'gear-row' },
+  const setQty = (g, n) => { g.qty = Math.min(99, Math.max(1, n)); saveState(); redo(); };
+  const mine = t.gear.filter((g) => inScope(g.kind)).map((g) => el('div', { class: 'gear-row' },
     el('div', { class: 'gear-main' },
       el('strong', { text: g.name }),
       el('span', { class: 'sub', text: g.kind + (g.note ? ' · ' + g.note : '') + (g.added ? ' · added ' + g.added : '') })),
@@ -2693,28 +2698,28 @@ function renderGear() {
         el('button', { type: 'button', class: 'round', 'aria-label': 'One fewer ' + g.name, text: '\u2212', disabled: (g.qty || 1) <= 1 ? '' : null, onclick: () => setQty(g, (g.qty || 1) - 1) }),
         el('span', { class: 'count', text: String(g.qty || 1) }),
         el('button', { type: 'button', class: 'round', 'aria-label': 'One more ' + g.name, text: '+', onclick: () => setQty(g, (g.qty || 1) + 1) })),
-      el('button', { type: 'button', class: 'btn link small-link', 'aria-label': 'Remove ' + g.name, text: 'Remove', onclick: () => { t.gear = t.gear.filter((x) => x.id !== g.id); saveState(); renderGear(); } }))));
+      el('button', { type: 'button', class: 'btn link small-link', 'aria-label': 'Remove ' + g.name, text: 'Remove', onclick: () => { t.gear = t.gear.filter((x) => x.id !== g.id); saveState(); redo(); } }))));
 
-  const kindSel = el('select', { id: 'gear-kind', 'aria-label': 'Kind of equipment' }, ...GEAR_KINDS.map((k) => el('option', { value: k, text: k })));
-  kindSel.value = gearState.kind;
-  kindSel.addEventListener('change', () => { gearState.kind = kindSel.value; });
-  const nameIn = el('input', { id: 'gear-name', type: 'text', maxlength: '60', placeholder: 'Name or model, e.g. AquaClear 50', autocomplete: 'off', 'aria-label': 'Equipment name', value: gearState.name });
-  nameIn.addEventListener('input', () => { gearState.name = nameIn.value; });
-  const qtyIn = el('input', { id: 'gear-qty', type: 'number', inputmode: 'numeric', min: '1', max: '99', placeholder: 'Qty', autocomplete: 'off', 'aria-label': 'Quantity', value: String(gearState.qty || 1) });
-  qtyIn.addEventListener('input', () => { gearState.qty = Math.min(99, Math.max(1, Math.round(Number(qtyIn.value)) || 1)); });
-  const noteIn = el('input', { id: 'gear-note', type: 'text', maxlength: '120', placeholder: 'Note (optional), e.g. 100W, replace media monthly', autocomplete: 'off', 'aria-label': 'Note', value: gearState.note });
-  noteIn.addEventListener('input', () => { gearState.note = noteIn.value; });
-  const addBtn = el('button', { type: 'button', class: 'btn primary', text: 'Add equipment', onclick: () => {
-    const name = gearState.name.trim();
+  const kindSel = el('select', { id: pre + 'kind', 'aria-label': 'Kind of ' + (supply ? 'supply' : 'equipment') }, ...GEAR_KINDS.filter(inScope).map((k) => el('option', { value: k, text: k })));
+  kindSel.value = inScope(gs.kind) ? gs.kind : GEAR_KINDS.filter(inScope)[0];
+  kindSel.addEventListener('change', () => { gs.kind = kindSel.value; });
+  const nameIn = el('input', { id: pre + 'name', type: 'text', maxlength: '60', placeholder: supply ? 'Name, e.g. Seachem Prime' : 'Name or model, e.g. AquaClear 50', autocomplete: 'off', 'aria-label': 'Equipment name', value: gs.name });
+  nameIn.addEventListener('input', () => { gs.name = nameIn.value; });
+  const qtyIn = el('input', { id: pre + 'qty', type: 'number', inputmode: 'numeric', min: '1', max: '99', placeholder: 'Qty', autocomplete: 'off', 'aria-label': 'Quantity', value: String(gs.qty || 1) });
+  qtyIn.addEventListener('input', () => { gs.qty = Math.min(99, Math.max(1, Math.round(Number(qtyIn.value)) || 1)); });
+  const noteIn = el('input', { id: pre + 'note', type: 'text', maxlength: '120', placeholder: supply ? 'Note (optional), e.g. dose, how often' : 'Note (optional), e.g. 100W, replace media monthly', autocomplete: 'off', 'aria-label': 'Note', value: gs.note });
+  noteIn.addEventListener('input', () => { gs.note = noteIn.value; });
+  const addBtn = el('button', { type: 'button', class: 'btn primary', text: supply ? 'Add supply' : 'Add equipment', onclick: () => {
+    const name = gs.name.trim();
     if (!name) { toast('Type a name first.'); nameIn.focus(); return; }
     if (t.gear.length >= 40) { toast('That is the most equipment one tank can list.'); return; }
-    t.gear.push({ id: uid(), kind: gearState.kind, name: name.slice(0, 60), qty: gearState.qty || 1, note: gearState.note.trim().slice(0, 120), added: todayISO() });
-    gearState.name = ''; gearState.qty = 1; gearState.note = '';
-    saveState(); renderGear();
+    t.gear.push({ id: uid(), kind: gs.kind, name: name.slice(0, 60), qty: gs.qty || 1, note: gs.note.trim().slice(0, 120), added: todayISO() });
+    gs.name = ''; gs.qty = 1; gs.note = '';
+    saveState(); redo();
   } });
 
   const skipped = t.gearSkip;
-  const equip = gearSuggestions(t); // test kits and conditioner are the first things a beginner needs, so they stay in this list
+  const equip = gearSuggestions(t).filter((s) => inScope(s.kind)); // test kits and conditioner are the first things a beginner needs, so they stay in this list
   const isOwned = (s) => t.gear.some((g) => g.kind === s.kind);
   const hiddenCount = equip.filter((s) => !isOwned(s) && skipped.indexOf(s.kind) !== -1).length;
   const needed = equip.filter((s) => !isOwned(s) && skipped.indexOf(s.kind) === -1); // keyed on the kind, so a size change does not bring a dismissed idea back
@@ -2722,13 +2727,11 @@ function renderGear() {
   const sugg = needed.concat(covered); // what is still missing stays on top, owned goes to the end
 
   const parts = [
-    mine.length ? el('div', { class: 'gear-list' }, ...mine) : el('p', { class: 'muted small', text: 'Nothing logged yet. Add the filter, heater, light and anything else on this tank.' }),
+    mine.length ? el('div', { class: 'gear-list' }, ...mine) : el('p', { class: 'muted small', text: supply ? 'Nothing logged yet. Add the conditioner, test kit, salt or fertilizer you use on this tank.' : 'Nothing logged yet. Add the filter, heater, light and anything else on this tank.' }),
     el('div', { class: 'gear-form' }, kindSel, el('div', { class: 'gear-name-row' }, nameIn, el('label', { class: 'gear-qty-field' }, el('span', { class: 'label', text: 'Qty' }), qtyIn)), noteIn, addBtn),
   ];
-  body.replaceChildren(...parts);
 
   // Recommended gear: its own collapsible card, a vertical list of accordions.
-  $('tank-ideas-count').textContent = needed.length ? String(needed.length) : '';
   const gl = tankGallons(t);
   const ip = [el('p', { class: 'muted small gear-lead', text: 'Tailored for your ' + (gl ? Math.round(gl) + ' gal ' : '') + t.type.toLowerCase() + ' tank' + (t.fish.length ? ' and what is in it' : '') + '.' })];
   if (!sugg.length) ip.push(el('p', { class: 'muted small', text: 'No ideas right now.' }));
@@ -2750,12 +2753,12 @@ function renderGear() {
     const sum = el('summary', null,
       el('span', { class: 'gear-acc-title' }, el('strong', { text: s.kind }), hint ? el('span', { class: 'gear-acc-hint', text: hint }) : null),
       owned ? el('span', { class: 'owned-pill', text: '✓ Owned' }) : (picks.length ? el('span', { class: 'gear-acc-count', text: picks.length + (picks.length === 1 ? ' pick' : ' picks') }) : null),
-      owned ? null : el('button', { type: 'button', class: 'gear-x', 'aria-label': 'Dismiss ' + s.kind, text: '×', onclick: (e) => { e.preventDefault(); e.stopPropagation(); t.gearSkip.push(s.kind); t.gearSkip = t.gearSkip.slice(-30); saveState(); renderGear(); } }));
+      owned ? null : el('button', { type: 'button', class: 'gear-x', 'aria-label': 'Dismiss ' + s.kind, text: '×', onclick: (e) => { e.preventDefault(); e.stopPropagation(); t.gearSkip.push(s.kind); t.gearSkip = t.gearSkip.slice(-30); saveState(); redo(); } }));
     d.appendChild(sum);
     const body2 = el('div', { class: 'gear-acc-body' }, el('p', { class: 'sub gear-why', text: s.why }));
     picks.forEach((p) => {
       const pt = pickTags(p.spec);
-      body2.appendChild(el('button', { type: 'button', class: 'gpick tier-' + p.tier.toLowerCase(), 'aria-label': 'Add ' + p.name + ' to my equipment', title: p.spec, onclick: () => { gearState.kind = s.kind; addPickToGear(t, s.kind, p.name); renderGear(); } },
+      body2.appendChild(el('button', { type: 'button', class: 'gpick tier-' + p.tier.toLowerCase(), 'aria-label': 'Add ' + p.name + ' to my equipment', title: p.spec, onclick: () => { gs.kind = s.kind; addPickToGear(t, s.kind, p.name); redo(); } },
         el('span', { class: 'gpick-main' },
           el('span', { class: 'tier-pill', text: p.tier }),
           el('strong', { text: p.name }),
@@ -2763,13 +2766,34 @@ function renderGear() {
           pt.note ? el('span', { class: 'sub gpick-note', text: pt.note }) : null),
         el('span', { class: 'gpick-add', 'aria-hidden': 'true', text: '+ Add' })));
     });
-    body2.appendChild(el('button', { type: 'button', class: 'btn link small-link gpick-other', text: picks.length ? 'I have a different one' : 'I have one', onclick: () => { gearState.kind = s.kind; gearState.name = ''; $('tank-gear').open = true; renderGear(); $('gear-name').focus(); } }));
+    body2.appendChild(el('button', { type: 'button', class: 'btn link small-link gpick-other', text: picks.length ? 'I have a different one' : 'I have one', onclick: () => { gs.kind = s.kind; gs.name = ''; if (supply) supOpen = true; else $('tank-gear').open = true; redo(); const nf = $(pre + 'name'); if (nf) nf.focus(); } }));
     d.appendChild(body2);
     return d;
   })));
-  if (hiddenCount) ip.push(el('button', { type: 'button', class: 'btn link', text: 'Show ' + hiddenCount + ' dismissed idea' + (hiddenCount === 1 ? '' : 's'), onclick: () => { t.gearSkip = []; saveState(); renderGear(); } }));
+  if (hiddenCount) ip.push(el('button', { type: 'button', class: 'btn link', text: 'Show ' + hiddenCount + ' dismissed idea' + (hiddenCount === 1 ? '' : 's'), onclick: () => { t.gearSkip = []; saveState(); redo(); } }));
   ip.push(el('p', { class: 'gear-foot', text: GEAR_DISCLAIMER + ' Check the label on anything you buy.' + (sugg.some((s) => gearPicks(s.kind, t).length) ? ' Sizes are the makers\' ratings, last checked ' + GEAR_PICKS_CHECKED + '.' : '') }));
-  $('tank-ideas-body').replaceChildren(...ip);
+  return { parts, ip, needed: needed.length, mine: mine.length };
+}
+function renderGear() {
+  const t = getTank(openTankId);
+  const body = $('tank-gear-body');
+  if (!t || !body) return;
+  const g = gearParts(t, 'equip');
+  $('tank-gear-count').textContent = g.mine ? String(g.mine) : '';
+  body.replaceChildren(...g.parts);
+  $('tank-ideas-count').textContent = g.needed ? String(g.needed) : '';
+  $('tank-ideas-body').replaceChildren(...g.ip);
+}
+// Water tab: chemicals, supplements, salt, salinity tools and test kits.
+let supOpen = false;
+function suppliesCard(t) {
+  const g = gearParts(t, 'supply');
+  const d = el('details', { class: 'card tank-settings', id: 'tank-supplies' },
+    el('summary', null, 'Water supplies ', el('span', { class: 'summary-count', text: g.needed ? String(g.needed) : '' })),
+    el('div', {}, el('h3', { class: 'sup-h', text: 'My supplies' }), ...g.parts, el('h3', { class: 'sup-h', text: 'Recommended' }), ...g.ip));
+  d.open = supOpen;
+  d.addEventListener('toggle', () => { supOpen = d.open; });
+  return d;
 }
 
 // Progress photos live in the browser's database (IndexedDB), not in the small saved-settings space.

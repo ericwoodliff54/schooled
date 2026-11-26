@@ -1444,3 +1444,6 @@ button.compat-link { display: block; width: 100%; text-align: left; background: 
 .tl-legend .tl-tick, .tl-row .tl-tick { position: static; display: inline-block; width: 8px; height: 12px; margin: 0; flex-shrink: 0; }
 .tl-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--edge, #e3ecf8); }
 .tl-text { flex: 1; font-size: 14px; font-weight: 600; }
+.row-actions.wide { display: grid; grid-template-columns: 1fr 1fr; }
+.row-actions.wide .btn { white-space: nowrap; padding-left: 10px; padding-right: 10px; }
+.sup-h { margin: 14px 0 6px; font-size: 14px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
