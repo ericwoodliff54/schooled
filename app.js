@@ -1225,7 +1225,7 @@ function defaultState() {
 }
 
 let migrated = false;
-const GEAR_KINDS = ['Filter', 'Heater', 'Light', 'Pump or wavemaker', 'Protein skimmer', 'Air pump', 'CO2 system', 'Fan or chiller', 'Auto top-off', 'Test kit', 'Water conditioner', 'Substrate', 'Surface skimmer', 'Fertilizer', 'Gravel vacuum', 'Other'];
+const GEAR_KINDS = ['Filter', 'Heater', 'Light', 'Pump or wavemaker', 'Protein skimmer', 'Air pump', 'CO2 system', 'Fan or chiller', 'Auto top-off', 'Test kit', 'Water conditioner', 'Substrate', 'Surface skimmer', 'Fertilizer', 'Gravel vacuum', 'Salinity tool', 'Salt mix', 'RO/DI system', 'Reef supplements', 'Thermometer or controller', 'Lid or hood', 'Light timer', 'Auto feeder', 'Algae scraper', 'Quarantine tank', 'Plant tools', 'Other'];
 const BACKUP_KEY = 'schooled.v1.bak';
 function loadState() {
   let st = loadFrom(STORE_KEY);
@@ -2324,7 +2324,7 @@ function gearSuggestions(t) {
     add('Heater', 'Heater' + sizeTxt,
       gal ? 'About ' + Math.round(gal * 3) + ' to ' + Math.round(gal * 5) + ' watts keeps most tanks steady. A second small heater is a good backup in bigger tanks.' : 'Most tropical tanks want 3 to 5 watts per gallon.');
   }
-  add('Test kit', 'Liquid test kit', salt ? 'For ' + (corals ? 'reef' : 'saltwater') + ' tanks: salinity (refractometer), ammonia, nitrite, nitrate, alkalinity and calcium.' : 'Ammonia, nitrite, nitrate and pH. Liquid kits are more accurate than strips.');
+  add('Test kit', 'Liquid test kit', salt ? 'For ' + (corals ? 'reef' : 'saltwater') + ' tanks: ammonia, nitrite, nitrate' + (corals ? ', alkalinity and calcium' : ' and pH') + '. Salinity has its own tool below.' : 'Ammonia, nitrite, nitrate and pH. Liquid kits are more accurate than strips.');
   if (!salt) add('Water conditioner', 'Water conditioner', 'Removes chlorine and chloramine from tap water before it goes in the tank.');
   if (plants) {
     add('Light', 'Plant light', 'Full spectrum light (about 6500K) on a timer, 6 to 8 hours a day.');
@@ -2347,7 +2347,19 @@ function gearSuggestions(t) {
     add('Gravel vacuum', 'Gravel vacuum or water changer', 'Lifts waste out of the substrate while you take water out. A hose that reaches the sink makes weekly water changes quick' + (gal >= 40 ? ', and a bigger tank is worth the longer hose.' : '.'));
   }
   if (!salt && inverts) add('Fan or chiller', 'Cooling fan', 'Shrimp are sensitive to heat. Small clip-on fans help in summer if your room runs warm.');
-  if (brackish) add('Test kit', 'Hydrometer or refractometer', 'Brackish tanks need a salinity reading too.');
+  if (salt || brackish) add('Salinity tool', salt ? 'Refractometer or hydrometer' : 'Hydrometer or refractometer', salt ? 'Salinity drifts as water evaporates, so check it every week or two. A refractometer is more accurate than a floating hydrometer, which suits a first tank on a budget.' : 'Brackish tanks need a salinity reading too, every time you mix or top off.');
+  if (salt) {
+    add('Salt mix', 'Marine salt mix', 'Made up with RO/DI water for water changes and a fresh start. Pick one brand and stick with it, and mix it a day ahead.');
+    add('RO/DI system', 'RO/DI water system', 'Tap water carries phosphate, silicate and metals that feed algae and stress corals. An RO/DI unit (or store-bought RO water) is the clean base for salt and top-off.');
+    if (corals) add('Reef supplements', 'Calcium and alkalinity supplements', 'Growing corals use up calcium and alkalinity. Test first, then dose a little at a time and test again.');
+  }
+  add('Thermometer or controller', 'Thermometer' + (gal >= 20 ? ' and heater controller' : ''), 'A stick-on or digital thermometer shows what the heater is really doing. In bigger tanks a plug-in controller is a cheap backup if a heater sticks on.');
+  add('Lid or hood', 'Lid or hood', 'Keeps jumpers in, slows evaporation and keeps dust and curious cats out. Cut gaps for cords and the filter.');
+  add('Light timer', 'Light timer', 'A plain timer keeps the light on a steady ' + (salt ? 'schedule' : '6 to 8 hours a day') + ', which helps hold algae down and gives fish a day and night.');
+  if (gal >= 10) add('Auto feeder', 'Auto feeder', 'Covers a weekend or a week away. Test it for a few days before you leave, and use flake or small pellets that will not clump.');
+  add('Algae scraper', 'Algae scraper or magnet cleaner', 'Keeps the glass clear between water changes. Use one made for your glass or acrylic, and for your glass thickness.');
+  if (gal >= 20) add('Quarantine tank', 'Quarantine tank', 'A small bare tank with a heater and filter for watching new fish for a few weeks, so illness does not reach your main tank.');
+  if (plants) add('Plant tools', 'Planting tweezers and scissors', 'Long tweezers and curved scissors make planting and trimming easier, especially in a deep tank.');
   if (ft === 'sponge' || ft === 'undergravel') add('Air pump', 'Air pump', 'Drives the ' + ft + ' filter. Pick one rated above your tank size, with an air line and a check valve.');
   else if (inverts && !salt && ft !== 'sump') add('Air pump', 'Sponge filter or air pump', 'Shrimp and snails do best with gentle flow, and a sponge filter keeps babies from being sucked in.');
   return out;
@@ -2425,16 +2437,38 @@ function gearPicks(kind, t) {
     if (fh) P('Pro', 'Finnex HMA-S ' + fh[0] + 'W titanium', 'Titanium heater with a plastic guard and an attached controller. Sold for up to ' + fh[1] + ' gal.');
     else if (ft2) P('Pro', 'Finnex TH-' + ft2[0] + ' titanium tube', 'Titanium heating tube for ' + ft2[1] + ' to ' + ft2[2] + ' gal. It has no thermostat, so pair it with a separate controller such as the Finnex HC-820M.');
   } else if (kind === 'Test kit') {
-    if (t.type === 'Brackish') {
-      P('Popular', 'API Freshwater Master Test Kit', 'Liquid tests for pH, ammonia, nitrite and nitrate, which matter in brackish water too. About 800 tests.');
-      P('Budget', 'Instant Ocean Hydrometer', 'Floating glass hydrometer that reads salinity. Check its scale and the water temperature it was made for.');
-    }
+    if (t.type === 'Brackish') P('Popular', 'API Freshwater Master Test Kit', 'Liquid tests for pH, ammonia, nitrite and nitrate, which matter in brackish water too. Salinity has its own tool.');
     if (fresh) P('Popular', 'API Freshwater Master Test Kit', 'Liquid tests for pH, high range pH, ammonia, nitrite and nitrate. About 800 tests.');
     if (salt) {
+      P('Popular', 'API Saltwater Master Test Kit', 'Liquid tests for pH, ammonia, nitrite and nitrate in saltwater. Salinity, alkalinity and calcium need their own tests.');
       P('Budget', 'Salifert KH/Alkalinity and Calcium kits', 'Single-parameter liquid kits sold separately. Cheap ways to watch the two numbers that drift fastest in a reef.');
       P('Popular', 'Red Sea Reef Foundation Pro', 'Titration tests for calcium, alkalinity (KH) and magnesium. About 75 calcium and alkalinity tests and 100 magnesium tests.');
       P('Pro', 'Hanna Marine Alkalinity Checker (HI772)', 'Handheld colorimeter that reads alkalinity in dKH, so you are not judging a color by eye. Reagents are sold separately.');
     }
+  } else if (kind === 'Salinity tool') {
+    P('Budget', 'Instant Ocean Hydrometer', 'Floating glass hydrometer that reads salinity. Check its scale and the water temperature it was made for.');
+    P('Pro', 'Milwaukee MA887 Digital Seawater Refractometer', 'Digital refractometer with automatic temperature compensation, read in seconds. Calibrate it with distilled or RO/DI water.');
+  } else if (kind === 'Salt mix' && salt) {
+    P('Budget', 'Instant Ocean Sea Salt', 'A common mix for fish-only and reef tanks. Mix with RO/DI water and check the salinity before it goes in.');
+    P('Popular', 'Red Sea Coral Pro Salt', 'Reef-focused salt mix made for coral tanks. Mix with RO/DI water and check the label for the mix ratio.');
+    P('Pro', 'Tropic Marin Pro-Reef', 'Reef salt mix made to resemble natural seawater. Mix with RO/DI water and check the label.');
+  } else if (kind === 'RO/DI system' && salt) {
+    P('Budget', 'Aquatic Life RO Buddie 3-Stage (50 GPD)', 'Compact reverse osmosis unit that fits in a cabinet. Rated for up to 50 gallons per day under good conditions. Add a DI stage for the cleanest water.');
+    P('Popular', 'Aquatic Life RO Buddie +DI (50 GPD)', 'The same compact unit with a deionization cartridge added, whose resin changes color as it wears out.');
+    P('Budget', 'HM Digital TDS-3 meter', 'Handheld meter that reads dissolved solids, so you can check the unit is working. Fresh RO/DI water reads at or near zero.');
+  } else if (kind === 'Reef supplements' && salt) {
+    P('Budget', 'Seachem Reef Advantage Calcium', 'Calcium supplement for reef tanks. Test first and follow the label for how much to add.');
+    P('Budget', 'Seachem Reef Buffer', 'Alkalinity buffer for reef tanks. Raise it slowly and test again before the next dose.');
+    P(REEF_SUPPLEMENT.tier, REEF_SUPPLEMENT.name, REEF_SUPPLEMENT.spec);
+  } else if (kind === 'Thermometer or controller') {
+    P('Budget', 'API Aquarium Thermometer', 'Stick-on LCD thermometer that reads the water through the glass. Move it away from the heater for a true reading.');
+    if (gal >= 20) P('Pro', 'Inkbird ITC-308S Temperature Controller', 'Plug-in controller with a probe. The heater plugs into it, and it has high and low temperature alarms. The heater is switched off if it overheats.');
+  } else if (kind === 'Auto feeder') {
+    P('Budget', 'Fish Mate F14', 'Battery-powered feeder you program for meals through the day. Test it for a few days before you leave.');
+    P('Popular', 'EHEIM Twin Feeder', 'Battery-powered feeder with two food drums, so one can hold flake and the other pellets. Test it for a few days before you leave.');
+  } else if (kind === 'Algae scraper') {
+    P('Popular', 'Mag-Float Aquarium Glass Cleaner', 'Magnetic glass cleaner that floats if it lets go. Pick the size for your glass thickness, and the acrylic version for acrylic tanks.');
+    P('Popular', 'Flipper Cleaner', 'Magnetic cleaner with a built-in scraper blade for stubborn algae. Check the maker\u2019s glass thickness range before buying.');
   } else if (kind === 'Water conditioner') {
     P('Budget', 'API Tap Water Conditioner', 'Removes chlorine, chloramine and heavy metals. Follow the label for how much to add per gallon.');
     P('Popular', 'Seachem Prime', 'Removes chlorine and chloramine, detoxifies ammonia, nitrite and nitrate. Follow the label for how much to use.');
@@ -2489,6 +2523,7 @@ function gearPicks(kind, t) {
     P('Budget', 'Seachem Flourish', 'Liquid plant supplement with trace elements and micronutrients. Follow the label for how much to dose.');
     P('Popular', 'Aquarium Co-Op Easy Root Tabs', 'Substrate tabs for root feeders such as Amazon swords and cryptocoryne. Push them into the gravel near the roots.');
     P('Popular', 'Fluval Plant Gro+', 'Liquid fertilizer that adds macro and micro nutrients. Follow the label for how much to dose.');
+    P('Popular', 'Seachem Flourish Excel', 'Liquid carbon supplement, an easier step than CO2 injection. Follow the label, as a few plants such as Vallisneria can be sensitive to it.');
     P('Pro', 'Aquarium Co-Op Easy Iron', 'Iron supplement to bring out the color of red plants. Pair it with a base fertilizer.');
     P('Pro', 'Aquarium Co-Op Easy Potassium', 'Potassium supplement for heavy potassium feeders such as java fern and anubias. Pair it with a base fertilizer.');
   } else if (kind === 'Gravel vacuum' && !salt) {
