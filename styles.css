@@ -1324,8 +1324,8 @@ body { min-height: 100vh; min-height: 100dvh; }
 :root[data-theme="dark"] input, :root[data-theme="dark"] select, :root[data-theme="dark"] textarea { color: var(--ink); }
 :root[data-theme="dark"] ::placeholder { color: #7E93AD; }
 /* Splash: light lettering on a deep blue backdrop */
-:root[data-theme="dark"] #splash { background: radial-gradient(ellipse at 50% 38%, #1B3556 0%, #0A1523 70%); }
-:root[data-theme="dark"] #splash img { filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.5)); }
+:root[data-theme="dark"] #splash { background: radial-gradient(ellipse at 50% 42%, #24446C 0%, #12243B 45%, #0A1523 80%); }
+:root[data-theme="dark"] #splash img { filter: brightness(1.08) drop-shadow(0 0 18px rgba(120, 175, 255, 0.25)); }
 :root[data-theme="dark"] #splash img.light-only { display: none; }
 :root[data-theme="dark"] #splash img.dark-only { display: block; }
 :root[data-theme="dark"] #splash p { color: #B4C8E2; }
