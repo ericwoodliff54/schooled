@@ -1452,12 +1452,6 @@ button.compat-link { display: block; width: 100%; text-align: left; background: 
 .tank-top .tank-hero-empty { padding-left: 56px; }
 .dream-clear { margin-top: 4px; }
 
-/* Tank page: Back and edit sit together above the photo */
-.tank-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-.hero-gear.head-gear { position: static; width: 40px; height: 40px; border: 1px solid var(--line); background: var(--card); color: var(--navy); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
-:root[data-theme="dark"] .hero-gear.head-gear { color: var(--ink); }
-.tank-top .tank-hero-empty { padding-left: 0; }
-
 /* Stocking and Compatibility as two side-by-side tiles */
 .sum-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
 .sum-stack > :only-child { grid-column: 1 / -1; }
