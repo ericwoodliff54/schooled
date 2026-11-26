@@ -2084,27 +2084,15 @@ function sizePill(t) {
   });
 }
 
-// A sample question under the tank photo: tapping it opens Get Schooled with the question already typed in.
-function askSample(t) {
-  const pool = !t.fish.length
-    ? ['What fish would suit a tank this size?', 'How do I cycle a new tank?', 'What equipment do I need to get started?']
-    : ['Is my tank overstocked?', 'Which fish would make good tank mates for mine?', 'How often should I do water changes?', 'What should I feed my fish?'];
-  if (t.fish.length && t.log && t.log.length) pool.push('Are my water test results okay?');
-  let h = Math.floor(Date.now() / 864e5);
-  for (const c of String(t.id)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return pool[h % pool.length];
-}
+// Get Schooled card under the tank photo.
 function renderAskCard(t) {
   const card = $('tank-ask-card');
-  const q = askSample(t);
-  const ic = $('tank-ask').querySelector('svg').cloneNode(true);
-  ic.setAttribute('width', '26');
-  ic.setAttribute('height', '26');
+  const ic = iconSvg(['M20.5 12a8.5 8.5 0 0 1-12.4 7.5L3.5 21l1.5-4.4A8.5 8.5 0 1 1 20.5 12z', 'M12 7.8l1 2.7 2.7 1-2.7 1-1 2.7-1-2.7-2.7-1 2.7-1z'], 24);
   card.replaceChildren(
     el('span', { class: 'ask-card-icon' }, ic),
-    el('span', { class: 'ask-card-text' }, el('strong', { text: 'Get Schooled' }), el('small', { text: 'Ask anything about this tank' }), el('em', { text: 'Try: \u201c' + q + '\u201d' })),
+    el('span', { class: 'ask-card-text' }, el('strong', { text: 'Get Schooled' }), el('small', { text: 'Ask anything about this tank' })),
     el('span', { class: 'ask-card-go', 'aria-hidden': 'true', text: '\u203a' }));
-  card.onclick = () => { askDraft = q; openAsk(openTankId); };
+  card.onclick = () => openAsk(openTankId);
 }
 
 function renderTank() {
@@ -2758,7 +2746,6 @@ function openEditSheet(focusName) {
 function closeEditSheet() { const sh = $('edit-sheet'); if (sh) sh.hidden = true; }
 function closeSheets() { closeEditSheet(); closeGallery(); closeScanSheet(); }
 $('tank-edit').addEventListener('click', () => openEditSheet(false));
-$('tank-ask').addEventListener('click', () => openAsk(openTankId));
 $('edit-sheet-close').addEventListener('click', closeEditSheet);
 $('edit-sheet-done').addEventListener('click', closeEditSheet);
 $('edit-sheet-dim').addEventListener('click', closeEditSheet);

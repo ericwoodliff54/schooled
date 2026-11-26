@@ -1352,3 +1352,21 @@ body { min-height: 100vh; min-height: 100dvh; }
 :root[data-theme="dark"] .ask-card-text em, :root[data-theme="dark"] .ask-card-go { color: #8DBBFF; }
 :root[data-theme="dark"] .seg-sticky { background: rgba(10, 21, 35, 0.82); }
 .ask-card-text em { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }
+/* slimmer Get Schooled card */
+.ask-card { margin: 10px 0 0; padding: 8px 12px; gap: 11px; border-radius: 18px; }
+.ask-card-icon { width: 40px; height: 40px; border-radius: 13px; }
+.ask-card-text strong { font-size: 16px; }
+.ask-card-text small { font-size: 12.5px; }
+/* dark mode: warnings in orange so they stand out */
+:root[data-theme="dark"] { --warn: #FFD479; --warn-bg: #3B3010; --bad: #FF9A4D; --bad-bg: #432A14; }
+:root[data-theme="dark"] .compat-status.bad { color: #FF9A4D; }
+:root[data-theme="dark"] .compat-status.warn { color: #FFD479; }
+:root[data-theme="dark"] .compat-status.ok { color: #7FE0A8; }
+:root[data-theme="dark"] .sum-badge.bad { background: #6A3A12; color: #FFB36B; }
+:root[data-theme="dark"] .sum-badge.warn { background: #3B3010; color: #FFD479; }
+:root[data-theme="dark"] .status-card.bad { border-color: #8A5226; }
+:root[data-theme="dark"] .health-box.bad { background: #432A14; }
+:root[data-theme="dark"] .health-box.bad .health-bar span { background: #FF9A4D; }
+:root[data-theme="dark"] .compat-col.bad { border-color: #8A5226; background: #3A2512; }
+:root[data-theme="dark"] .issue.bad .dot, :root[data-theme="dark"] .log-dot.bad::before { background: #FF9A4D; }
+:root[data-theme="dark"] .stock-fill.over { background: linear-gradient(90deg, #FFB347, #FF8A3D); }
