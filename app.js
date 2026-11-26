@@ -4678,6 +4678,14 @@ function renderFishCheck() {
     el('button', { type: 'button', class: 'btn primary', text: 'Take photo', onclick: () => $('fishcheck-camera').click() }),
     el('button', { type: 'button', class: 'btn', text: 'Choose photo', onclick: () => $('fishcheck-gallery').click() }));
   body.append(actions);
+  if (fishCheckFrom !== 'tank') {
+    const nameSearch = createSearch({
+      placeholder: 'Or type its name', label: 'Type a fish, plant or coral name',
+      type: () => (t ? t.type : 'Freshwater'),
+      onPick: (name, entry) => startNamedCheck(name, entry)
+    });
+    body.append(el('p', { class: 'label', text: 'Read its name on the tank?' }), nameSearch.root);
+  }
   if (!fc) return;
   if (fc.photoUrl && fc.picker) {
     const pk = fc.picker;
