@@ -1982,12 +1982,45 @@ function renderBackup() {
       el('button', { type: 'button', class: 'btn primary', text: 'Choose backup file', onclick: () => fileIn.click() }));
   }
   body.append(rcard, fileIn);
+  const wipeBtn = el('button', { type: 'button', class: 'btn-link danger', text: 'Delete all my data' });
+  let wipeArmed = false, wipeTimer = 0;
+  wipeBtn.addEventListener('click', async () => {
+    if (!wipeArmed) {
+      wipeArmed = true; wipeBtn.textContent = 'Tap again to delete everything on this phone';
+      wipeTimer = setTimeout(() => { wipeArmed = false; wipeBtn.textContent = 'Delete all my data'; }, 5000);
+      return;
+    }
+    clearTimeout(wipeTimer);
+    wipeBtn.disabled = true; wipeBtn.textContent = 'Deleting\u2026';
+    await wipeAllData();
+  });
+  body.append(el('div', { class: 'card' },
+    el('h2', { text: 'Delete my data' }),
+    el('p', { class: 'muted small', text: 'Removes every tank, photo, chat, reminder, setting and saved result from this phone, then restarts Schooled as new. This cannot be undone, so save a backup first if you may want it back. To ask us to remove fish photos you chose to share earlier, email ' + LEGAL.email + '.' }),
+    wipeBtn));
   body.append(el('div', { class: 'card' },
     el('h2', { text: 'About Schooled' }),
     el('p', { class: 'muted small', text: 'Schooled is made by Twin Ravens Digital LLC. Fish identification, care information and product ideas are estimates to help you plan, not veterinary or professional advice. Check with a trusted fish store or vet before you buy or treat livestock.' }),
     el('p', { class: 'small' }, extLink(LEGAL.privacy, 'Privacy Policy'), ' \u00b7 ', extLink(LEGAL.privacy + '#terms', 'Terms of Use'), ' \u00b7 ', extLink(LEGAL.support, 'Support'), ' \u00b7 ', extLink(LEGAL.page, 'Website')),
     el('p', { class: 'muted small', text: 'Contact: ' + LEGAL.email }),
     el('p', { class: 'muted small', text: 'Version ' + APP_VERSION })));
+}
+
+// Erases everything Schooled keeps on this phone, then reloads as a fresh install. (Shared fish photos live on the server and are removed on request.)
+async function wipeAllData() {
+  try { for (const t of state.tanks) { try { await PhotoDB.delTank(t.id); } catch (err) { /* ignore */ } } } catch (err) { /* ignore */ }
+  try {
+    Object.keys(localStorage).filter((k) => k.indexOf('schooled.') === 0).forEach((k) => localStorage.removeItem(k));
+  } catch (err) { /* storage unavailable */ }
+  try {
+    await new Promise((resolve) => {
+      if (typeof indexedDB === 'undefined' || !indexedDB) { resolve(); return; }
+      const rq = indexedDB.deleteDatabase('schooled-photos');
+      rq.onsuccess = rq.onerror = rq.onblocked = () => resolve();
+      setTimeout(resolve, 1500);
+    });
+  } catch (err) { /* ignore */ }
+  location.replace(location.pathname);
 }
 
 function heroBtn(title, sub, icon, alt, onclick) {
