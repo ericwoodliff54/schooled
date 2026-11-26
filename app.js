@@ -1805,7 +1805,6 @@ function renderHome() {
   }
   putAll(body, heroBtn('At Your LFS?', 'Photograph one fish and see if it fits your tank', 'lfs', true, () => { closeFishImage(); fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
   putAll(body, heroBtn('Dream Tank', 'Picture the tank you dream of, we\'ll bring it to life!', 'sparkle', true, () => showView('dream')));
-  putAll(body, heroBtn('Settings', '', 'gear', true, () => { restorePending = null; showView('backup'); }));
   updateBadge();
   const misses = loadMisses();
   const usageN = TESTER ? loadUsage().length : 0;
@@ -2840,7 +2839,7 @@ function renderProgress() {
       el('button', { type: 'button', class: 'btn small', text: 'Upload photo', onclick: () => galIn.click() }),
       list && list.length ? el('button', { type: 'button', class: 'btn small', id: 'open-gallery', text: 'Open gallery (' + list.length + ')', onclick: openGallery }) : null),
     camIn, galIn,
-    el('details', { class: 'photo-details' }, el('summary', { text: 'Date and caption (optional)' }),
+    el('details', { class: 'photo-details' }, el('summary', { text: 'Add a date or caption (optional)' }),
       el('div', { class: 'gear-form' }, el('label', { class: 'field' }, el('span', { class: 'label', text: 'Photo date' }), dateIn), noteIn))
   ];
   if (photoState.error) parts.push(el('p', { class: 'error small', text: 'This browser does not allow saved photos right now (private mode can cause this).' }));
@@ -2931,6 +2930,7 @@ $('edit-sheet-close').addEventListener('click', closeEditSheet);
 $('edit-sheet-done').addEventListener('click', closeEditSheet);
 $('edit-sheet-dim').addEventListener('click', closeEditSheet);
 $('home-add').addEventListener('click', () => startAddTank());
+$('home-settings').addEventListener('click', () => { restorePending = null; showView('backup'); });
 
 $('tank-title-input').addEventListener('change', () => {
   const t = getTank(openTankId);
@@ -3922,6 +3922,7 @@ function summaryStrip(t) {
       el('div', { class: 'stock-track sum-track', role: 'img', 'aria-label': lvl.label + ', ' + Math.round(s.pct * 100) + ' percent of capacity' },
         el('div', { class: 'stock-fill ' + lvl.tone, style: 'width:' + Math.max(2, Math.min(s.pct, 1) * 100).toFixed(1) + '%' })));
   }
+  if (!t.fish.length && s.gal) return { row: el('div', { class: 'sum-stack' }, el('div', { class: 'stock-slim' }, el('div', { class: 'stock-slim-top' }, el('span', { class: 'sum-k', text: 'Stocking and compatibility' }), el('span', { class: 'stock-slim-note', text: 'Add fish to see how full it is and how they get along.' })))), showMates: false };
   const allIssues = tankCheck(t).issues;
   const issues = allIssues.filter((i) => t.dismissed.indexOf(i.text) === -1);
   const cleared = allIssues.length - issues.length;

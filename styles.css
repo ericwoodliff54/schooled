@@ -100,6 +100,7 @@ p { margin: 0; }
 .btn.outline:active { background: var(--mist); }
 .btn.big { min-height: 58px; font-size: 17px; border-radius: 18px; }
 .btn.small { min-height: 44px; padding: 0 16px; border-radius: 20px; font-size: 14px; border-color: var(--edge); color: var(--ink); }
+.btn.small.primary { color: #fff; border-color: transparent; }
 .btn.link { border: none; background: transparent; color: var(--teal); min-height: 44px; box-shadow: none; }
 .btn.back { align-self: flex-start; padding: 0; min-height: 36px; font-weight: 700; }
 button:focus-visible, input:focus-visible, select:focus-visible {
@@ -989,7 +990,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 .idea-row::-webkit-scrollbar { display: none; }
 .idea-card { flex: none; width: 212px; box-sizing: border-box; padding: 12px; border-radius: 16px; background: var(--bg, #EEF5FC); display: flex; flex-direction: column; justify-content: space-between; gap: 10px; scroll-snap-align: start; border: 0; }
 .idea-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.photo-details summary { cursor: pointer; font-weight: 700; font-size: 14px; color: var(--teal-dark); min-height: 44px; display: flex; align-items: center; }
+.photo-details summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--muted); min-height: 44px; display: flex; align-items: center; }
 .progress-grid.strip { margin-top: 8px; }
 #tank-progress .photo-actions { flex-wrap: wrap; }
 #tank-progress .photo-actions .btn { flex: 1 1 auto; }
@@ -1154,7 +1155,11 @@ body { min-height: 100vh; min-height: 100dvh; }
 .gear-foot { margin: 12px 0 0; font-size: 11px; line-height: 1.4; color: #7A8794; }
 
 /* No header: Add a tank button in the top right, styled like the Care reminders Add button */
-.home-top { display: flex; justify-content: flex-end; }
+.home-top { display: flex; justify-content: space-between; align-items: center; }
+.home-gear { width: 44px; height: 44px; border-radius: 50%; border: 0; background: transparent; color: #1A63C7; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.home-gear:active { background: var(--mist); }
+:root[data-theme="dark"] .home-gear { color: #6CB0FF; }
+.home-tank .pill:not(.ok):not(.warn):not(.bad) { background: none; padding-left: 0; color: var(--muted); }
 
 /* S logo watermark: pinned behind the cards so content scrolls over it */
 .watermark {
