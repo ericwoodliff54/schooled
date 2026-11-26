@@ -910,7 +910,7 @@ function treatmentsFor(t) {
 function addPickToGear(t, kind, name) {
   if (t.gear.some((g) => g.name === name)) { toast('Already in your equipment list.'); return; }
   if (t.gear.length >= 40) { toast('That is the most equipment one tank can list.'); return; }
-  t.gear.push({ id: uid(), kind: GEAR_KINDS.includes(kind) ? kind : 'Other', name: name.slice(0, 60), note: '', added: todayISO() });
+  t.gear.push({ id: uid(), kind: GEAR_KINDS.includes(kind) ? kind : 'Other', name: name.slice(0, 60), qty: 1, note: '', added: todayISO() });
   saveState();
   toast('Added to your equipment list.');
 }
@@ -1972,7 +1972,7 @@ function renderWaterRecs(t) {
       el('strong', { text: s.title }), el('span', { class: 'sub', text: s.why }),
       ...picks.map((p) => el('button', { type: 'button', class: 'pick', 'aria-label': 'I have ' + p.name, onclick: () => {
         if (t.gear.length >= 40) { toast('That is the most equipment one tank can list.'); return; }
-        t.gear.push({ id: uid(), kind: s.kind, name: p.name.slice(0, 60), note: '', added: todayISO() });
+        t.gear.push({ id: uid(), kind: s.kind, name: p.name.slice(0, 60), qty: 1, note: '', added: todayISO() });
         saveState(); renderWaterRecs(t); toast('Added to ' + (t.name || 'your tank') + '.');
       } }, el('span', { class: 'pick-tier', text: p.tier }), el('strong', { text: p.name }), el('span', { class: 'sub', text: p.spec }))),
       have ? el('span', { class: 'sub', text: 'Already in your equipment list.' }) : null));
@@ -2199,6 +2199,7 @@ function cleanGear(list) {
     return {
       id: typeof g.id === 'string' && g.id ? g.id.slice(0, 40) : uid(),
       kind, name,
+      qty: Math.min(99, Math.max(1, Math.round(Number(g.qty)) || 1)),
       note: typeof g.note === 'string' ? g.note.slice(0, 120) : '',
       added: typeof g.added === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(g.added) ? g.added : ''
     };
@@ -2467,7 +2468,7 @@ function gearPicks(kind, t) {
 }
 
 const WATER_KINDS = ['Water conditioner', 'Test kit'];
-const gearState = { kind: 'Filter', name: '', note: '', skipOpen: false };
+const gearState = { kind: 'Filter', name: '', qty: 1, note: '', skipOpen: false };
 
 const gearOpenKinds = new Set();
 // Turn a pick's spec sentence into small tags (size, flow, power) plus one short note.
@@ -2490,25 +2491,33 @@ function renderGear() {
   if (!t || !body) return;
   $('tank-gear-count').textContent = t.gear.length ? String(t.gear.length) : '';
 
+  const setQty = (g, n) => { g.qty = Math.min(99, Math.max(1, n)); saveState(); renderGear(); };
   const mine = t.gear.map((g) => el('div', { class: 'gear-row' },
     el('div', { class: 'gear-main' },
       el('strong', { text: g.name }),
       el('span', { class: 'sub', text: g.kind + (g.note ? ' · ' + g.note : '') + (g.added ? ' · added ' + g.added : '') })),
-    el('button', { type: 'button', class: 'btn link small-link', 'aria-label': 'Remove ' + g.name, text: 'Remove', onclick: () => { t.gear = t.gear.filter((x) => x.id !== g.id); saveState(); renderGear(); } })));
+    el('div', { class: 'gear-idea-actions' },
+      el('div', { class: 'stepper gear-qty', role: 'group', 'aria-label': 'Quantity of ' + g.name },
+        el('button', { type: 'button', class: 'round', 'aria-label': 'One fewer ' + g.name, text: '\u2212', disabled: (g.qty || 1) <= 1 ? '' : null, onclick: () => setQty(g, (g.qty || 1) - 1) }),
+        el('span', { class: 'count', text: String(g.qty || 1) }),
+        el('button', { type: 'button', class: 'round', 'aria-label': 'One more ' + g.name, text: '+', onclick: () => setQty(g, (g.qty || 1) + 1) })),
+      el('button', { type: 'button', class: 'btn link small-link', 'aria-label': 'Remove ' + g.name, text: 'Remove', onclick: () => { t.gear = t.gear.filter((x) => x.id !== g.id); saveState(); renderGear(); } }))));
 
   const kindSel = el('select', { id: 'gear-kind', 'aria-label': 'Kind of equipment' }, ...GEAR_KINDS.map((k) => el('option', { value: k, text: k })));
   kindSel.value = gearState.kind;
   kindSel.addEventListener('change', () => { gearState.kind = kindSel.value; });
   const nameIn = el('input', { id: 'gear-name', type: 'text', maxlength: '60', placeholder: 'Name or model, e.g. AquaClear 50', autocomplete: 'off', 'aria-label': 'Equipment name', value: gearState.name });
   nameIn.addEventListener('input', () => { gearState.name = nameIn.value; });
+  const qtyIn = el('input', { id: 'gear-qty', type: 'number', inputmode: 'numeric', min: '1', max: '99', placeholder: 'Qty', autocomplete: 'off', 'aria-label': 'Quantity', value: String(gearState.qty || 1) });
+  qtyIn.addEventListener('input', () => { gearState.qty = Math.min(99, Math.max(1, Math.round(Number(qtyIn.value)) || 1)); });
   const noteIn = el('input', { id: 'gear-note', type: 'text', maxlength: '120', placeholder: 'Note (optional), e.g. 100W, replace media monthly', autocomplete: 'off', 'aria-label': 'Note', value: gearState.note });
   noteIn.addEventListener('input', () => { gearState.note = noteIn.value; });
   const addBtn = el('button', { type: 'button', class: 'btn primary', text: 'Add equipment', onclick: () => {
     const name = gearState.name.trim();
     if (!name) { toast('Type a name first.'); nameIn.focus(); return; }
     if (t.gear.length >= 40) { toast('That is the most equipment one tank can list.'); return; }
-    t.gear.push({ id: uid(), kind: gearState.kind, name: name.slice(0, 60), note: gearState.note.trim().slice(0, 120), added: todayISO() });
-    gearState.name = ''; gearState.note = '';
+    t.gear.push({ id: uid(), kind: gearState.kind, name: name.slice(0, 60), qty: gearState.qty || 1, note: gearState.note.trim().slice(0, 120), added: todayISO() });
+    gearState.name = ''; gearState.qty = 1; gearState.note = '';
     saveState(); renderGear();
   } });
 
@@ -2522,7 +2531,7 @@ function renderGear() {
 
   const parts = [
     mine.length ? el('div', { class: 'gear-list' }, ...mine) : el('p', { class: 'muted small', text: 'Nothing logged yet. Add the filter, heater, light and anything else on this tank.' }),
-    el('div', { class: 'gear-form' }, kindSel, nameIn, noteIn, addBtn),
+    el('div', { class: 'gear-form' }, kindSel, el('div', { class: 'gear-name-row' }, nameIn, el('label', { class: 'gear-qty-field' }, el('span', { class: 'label', text: 'Qty' }), qtyIn)), noteIn, addBtn),
   ];
   body.replaceChildren(...parts);
 
@@ -4515,7 +4524,7 @@ function askContext(t) {
   const changes = t.log.filter((r) => r.k === 'change').slice(-3).reverse();
   if (changes.length) L.push('Recent water changes: ' + changes.map((r) => new Date(r.t).toISOString().slice(0, 10) + (r.pct ? ' (' + r.pct + '%)' : '')).join(', '));
   if (t.tasks.length) L.push('Reminders: ' + t.tasks.map((k) => k.label + ' every ' + k.every + ' days, ' + taskInfo(k).text.toLowerCase()).join('; '));
-  if (t.gear.length) L.push('Equipment: ' + t.gear.map((g) => g.kind + ': ' + g.name).join('; '));
+  if (t.gear.length) L.push('Equipment: ' + t.gear.map((g) => g.kind + ': ' + ((g.qty || 1) > 1 ? g.qty + ' x ' : '') + g.name).join('; '));
   return L.join('\n').slice(0, 4000);
 }
 

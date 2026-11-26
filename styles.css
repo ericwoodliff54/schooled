@@ -1387,3 +1387,16 @@ body { min-height: 100vh; min-height: 100dvh; }
 .rem-custom-row { display: flex; gap: 8px; }
 .rem-custom-row .select { flex: 1; min-width: 0; }
 :root[data-theme="dark"] .ask-bar { background: rgba(10, 21, 35, 0.9); }
+/* equipment quantity */
+.gear-qty { gap: 6px; }
+.gear-qty .round { width: 34px; height: 34px; font-size: 18px; }
+.gear-qty .round:disabled { opacity: 0.4; cursor: default; }
+.gear-qty .count { min-width: 22px; text-align: center; font-weight: 800; }
+.gear-name-row { display: flex; gap: 8px; }
+.gear-name-row #gear-name { flex: 1; min-width: 0; }
+.gear-name-row #gear-qty { flex: none; width: 76px; text-align: center; }
+.gear-form input[type="number"] { min-height: 44px; padding: 0 8px; border: 1px solid var(--line); border-radius: 12px; font: inherit; background: var(--card); color: var(--ink); }
+.gear-name-row { align-items: flex-end; }
+.gear-qty-field { flex: none; display: flex; flex-direction: column; gap: 2px; width: 76px; }
+.gear-qty-field .label { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
+.gear-name-row #gear-qty { width: 100%; }
