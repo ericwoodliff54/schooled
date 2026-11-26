@@ -1422,7 +1422,7 @@ function toast(message) {
 }
 
 // ---------- Navigation ----------
-const VIEWS = ['setup', 'home', 'results', 'water', 'tank', 'species', 'dream', 'fishcheck', 'misses', 'ask', 'backup'];
+const VIEWS = ['setup', 'home', 'photos', 'results', 'water', 'tank', 'species', 'dream', 'fishcheck', 'misses', 'ask', 'backup'];
 let currentView = 'home';
 let openTankId = '';
 let editingSize = false;
@@ -1509,6 +1509,7 @@ function showView(name) {
   navRecord(name);
   if (name === 'setup') fillSetupForm();
   if (name === 'home') renderHome();
+  if (name === 'photos') { galleryState.loaded = false; renderPhotos(); }
   if (name === 'water') renderWater();
   if (name === 'tank') renderTank();
   if (name === 'species') renderSpecies();
@@ -1521,6 +1522,7 @@ function showView(name) {
 }
 
 let tankSection = 'fish';
+let rosterFilter = 'all';
 function showTank(id, section, form) {
   openTankId = id;
   tankSection = section || 'fish';
@@ -1896,6 +1898,7 @@ function renderHome() {
     }
   }
   putAll(body, heroBtn('At Your LFS?', 'Photograph one fish and see if it fits your tank', 'lfs', true, () => { closeFishImage(); fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
+  putAll(body, heroBtn('Gallery', 'Photos of all your tanks', 'camera', true, () => showView('photos')));
   putAll(body, heroBtn('Dream Tank', 'Picture the tank you dream of, we\'ll bring it to life!', 'sparkle', true, () => showView('dream')));
   updateBadge();
   const misses = loadMisses();
@@ -2355,7 +2358,7 @@ function renderTank() {
   if (document.activeElement !== notes) notes.value = t.notes;
 
 
-  const SECS = [['fish', t.type === 'Saltwater' ? 'Fish and coral' : 'Fish and plants'], ['water', 'Water'], ['care', 'Care']];
+  const SECS = [['fish', 'Stocking'], ['water', 'Water'], ['care', 'Care'], ['setup', 'Setup']];
   const dueHere = t.tasks.filter((k) => taskInfo(k).diff <= 0).length;
   $('tank-seg').replaceChildren(...SECS.map(([k, label]) => el('button', { type: 'button', class: 'seg-btn' + (k === tankSection ? ' on' : ''), 'aria-pressed': k === tankSection ? 'true' : 'false',
     text: label + (k === 'care' && dueHere ? ' (' + dueHere + ')' : ''), onclick: () => { tankSection = k; renderTank(); } })));
@@ -2363,6 +2366,7 @@ function renderTank() {
   $('tank-sec-fish').hidden = tankSection !== 'fish';
   $('tank-sec-water').hidden = tankSection !== 'water';
   $('tank-sec-care').hidden = tankSection !== 'care';
+  $('tank-sec-setup').hidden = tankSection !== 'setup';
   if (tankSection === 'water') renderLog();
   if (tankSection === 'care') renderReminders();
 
@@ -2388,7 +2392,15 @@ function renderTank() {
   const taken = new Set(groups.flatMap((g) => g.kinds));
   const others = t.fish.filter((f) => !taken.has(rosterKind(f)));
   if (others.length) groups.push({ key: 'other', title: 'Invertebrates and others', kinds: null, empty: '' });
+  const filterBox = $('roster-filter');
+  if (rosterFilter !== 'all' && !groups.some((g) => g.key === rosterFilter)) rosterFilter = 'all';
+  if (filterBox) {
+    const countOf = (g) => (g.kinds ? t.fish.filter((f) => g.kinds.includes(rosterKind(f))) : others).length;
+    const opts = [['all', 'All (' + t.fish.length + ')']].concat(groups.map((g) => [g.key, (g.key === 'other' ? 'Others' : g.title) + ' (' + countOf(g) + ')']));
+    filterBox.replaceChildren(...opts.map(([k, label]) => el('button', { type: 'button', class: 'filter-pill' + (k === rosterFilter ? ' on' : ''), 'aria-pressed': k === rosterFilter ? 'true' : 'false', text: label, onclick: () => { rosterFilter = k; renderTank(); } })));
+  }
   groups.forEach((g) => {
+    if (rosterFilter !== 'all' && g.key !== rosterFilter) return;
     const items = g.kinds ? t.fish.filter((f) => g.kinds.includes(rosterKind(f))) : others;
     const total = items.reduce((sum, f) => sum + f.count, 0);
     const det = el('details', { class: 'card group-card', 'data-group': g.key },
@@ -2405,7 +2417,6 @@ function renderTank() {
   const strip = summaryStrip(t);
   ins.replaceChildren(strip.row, ...(strip.showMates ? [mateCheckCard(t)] : []));
   renderGear();
-  if (photoState.tank !== t.id || photoState.list === null) { photoState.list = null; loadProgressPhotos(); } else renderProgress();
 }
 
 // ---------- Equipment and progress photos (one expandable card each, inside every tank) ----------
@@ -2990,6 +3001,90 @@ function progressTile(p) {
     el('img', { src: p.data, alt: 'Tank on ' + p.date }),
     el('span', { class: 'progress-date', text: p.date }));
 }
+
+// ---------- Gallery (home screen): every tank's photos, one section per tank ----------
+const galleryState = { filter: 'all', lists: {}, loaded: false, viewing: null, error: false };
+
+async function loadGalleryLists() {
+  const tanks = state.tanks.slice();
+  try {
+    const all = await Promise.all(tanks.map((t) => PhotoDB.list(t.id)));
+    galleryState.lists = {};
+    tanks.forEach((t, i) => { galleryState.lists[t.id] = all[i].sort((a, b) => (a.date === b.date ? b.id.localeCompare(a.id) : b.date.localeCompare(a.date))); });
+    galleryState.error = false;
+  } catch (err) {
+    galleryState.lists = {};
+    tanks.forEach((t) => { galleryState.lists[t.id] = []; });
+    galleryState.error = true;
+  }
+  galleryState.loaded = true;
+  if (currentView === 'photos') renderPhotos();
+}
+
+function galleryAddInput(tankId) {
+  const inp = el('input', { type: 'file', accept: 'image/*,.heic,.heif,.avif,.webp', hidden: '' });
+  inp.addEventListener('change', async () => {
+    const file = inp.files && inp.files[0];
+    inp.value = '';
+    if (!file) return;
+    try {
+      const data = await photoFromFile(file, 1000);
+      await PhotoDB.add({ id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), tank: tankId, date: todayISO(), note: '', data });
+      await loadGalleryLists();
+      toast('Photo saved.');
+    } catch (err) {
+      toast("Couldn't save that photo. This browser may not allow saved photos, or it is out of space.");
+    }
+  });
+  return inp;
+}
+
+function renderPhotos() {
+  const body = $('photos-body');
+  if (!body) return;
+  if (!galleryState.loaded) { body.replaceChildren(el('p', { class: 'muted', text: 'Loading photos...' })); loadGalleryLists(); return; }
+  const tanks = state.tanks;
+  if (galleryState.filter !== 'all' && !tanks.some((t) => t.id === galleryState.filter)) galleryState.filter = 'all';
+  const parts = [];
+  if (!tanks.length) { body.replaceChildren(el('p', { class: 'muted', text: 'Add a tank first, then you can keep photos of it here.' })); return; }
+  if (tanks.length > 1) {
+    parts.push(el('div', { class: 'filter-row', role: 'group', 'aria-label': 'Show photos from' },
+      ...[['all', 'All tanks']].concat(tanks.map((t) => [t.id, tankLabel(t)])).map(([k, label]) => el('button', { type: 'button', class: 'filter-pill' + (k === galleryState.filter ? ' on' : ''), 'aria-pressed': k === galleryState.filter ? 'true' : 'false', text: label, onclick: () => { galleryState.filter = k; renderPhotos(); } }))));
+  }
+  if (galleryState.error) parts.push(el('p', { class: 'error small', text: 'This browser does not allow saved photos right now (private mode can cause this).' }));
+  tanks.filter((t) => galleryState.filter === 'all' || t.id === galleryState.filter).forEach((t) => {
+    const list = galleryState.lists[t.id] || [];
+    const inp = galleryAddInput(t.id);
+    parts.push(el('div', { class: 'card gallery-sec' },
+      el('div', { class: 'card-head' },
+        el('h2', { text: tankLabel(t) }),
+        el('span', { class: 'summary-count', text: list.length ? String(list.length) : '' }),
+        el('button', { type: 'button', class: 'btn small primary', text: '+ Add photo', onclick: () => inp.click() })),
+      inp,
+      list.length
+        ? el('div', { class: 'progress-grid' }, ...list.map((p) => el('button', { type: 'button', class: 'progress-tile', 'aria-label': 'Open photo from ' + p.date, onclick: () => { galleryState.viewing = { tank: t.id, id: p.id }; renderPhotos(); } },
+          el('img', { src: p.data, alt: 'Photo of ' + tankLabel(t) + ' on ' + p.date }),
+          el('span', { class: 'progress-date', text: p.date }))))
+        : el('p', { class: 'muted small', text: 'No photos of this tank yet. Add one every week or two and watch it grow in. Photos stay on this phone.' })));
+  });
+  const v = galleryState.viewing;
+  const view = v && galleryState.lists[v.tank] ? galleryState.lists[v.tank].find((p) => p.id === v.id) : null;
+  if (view) {
+    const close = () => { galleryState.viewing = null; renderPhotos(); };
+    parts.push(el('div', { class: 'viewer', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Photo from ' + view.date },
+      el('img', { src: view.data, alt: 'Tank on ' + view.date }),
+      el('p', { class: 'viewer-cap', text: view.date + (view.note ? ' \u00b7 ' + view.note : '') }),
+      el('div', { class: 'row' },
+        el('button', { type: 'button', class: 'btn', text: 'Close', onclick: close }),
+        el('button', { type: 'button', class: 'btn danger', text: 'Delete photo', onclick: async () => {
+          try { await PhotoDB.del(view.id); } catch (err) { toast("Couldn't delete that photo."); return; }
+          galleryState.viewing = null;
+          await loadGalleryLists();
+        } }))));
+  }
+  body.replaceChildren(...parts);
+}
+if ($('photos-back')) $('photos-back').addEventListener('click', () => goBack(() => showView('home')));
 
 // The whole gallery for this tank: every photo, plus the first and latest side by side.
 function openGallery() { photoState.gallery = true; renderGallery(); }
