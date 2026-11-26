@@ -1424,3 +1424,11 @@ body { min-height: 100vh; min-height: 100dvh; }
 .gear-acc .gpick, .gear-acc .pick, .lookalike { background: var(--layer3); border: 1px solid var(--line); border-top: 1px solid var(--rim); box-shadow: var(--lift3); }
 :root[data-theme="dark"] .gear-acc .gpick, :root[data-theme="dark"] .gear-acc .pick, :root[data-theme="dark"] .lookalike { border-color: rgba(150, 195, 255, 0.18); border-top-color: var(--rim); }
 :root[data-theme="dark"] .gear-acc { border-color: rgba(150, 195, 255, 0.16); border-top-color: var(--rim); }
+/* alert dot on the Water tab */
+.seg-btn { position: relative; }
+.seg-dot { position: absolute; top: 6px; right: 8px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; box-sizing: content-box; margin: -2px -2px 0 0; }
+.seg-dot.warn { background: #F08A24; }
+.seg-dot.bad { background: #E0392D; }
+:root[data-theme="dark"] .seg-dot { border-color: var(--card); }
+:root[data-theme="dark"] .seg-dot.warn { background: #FFB347; }
+:root[data-theme="dark"] .seg-dot.bad { background: #FF7A45; }

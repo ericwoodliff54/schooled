@@ -1057,6 +1057,7 @@ function renderLog() {
   body.replaceChildren();
   const t = getTank(openTankId);
   if (!t) return;
+  syncWaterDot(t);
   putAll(body, logSummaryCard(t));
   if (logForm) putAll(body, logFormCard(t));
   else putAll(body, el('div', { class: 'row-actions wide' },
@@ -2099,6 +2100,25 @@ function renderAskCard(t) {
   card.onclick = () => openAsk(openTankId);
 }
 
+// A small orange or red dot on the Water tab when the latest test has a reading that needs attention.
+function waterAlert(t) {
+  const tests = t.log.filter((e) => e.k === 'test');
+  if (!tests.length) return '';
+  const w = worstLevel(entryChecks(t, tests[tests.length - 1]));
+  return w === 'bad' || w === 'warn' ? w : '';
+}
+function syncWaterDot(t) {
+  const btn = $('tank-seg').children[1];
+  if (!btn) return;
+  const old = btn.querySelector('.seg-dot');
+  if (old) old.remove();
+  const lvl = waterAlert(t);
+  if (lvl) {
+    btn.append(el('span', { class: 'seg-dot ' + lvl, 'aria-hidden': 'true' }));
+    btn.setAttribute('aria-label', 'Water, ' + (lvl === 'bad' ? 'needs action' : 'needs attention'));
+  } else btn.removeAttribute('aria-label');
+}
+
 function renderTank() {
   const t = getTank(openTankId);
   if (!t) { showView('home'); return; }
@@ -2142,6 +2162,7 @@ function renderTank() {
   const dueHere = t.tasks.filter((k) => taskInfo(k).diff <= 0).length;
   $('tank-seg').replaceChildren(...SECS.map(([k, label]) => el('button', { type: 'button', class: 'seg-btn' + (k === tankSection ? ' on' : ''), 'aria-pressed': k === tankSection ? 'true' : 'false',
     text: label + (k === 'care' && dueHere ? ' (' + dueHere + ')' : ''), onclick: () => { tankSection = k; renderTank(); } })));
+  syncWaterDot(t);
   $('tank-sec-fish').hidden = tankSection !== 'fish';
   $('tank-sec-water').hidden = tankSection !== 'water';
   $('tank-sec-care').hidden = tankSection !== 'care';
