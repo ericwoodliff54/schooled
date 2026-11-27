@@ -34,6 +34,10 @@ jobs:
           PRIVACY_URL: ${{ vars.PRIVACY_URL }}
           TERMS_URL: ${{ vars.TERMS_URL }}
         run: node build-www.js
+      - name: Create and sync the Android project
+        run: |
+          npx cap add android
+          npx cap sync android
       - name: Make the app icons from the Schooled logo
         run: |
           mkdir -p assets
@@ -45,10 +49,6 @@ jobs:
           cp assets/icon-only.png assets/icon-foreground.png
           $IM -size 1024x1024 xc:white assets/icon-background.png
           npx --yes @capacitor/assets generate --android --iconBackgroundColor '#ffffff'
-      - name: Create and sync the Android project
-        run: |
-          npx cap add android
-          npx cap sync android
       - name: Save the signing key
         env:
           ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -69,7 +69,14 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew bundleRelease --no-daemon
+        run: |
+          export GRADLE_OPTS="-Dorg.gradle.internal.repository.max.retries=8 -Dorg.gradle.internal.repository.initial.backoff=3000"
+          for i in 1 2 3; do
+            ./gradlew bundleRelease --no-daemon && exit 0
+            echo "Attempt $i failed (Maven Central sometimes rate-limits GitHub). Waiting 60 seconds."
+            sleep 60
+          done
+          exit 1
       - uses: actions/upload-artifact@v4
         with:
           name: schooled-release-aab
