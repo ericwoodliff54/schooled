@@ -1595,6 +1595,17 @@ window.addEventListener('popstate', (ev) => {
   }
 });
 
+// Android's back gesture and button inside the store app. Without this the phone just closes the app, so it walks back through the screens like the website does.
+(function setupNativeBack() {
+  const appPlugin = nativePlugin('App');
+  if (!appPlugin || !appPlugin.addListener) return;
+  appPlugin.addListener('backButton', () => {
+    if (document.getElementById('sch-paywall')) { appPlugin.exitApp(); return; }
+    if (overlayOpen()) { closeAddPop(); closeAddMenu(); closeSheets(); return; }
+    if (navIdx > 0) history.back(); else appPlugin.exitApp();
+  });
+})();
+
 function showView(name) {
   VIEWS.forEach((v) => { $('view-' + v).hidden = v !== name; });
   if (name !== 'tank') closeSheets();
