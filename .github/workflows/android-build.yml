@@ -20,7 +20,8 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
+      - name: Accept Android licenses (the Android tools are already installed on GitHub's machines)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
       - name: Install packages
         run: npm install --no-audit --no-fund
       - name: Build the web files for the app
