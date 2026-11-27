@@ -24,3 +24,25 @@ if (fs.existsSync(plist)) {
   fs.writeFileSync(plist, x);
   console.log('patched Info.plist');
 }
+
+// Release signing and version numbers, only when the release workflow asks for them (it sets these environment variables).
+const gradle = path.join(root, 'android/app/build.gradle');
+if (fs.existsSync(gradle) && (process.env.KEYSTORE_FILE || process.env.VERSION_CODE)) {
+  let g = fs.readFileSync(gradle, 'utf8');
+  if (process.env.VERSION_CODE) g = g.replace(/versionCode \d+/, 'versionCode ' + parseInt(process.env.VERSION_CODE, 10));
+  if (process.env.VERSION_NAME) g = g.replace(/versionName "[^"]*"/, 'versionName "' + process.env.VERSION_NAME.replace(/[^0-9A-Za-z.\-]/g, '') + '"');
+  if (process.env.KEYSTORE_FILE && !g.includes('signingConfigs')) {
+    g = g.replace('    buildTypes {', `    signingConfigs {
+        release {
+            storeFile file(System.getenv('KEYSTORE_FILE'))
+            storePassword System.getenv('KEYSTORE_PASSWORD')
+            keyAlias System.getenv('KEY_ALIAS')
+            keyPassword System.getenv('KEY_PASSWORD')
+        }
+    }
+    buildTypes {`);
+    g = g.replace("        release {\n            minifyEnabled false", "        release {\n            signingConfig signingConfigs.release\n            minifyEnabled false");
+  }
+  fs.writeFileSync(gradle, g);
+  console.log('patched build.gradle for release');
+}
