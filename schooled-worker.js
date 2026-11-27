@@ -5,7 +5,7 @@
 
 // The web app, plus the store apps: iPhone apps run from capacitor://localhost, Android apps from https://localhost.
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io', 'capacitor://localhost', 'https://localhost', 'http://localhost'];
-const BUILD = '1127b'; // shown on the tester's Fish Check line so you can tell which Worker version answered
+const BUILD = '1127c'; // shown on the tester's Fish Check line so you can tell which Worker version answered
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL = 'gemini-4-hydrogen';
 const LAST_RESORT_MODEL = 'gemini-3.6-flash';
@@ -153,7 +153,7 @@ function tipsFor(names, full) {
     if (id && !ids.includes(id)) ids.push(id);
   });
   // full: the second look gets every species in the group, so it picks between real candidates instead of free-naming.
-  return ids.slice(0, full ? 1 : 2).map((id) => DB.g[id].n + ' (' + DB.g[id].m.slice(0, full ? 70 : 8).join(', ') + '): ' + DB.g[id].tip);
+  return ids.slice(0, full ? 1 : 2).map((id) => DB.g[id].n + ' (' + DB.g[id].m.slice(0, full ? 150 : 8).join(', ') + '): ' + DB.g[id].tip);
 }
 
 // Fish Check often happens in a shop, so the keeper's own tank is only a weak hint: same lake or biotope, same water, similar size.
@@ -557,7 +557,7 @@ function needsSecondOpinion(fish, env) {
   // The common name is not one the species list knows: a sign the cheap model is guessing.
   if (name && !knownName(name)) return true;
   // Look-alike groups (wrasses, tangs, rainbowfish...) get a second look unless the first one was very sure.
-  const hardBelow = Number(env.ESCALATE_HARD_BELOW) > 0 ? Number(env.ESCALATE_HARD_BELOW) : 0.9;
+  const hardBelow = Number(env.ESCALATE_HARD_BELOW) > 0 ? Number(env.ESCALATE_HARD_BELOW) : 1.01; // look-alike groups always get the focused group pass: a confident wrong answer is the usual failure there
   return fish.confidence < hardBelow && inHardGroup([name, fish.scientific_name || ''].concat(fish.alternatives || []));
 }
 
@@ -729,15 +729,19 @@ async function scan(request, env, origin) {
     if (mode === 'fish' && result.fish && result.fish.is_aquarium && usedModel === primary && !(tester && body.escalate === false) && needsSecondOpinion(result.fish, env)) {
       const strong = env.GEMINI_ESCALATE_MODEL || FALLBACK_MODEL; // when Hydrogen is already the first look, the second opinion is Hydrogen thinking harder
       const left = TOTAL_BUDGET_MS - (Date.now() - started);
-      if (left > 9000 && (strong !== primary || env.GEMINI_ESCALATE_SAME === '1')) { // Hydrogen asking itself again only runs when switched on: it adds a full extra wait and cannot catch a confident wrong answer
-        const f1 = result.fish;
-        const guesses = [f1.common_name, f1.scientific_name].concat(f1.alternatives || []).filter(Boolean);
+      const f1 = result.fish;
+      const guesses = [f1.common_name, f1.scientific_name].concat(f1.alternatives || []).filter(Boolean);
+      const groupPass = inHardGroup(guesses); // the first look named a fish from a look-alike group
+      if (left > 9000 && (strong !== primary || groupPass || env.GEMINI_ESCALATE_SAME === '1')) { // the same model only looks again for a look-alike group (focused list, no anchor), or when switched on
         const tips = tipsFor(guesses, true);
-        secondNote = ' A quick first look guessed "' + f1.common_name + '"' + (f1.alternatives && f1.alternatives.length ? ' (or ' + f1.alternatives.join(', ') + ')' : '') +
+        secondNote = strong === primary
+          ? ' This fish belongs to a group of look-alikes.' + (f1.life_stage === 'juvenile' ? ' It may be a young fish, so ignore adult colors that are not visible.' : '') + ' Decide from the visible features only, comparing the body shape, mouth size, head and body colors, and markings.' +
+            (tips.length ? ' Every species we know in the group, and how to tell them apart: ' + tips.join(' ') + ' Choose the best match from that list and use the exact spelling.' : '')
+          : ' A quick first look guessed "' + f1.common_name + '"' + (f1.alternatives && f1.alternatives.length ? ' (or ' + f1.alternatives.join(', ') + ')' : '') +
           ', but it is often wrong with look-alikes.' + (f1.life_stage === 'juvenile' ? ' The first look also thought this is a young fish, so ignore any adult colors it may have imagined.' : '') + ' Ignore that guess unless the photo clearly supports it, and decide from the visible features.' +
           (tips.length ? ' Group of look-alikes, with every species we know in it and how to tell them apart: ' + tips.join(' ') + ' If the fish belongs to this group, choose the best match from that list and use the exact spelling.' : '');
         try {
-          let res2 = await ask(strong, true, Math.min(20000, left), true, /^(minimal|low|medium|high)$/.test(String(env.GEMINI_ESCALATE_THINK || '')) ? env.GEMINI_ESCALATE_THINK : (strong === primary ? 'high' : 'medium')); // the second look is the hard case, so it thinks a little more
+          let res2 = await ask(strong, true, Math.min(20000, left), true, /^(minimal|low|medium|high)$/.test(String(env.GEMINI_ESCALATE_THINK || '')) ? env.GEMINI_ESCALATE_THINK : (strong === primary ? 'low' : 'medium')); // the second look is the hard case, so it thinks a little more
           if (res2.status === 400) res2 = await ask(strong, false, Math.min(20000, TOTAL_BUDGET_MS - (Date.now() - started)), false);
           if (res2.ok) {
             const d2 = await res2.json();
