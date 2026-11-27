@@ -2034,14 +2034,14 @@ const AI_KEY = 'schooled.ai';
 function aiState() { try { return localStorage.getItem(AI_KEY) || ''; } catch (err) { return ''; } }
 function setAi(v) { try { localStorage.setItem(AI_KEY, v); } catch (err) { /* asked again next time */ } }
 const AI_BLURB = "Fish Check, tank scans, the water test, Get Schooled and Dream Tank use Google's Gemini AI. When you use one, Schooled sends what you give it to our server, which passes it to Google to get your answer: your photo or question, and, depending on the feature, your tank's type, size, name, notes and the fish you added. We don't keep your photos or questions after the answer comes back.";
-function askAiConsent() {
+function askAiConsent(first) {
   return new Promise((resolve) => {
-    const done = (v) => { if (v === 'yes') setAi('yes'); wrap.remove(); resolve(v === 'yes'); };
+    const done = (v) => { setAi(v === 'yes' ? 'yes' : 'no'); wrap.remove(); resolve(v === 'yes'); };
     const wrap = el('div', { class: 'sheet-wrap' },
       el('div', { class: 'sheet-dim' }),
       el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Allow AI features' },
         el('div', { class: 'sheet-grab', 'aria-hidden': 'true' }),
-        el('div', { class: 'sheet-head' }, el('h2', { text: 'Allow AI features?' })),
+        el('div', { class: 'sheet-head' }, el('h2', { text: first ? 'Schooled runs on AI' : 'Allow AI features?' })),
         el('p', { text: AI_BLURB }),
         el('p', { class: 'muted small' }, 'You can change this any time under Settings. ', extLink(LEGAL.privacy + '#ai', 'What is sent and why'), '.'),
         el('button', { type: 'button', class: 'btn primary big', text: 'Allow', onclick: () => done('yes') }),
@@ -2049,6 +2049,8 @@ function askAiConsent() {
     document.body.append(wrap);
   });
 }
+// Asked once, the first time the app opens, so permission is part of setup. Later AI features ask again only if the answer was Not now.
+setTimeout(() => { if (aiState() === '' && !document.querySelector('[aria-label="Allow AI features"]')) askAiConsent(true); }, 3200);
 async function ensureAi() {
   if (aiState() === 'yes') return true;
   return askAiConsent();
