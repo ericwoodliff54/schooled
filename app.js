@@ -2027,11 +2027,11 @@ function askContribConsent() {
       el('div', { class: 'sheet-dim' }),
       el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Help improve fish ID' },
         el('div', { class: 'sheet-grab', 'aria-hidden': 'true' }),
-        el('div', { class: 'sheet-head' }, el('h2', { text: 'Help improve fish ID?' })),
+        el('div', { class: 'sheet-head' }, el('h2', { text: 'Helping improve fish ID' })),
         el('p', { text: CONTRIB_BLURB }),
-        el('p', { class: 'muted small' }, 'You can change this any time under Settings. ', extLink(LEGAL.privacy + '#photos', 'How we use these photos'), '.'),
-        el('button', { type: 'button', class: 'btn primary big', text: 'Yes, help improve it', onclick: () => done('yes') }),
-        el('button', { type: 'button', class: 'btn big', text: 'No thanks', onclick: () => done('no') })));
+        el('p', { class: 'muted small' }, 'This is on by default. You can turn it off any time under Settings. ', extLink(LEGAL.privacy + '#photos', 'How we use these photos'), '.'),
+        el('button', { type: 'button', class: 'btn primary big', text: 'Sounds good', onclick: () => done('yes') }),
+        el('button', { type: 'button', class: 'btn big', text: 'Turn sharing off', onclick: () => done('no') })));
     document.body.append(wrap);
   });
 }
@@ -2135,12 +2135,7 @@ function renderBackup() {
   const body = $('backup-body');
   body.replaceChildren();
   const tn = state.tanks.length;
-  body.append(el('h1', { text: 'Settings' }),
-    el('p', { class: 'muted', text: 'Your tanks live only on this phone. Save a backup file before you switch phones, clear your browser data or delete the app, then restore it on the new phone.' }),
-    el('div', { class: 'card' },
-      el('h2', { text: 'Save a backup' }),
-      el('p', { class: 'muted small', text: lastBackupText() + (tn ? '. ' + tn + (tn === 1 ? ' tank' : ' tanks') + ' with their fish, water logs, reminders, equipment and progress photos.' : '.') }),
-      el('button', { type: 'button', class: 'btn primary', text: 'Save backup file', disabled: tn ? null : '', onclick: () => { saveBackupFile().catch(() => toast("Couldn't make the backup file.")); } })));
+  body.append(el('h1', { text: 'Settings' }));
   const tp = themePref();
   body.append(el('div', { class: 'card' },
     el('h2', { text: 'Appearance' }),
@@ -2164,12 +2159,17 @@ function renderBackup() {
     native && np.on ? el('label', { class: 'field' }, el('span', { class: 'label', text: 'Time of day' }),
       el('select', { class: 'select', 'aria-label': 'Time of day for reminders', onchange: (ev) => { setNotifyPrefs(Object.assign(notifyPrefs(), { hour: Number(ev.target.value) })); syncNotifications(); renderBackup(); } },
         ...[6, 7, 8, 9, 10, 11, 12, 15, 17, 18, 19, 20].map((h) => el('option', { value: String(h), text: hourLabel(h), selected: h === np.hour ? '' : null })))) : null));
-  const on = contribState() === 'yes';
+  const on = contribState() !== 'no';
   body.append(el('div', { class: 'card' },
     el('h2', { text: 'Help improve fish ID' }),
     el('p', { class: 'muted small', text: CONTRIB_BLURB }),
     el('p', { class: 'small', text: on ? 'Sharing is on.' : 'Sharing is off.' }),
     el('button', { type: 'button', class: 'btn' + (on ? '' : ' primary'), text: on ? 'Turn off sharing' : 'Turn on sharing', onclick: () => { setContrib(on ? 'no' : 'yes'); renderBackup(); } })));
+  body.append(el('div', { class: 'card' },
+    el('h2', { text: 'Save a backup' }),
+    el('p', { class: 'muted small', text: 'Your tanks live only on this phone. Save a backup file before you switch phones, clear your browser data or delete the app, then restore it on the new phone.' }),
+    el('p', { class: 'muted small', text: lastBackupText() + (tn ? '. ' + tn + (tn === 1 ? ' tank' : ' tanks') + ' with their fish, water logs, reminders, equipment and progress photos.' : '.') }),
+    el('button', { type: 'button', class: 'btn primary', text: 'Save backup file', disabled: tn ? null : '', onclick: () => { saveBackupFile().catch(() => toast("Couldn't make the backup file.")); } })));
   const fileIn = el('input', { type: 'file', accept: '.json,application/json', hidden: '' });
   fileIn.addEventListener('change', async () => {
     const f = fileIn.files && fileIn.files[0];
