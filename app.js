@@ -178,25 +178,18 @@ function resolveNamed(common, scientific, where, kind) {
 // ---------- Tester usage log (tokens and cost of each AI call, kept on this phone) ----------
 // Tester extras (token lines, usage log, raw error details) show only when this phone has been switched on by opening the app once with ?tester=1 (and off with ?tester=0).
 function testerMode() {
-  try {
-    const q = new URLSearchParams(location.search).get('tester');
-    if (q === '1') localStorage.setItem('schooled.tester', '1');
-    else if (q === '0') localStorage.removeItem('schooled.tester');
-    return localStorage.getItem('schooled.tester') === '1';
-  } catch (err) { return false; }
+  // Tester extras are not part of the released app. Clears any leftover switch from earlier builds.
+  try { localStorage.removeItem('schooled.tester'); } catch (err) { /* ignore */ }
+  return false;
 }
 const TESTER = testerMode();
 // Owner's phone only: open the app once with ?testkey=YOUR_KEY to store the Worker's test key on this phone, and ?testkey=0 to remove it.
 // With it, this phone skips the monthly caps (the key is only ever sent to the Worker, and the address bar is cleaned right away).
 const TESTKEY_STORE = 'schooled.testkey';
 function loadTestKey() {
-  try {
-    const q = new URLSearchParams(location.search).get('testkey');
-    if (q === '0') localStorage.removeItem(TESTKEY_STORE);
-    else if (q && /^\S{6,200}$/.test(q)) localStorage.setItem(TESTKEY_STORE, q);
-    if (q !== null) { try { const u = new URL(location.href); u.searchParams.delete('testkey'); history.replaceState(null, '', u.pathname + u.search + u.hash); } catch (err) { /* cosmetic */ } }
-    return localStorage.getItem(TESTKEY_STORE) || '';
-  } catch (err) { return ''; }
+  // The owner's test key is not part of the released app. Clears any key left from earlier builds.
+  try { localStorage.removeItem(TESTKEY_STORE); } catch (err) { /* ignore */ }
+  return '';
 }
 const TESTKEY = loadTestKey();
 if (TESTKEY) {
@@ -1596,6 +1589,36 @@ window.addEventListener('popstate', (ev) => {
 });
 
 // Android's back gesture and button inside the store app. Without this the phone just closes the app, so it walks back through the screens like the website does.
+// In the store apps the phone's WebView often ignores the "capture" hint and opens the file picker. Use the real camera instead.
+(function setupNativeCamera() {
+  const origClick = HTMLInputElement.prototype.click;
+  async function takeNativePhoto(input) {
+    const cam = nativePlugin('Camera');
+    try {
+      const p = await cam.getPhoto({ quality: 90, allowEditing: false, resultType: 'uri', source: 'CAMERA', correctOrientation: true });
+      const blob = await (await fetch(p.webPath)).blob();
+      const file = new File([blob], 'photo.' + (p.format || 'jpg'), { type: blob.type || 'image/jpeg' });
+      const dt = new DataTransfer(); dt.items.add(file);
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (err) {
+      const msg = String((err && (err.message || err)) || '').toLowerCase();
+      if (msg.includes('cancel') || msg.includes('user')) return; // person closed the camera
+      origClick.call(input); // camera not available: fall back to the normal picker
+    }
+  }
+  const wants = (el) => el && el.tagName === 'INPUT' && el.type === 'file' && el.hasAttribute('capture') && nativePlugin('Camera');
+  HTMLInputElement.prototype.click = function () {
+    if (wants(this)) { takeNativePhoto(this); return; }
+    return origClick.call(this);
+  };
+  // Taps that reach a visible capture input directly (or through its label) instead of through click()
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (wants(t)) { e.preventDefault(); takeNativePhoto(t); }
+  }, true);
+})();
+
 (function setupNativeBack() {
   const appPlugin = nativePlugin('App');
   if (!appPlugin || !appPlugin.addListener) return;
@@ -2277,21 +2300,8 @@ function renderBackup() {
     el('p', { class: 'muted small', text: 'Schooled is made by Twin Ravens Digital LLC. Fish identification, care information and product ideas are estimates to help you plan, not veterinary or professional advice. Check with a trusted fish store or vet before you buy or treat livestock.' }),
     el('p', { class: 'small' }, extLink(LEGAL.privacy, 'Privacy Policy'), ' \u00b7 ', extLink(LEGAL.privacy + '#terms', 'Terms of Use'), ' \u00b7 ', extLink(LEGAL.support, 'Support'), ' \u00b7 ', extLink(LEGAL.page, 'Website')),
     el('p', { class: 'muted small', text: 'Contact: ' + LEGAL.email }),
-    el('p', { class: 'muted small', text: 'Version ' + APP_VERSION, onclick: () => { verTaps += 1; if (verTaps >= 7) { verTaps = 0; keyEntry = !keyEntry; renderBackup(); } } }),
-    keyEntry ? testKeyBox() : null));
+    el('p', { class: 'muted small', text: 'Version ' + APP_VERSION })));
 }
-// Hidden: tap the version line 7 times to enter the owner's test key (the store apps cannot open the ?testkey= link).
-let verTaps = 0;
-let keyEntry = false;
-function testKeyBox() {
-  const input = el('input', { type: 'text', placeholder: 'Test key', autocomplete: 'off', autocapitalize: 'off', 'aria-label': 'Test key', value: '' });
-  const save = (v) => { try { if (v) localStorage.setItem(TESTKEY_STORE, v); else localStorage.removeItem(TESTKEY_STORE); } catch (err) { /* ignore */ } location.reload(); };
-  return el('div', { class: 'gear-form' }, input,
-    el('div', { class: 'row' },
-      el('button', { type: 'button', class: 'btn small primary', text: 'Save key', onclick: () => { const v = input.value.trim(); if (/^\S{6,200}$/.test(v)) save(v); else toast('That does not look like a key.'); } }),
-      el('button', { type: 'button', class: 'btn small', text: 'Remove key', onclick: () => save('') })));
-}
-
 // Erases everything Schooled keeps on this phone, then reloads as a fresh install. (Shared fish photos live on the server and are removed on request.)
 async function wipeAllData() {
   try { for (const t of state.tanks) { try { await PhotoDB.delTank(t.id); } catch (err) { /* ignore */ } } } catch (err) { /* ignore */ }
@@ -5159,7 +5169,7 @@ function renderFishCheck() {
     toast('Added ' + fc.count + ' ' + fc.name + ' to ' + tankLabel(t) + '.');
     renderFishCheck();
   } }));
-  card.append(buttons, el('a', { class: 'link-out', href: 'https://www.google.com/search?q=' + encodeURIComponent(((entry && entry.n) || fc.name) + ' aquarium care'), target: '_blank', rel: 'noopener noreferrer', text: 'More photos and care info on Google \u2197'}), el('p', { class: 'muted small', text: 'General guidance, and the AI can be wrong about which species it is. Confirm with the store before you buy.' }));
+  card.append(buttons, el('p', { class: 'muted small', text: 'General guidance, and the AI can be wrong about which species it is. Confirm with the store before you buy.' }));
   const cl = TESTER ? fishCheckCostLine(fc) : '';
   if (cl) card.append(el('p', { class: 'muted small cost-line', text: cl }));
   body.append(card);

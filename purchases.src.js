@@ -132,9 +132,14 @@ async function start() {
     await Purchases.configure({ apiKey });
     appUserId = (await Purchases.getAppUserID()).appUserID || '';
     readyResolve();
-    const { customerInfo } = await Purchases.getCustomerInfo();
-    if (!isActive(customerInfo)) showPaywall();
     await Purchases.addCustomerInfoUpdateListener((info) => { if (isActive(info)) closePaywall(); });
+    let { customerInfo } = await Purchases.getCustomerInfo();
+    if (!isActive(customerInfo)) {
+      // The first answer can be an out-of-date cached one, so ask RevenueCat again before showing the paywall.
+      try { await Purchases.invalidateCustomerInfoCache(); } catch (e) {}
+      try { customerInfo = (await Purchases.getCustomerInfo()).customerInfo; } catch (e) {}
+    }
+    if (!isActive(customerInfo)) showPaywall();
   } catch (e) { readyResolve(); }
 }
 window.Schooled = { native: configured, showPaywall, manageSubscription: () => Purchases.showManageSubscriptions().catch(() => {}) };
