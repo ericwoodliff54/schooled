@@ -5,11 +5,11 @@
 
 // The web app, plus the store apps: iPhone apps run from capacitor://localhost, Android apps from https://localhost.
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io', 'capacitor://localhost', 'https://localhost', 'http://localhost'];
-const BUILD = '1127f'; // shown on the tester's Fish Check line so you can tell which Worker version answered
+const BUILD = '1127h'; // shown on the tester's Fish Check line so you can tell which Worker version answered
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL = 'gemini-4-hydrogen';
 const LAST_RESORT_MODEL = 'gemini-3.6-flash';
-const FISH_MODEL = 'gemini-3.5-flash-lite'; // Fish Check's first look (env GEMINI_FISH_MODEL overrides). Tested: Flash-Lite 52% right, 3.6 Flash 76%, Hydrogen 80%. Flash-Lite leads now; Hydrogen is the second look.
+const FISH_MODEL = 'gemini-4-hydrogen'; // Fish Check answers with one Hydrogen call at medium thinking (env GEMINI_FISH_MODEL and GEMINI_FISH_THINK override). Accuracy test, same 46 photos: Hydrogen low 78%, Flash-Lite high 67%.
 const VERIFY_MODEL = 'gemini-3.6-flash'; // the close-up check is tiny, so a stronger model costs little there
 const IMAGE_MODEL = 'gemini-3.1-flash-image'; // Dream Tank pictures (env GEMINI_IMAGE_MODEL overrides)
 // Each monthly cap below can be overridden with a Worker variable of the same name (Cloudflare dashboard > Settings > Variables), so it can be tuned without a deploy.
@@ -570,14 +570,11 @@ function inHardGroup(names) {
   return names.some((n) => { const id = DB.k[normKey(n)]; return !!(id && DB.g[id] && DB.g[id].h); });
 }
 function needsSecondOpinion(fish, env) {
-  const below = Number(env.ESCALATE_BELOW) > 0 ? Number(env.ESCALATE_BELOW) : 0.85;
-  const name = String(fish.common_name || '').trim();
-  if (fish.life_stage === 'juvenile' || fish.confidence < below || GENERIC_NAME.test(name)) return true;
-  // The common name is not one the species list knows: a sign the cheap model is guessing.
-  if (name && !knownName(name)) return true;
-  // Look-alike groups (wrasses, tangs, rainbowfish...) get a second look unless the first one was very sure.
-  const hardBelow = Number(env.ESCALATE_HARD_BELOW) > 0 ? Number(env.ESCALATE_HARD_BELOW) : 1.01; // look-alike groups always get the focused group pass: a confident wrong answer is the usual failure there
-  return fish.confidence < hardBelow && inHardGroup([name, fish.scientific_name || ''].concat(fish.alternatives || []));
+  // Fish Check is one Hydrogen call and nothing else. A retry only happens if the Worker variable ESCALATE_BELOW is set (for example 0.7: look again when confidence is under 0.70, or the name is a vague label).
+  const raw = env.ESCALATE_BELOW;
+  const below = raw !== undefined && raw !== null && raw !== '' && Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : 0; // default 0 = no second look at all
+  if (below === 0) return false;
+  return fish.confidence < below || GENERIC_NAME.test(String(fish.common_name || '').trim());
 }
 
 async function scan(request, env, origin) {
@@ -753,16 +750,16 @@ async function scan(request, env, origin) {
       const f1 = result.fish;
       const guesses = [f1.common_name, f1.scientific_name].concat(f1.alternatives || []).filter(Boolean);
       const groupPass = inHardGroup(guesses); // the first look named a fish from a look-alike group
-      if (left > 9000 && (strong !== primary || groupPass || env.GEMINI_ESCALATE_SAME === '1')) { // the same model only looks again for a look-alike group (focused list, no anchor), or when switched on
+      if (left > 9000) { // needsSecondOpinion already decided this scan is worth a closer look
         const tips = tipsFor(guesses, true);
         secondNote = strong === primary
-          ? ' This fish belongs to a group of look-alikes.' + (f1.life_stage === 'juvenile' ? ' It may be a young fish, so ignore adult colors that are not visible.' : '') + ' Decide from the visible features only, comparing the body shape, mouth size, head and body colors, and markings.' +
+          ? (groupPass ? ' This fish belongs to a group of look-alikes.' : ' A first pass was not sure what this is, so look again carefully.') + (f1.life_stage === 'juvenile' ? ' It may be a young fish, so ignore adult colors that are not visible.' : '') + ' Decide from the visible features only, comparing the body shape, mouth size, head and body colors, and markings.' +
             (tips.length ? ' Every species we know in the group, and how to tell them apart: ' + tips.join(' ') + ' Choose the best match from that list and use the exact spelling.' : '')
           : ' A quick first look guessed "' + f1.common_name + '"' + (f1.alternatives && f1.alternatives.length ? ' (or ' + f1.alternatives.join(', ') + ')' : '') +
           ', but it is often wrong with look-alikes.' + (f1.life_stage === 'juvenile' ? ' The first look also thought this is a young fish, so ignore any adult colors it may have imagined.' : '') + ' Ignore that guess unless the photo clearly supports it, and decide from the visible features.' +
           (tips.length ? ' Group of look-alikes, with every species we know in it and how to tell them apart: ' + tips.join(' ') + ' If the fish belongs to this group, choose the best match from that list and use the exact spelling.' : '');
         try {
-          let res2 = await ask(strong, true, Math.min(20000, left), true, /^(minimal|low|medium|high)$/.test(String(env.GEMINI_ESCALATE_THINK || '')) ? env.GEMINI_ESCALATE_THINK : (strong === primary ? 'low' : 'medium'), true); // the second look is the hard case, so it thinks a little more
+          let res2 = await ask(strong, true, Math.min(20000, left), true, /^(minimal|low|medium|high)$/.test(String(env.GEMINI_ESCALATE_THINK || '')) ? env.GEMINI_ESCALATE_THINK : (strong === primary ? 'high' : 'medium'), true); // the retry is the hard case (confidence under 0.70), so it thinks harder
           if (res2.status === 400) res2 = await ask(strong, false, Math.min(20000, TOTAL_BUDGET_MS - (Date.now() - started)), false, 'low', true);
           if (res2.ok) {
             const d2 = await res2.json();
