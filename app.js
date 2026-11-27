@@ -287,7 +287,21 @@ function renderMisses() {
   body.replaceChildren();
   const list = loadMisses();
   const usage = loadUsage();
-  body.append(el('h1', { text: 'Tester tools' }), el('h2', { class: 'section', text: 'Usage log' }));
+  const tallyOut = el('pre', { class: 'muted small', style: 'white-space:pre-wrap' });
+  const tallyBtn = el('button', { type: 'button', class: 'btn primary', text: 'Load last 7 days', onclick: async () => {
+    tallyOut.textContent = 'Loading...';
+    try {
+      const r = await fetch(WORKER_URL + '/usage?days=7');
+      const j = await r.json();
+      if (!j.ok) { tallyOut.textContent = j.error === 'forbidden' ? 'Needs the tester key on this device.' : 'Could not load (' + (j.error || r.status) + ').'; return; }
+      tallyOut.textContent = j.days.filter((d) => d.calls).map((d) => d.day + ': ' + d.calls + ' calls, about $' + (d.est_cents / 100).toFixed(2) + '\n' + d.models.map((m) => '  ' + m.model + ' ' + m.calls + ' calls' + (m.failed ? ', ' + m.failed + ' failed' : '') + (m.aborted ? ', ' + m.aborted + ' timed out' : '') + ', avg ' + m.avg_seconds + 's, ' + (m.est_cents === null ? 'price unknown' : '$' + (m.est_cents / 100).toFixed(2)) + ' (' + Object.keys(m.by).map((k) => k + ' ' + m.by[k]).join(', ') + ')').join('\n')).join('\n') || 'No calls recorded yet. Counting starts once the new Worker is deployed.';
+    } catch (err) { tallyOut.textContent = 'Could not load.'; }
+  } });
+  body.append(el('h1', { text: 'Tester tools' }),
+    el('h2', { class: 'section', text: 'Server tally (all devices)' }),
+    el('p', { class: 'muted small', text: 'Every AI call the Worker makes, by day and model, from any phone. Estimated from list prices. Compare with Google AI Studio.' }),
+    tallyBtn, tallyOut,
+    el('h2', { class: 'section', text: 'Usage log' }));
   if (!usage.length) body.append(el('p', { class: 'muted', text: 'Nothing yet. Every scan, Fish Check and dream picture is logged here with its tokens and estimated cost.' }));
   else {
     const sum = usageSummary(usage);

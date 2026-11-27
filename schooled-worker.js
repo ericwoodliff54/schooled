@@ -227,6 +227,71 @@ function json(body, status, origin) {
   });
 }
 
+
+// ---------- Spend tally: every Gemini call, from every device, counted in KV by Pacific day and model ----------
+// Prices are list prices in dollars per million tokens: [input, output]. Estimates only; Google's dashboard is the bill.
+const TALLY_PRICES = { 'gemini-3.5-flash-lite': [0.3, 2.5], 'gemini-3.8-flash': [0.75, 3.75], 'gemini-3.7-flash': [0.75, 3.75], 'gemini-3.6-flash': [0.75, 3.75], 'gemini-3.5-flash': [0.75, 3.75], 'gemini-4-hydrogen': [1.5, 7.5], 'gemini-3.1-flash-image': [0.5, 60], 'gemini-2.5-flash-image': [0.3, 30], 'gemini-3-pro-image': [2, 120] };
+function pacificDay(ms) { try { return new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }); } catch (err) { return new Date(ms).toISOString().slice(0, 10); } }
+async function tallyCall(env, model, label, res, err, ms) {
+  const kv = env.LIMITS;
+  if (!kv) return;
+  try {
+    let inTok = 0, outTok = 0;
+    if (res && res.ok) {
+      try {
+        const d = await res.clone().json();
+        const u = (d && d.usageMetadata) || {};
+        inTok = Number(u.promptTokenCount) || 0;
+        outTok = (Number(u.candidatesTokenCount) || 0) + (Number(u.thoughtsTokenCount) || 0);
+      } catch (e2) { /* unreadable body: count the call only */ }
+    }
+    const key = 'tally:' + pacificDay(Date.now());
+    let day = {};
+    try { day = JSON.parse((await kv.get(key)) || '{}') || {}; } catch (e3) { day = {}; }
+    const m = day[model] || (day[model] = { n: 0, bad: 0, abort: 0, in: 0, out: 0, ms: 0, by: {} });
+    m.n++; m.in += inTok; m.out += outTok; m.ms += ms;
+    if (err) m.abort++; else if (!res || !res.ok) m.bad++;
+    const l = label || 'other';
+    m.by[l] = (m.by[l] || 0) + 1;
+    await kv.put(key, JSON.stringify(day), { expirationTtl: 7776000 });
+  } catch (e) { /* the tally is best effort and must never break a scan */ }
+}
+async function geminiFetch(env, model, label, payload, ms) {
+  const t0 = Date.now();
+  let res = null, err = null;
+  try {
+    res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(ms)
+    });
+  } catch (e) { err = e; }
+  await tallyCall(env, model, label, res, err, Date.now() - t0);
+  if (err) throw err;
+  return res;
+}
+async function usageReport(request, env, origin) {
+  if (!isTester(request, env)) return json({ ok: false, error: 'forbidden' }, 403, origin);
+  const kv = env.LIMITS;
+  if (!kv) return json({ ok: false, error: 'no_kv' }, 503, origin);
+  const url = new URL(request.url);
+  const days = Math.max(1, Math.min(31, Number(url.searchParams.get('days')) || 7));
+  const out = [];
+  for (let i = 0; i < days; i++) {
+    const day = pacificDay(Date.now() - i * 86400000);
+    let data = {};
+    try { data = JSON.parse((await kv.get('tally:' + day)) || '{}') || {}; } catch (e) { data = {}; }
+    const models = Object.keys(data).map((model) => {
+      const m = data[model], p = TALLY_PRICES[model];
+      const dollars = p ? (m.in * p[0] + m.out * p[1]) / 1e6 : null;
+      return { model, calls: m.n, failed: m.bad, aborted: m.abort, tokens_in: m.in, tokens_out: m.out, avg_seconds: m.n ? Math.round(m.ms / m.n / 100) / 10 : 0, by: m.by, est_cents: dollars === null ? null : Math.round(dollars * 10000) / 100 };
+    });
+    out.push({ day, est_cents: Math.round(models.reduce((t, x) => t + (x.est_cents || 0), 0) * 100) / 100, calls: models.reduce((t, x) => t + x.calls, 0), models });
+  }
+  return json({ ok: true, note: 'Pacific days. Estimated from list prices and counts failed or timed-out calls too (not billed in tokens here, but Google may bill them).', days: out }, 200, origin);
+}
+
 // Accuracy-check runs send a secret key so they skip the per-IP limit. Without the TEST_KEY secret this is always false.
 function isTester(request, env) {
   const k = request.headers.get('X-Test-Key');
@@ -586,12 +651,7 @@ async function scan(request, env, origin) {
       generationConfig
     };
     if (ground) payload.tools = [{ google_search: {} }];
-    return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(ms)
-    });
+    return geminiFetch(env, model, mode, payload, ms);
   }
 
   let upstream = null;
@@ -807,7 +867,7 @@ async function careEstimate(request, env, origin) {
         systemInstruction: { parts: [{ text: 'You write brief, honest aquarium care facts for hobbyists. Say you do not know rather than guess.' }] },
         contents: [{ role: 'user', parts: [{ text }] }],
         generationConfig: { responseMimeType: 'application/json', responseSchema: CARE_SCHEMA }
-      }, 12000);
+      }, 12000, 'care');
       if (!res.ok) { problems.push(model + ': ' + res.status); continue; }
       const data = await res.json();
       const parsed = JSON.parse(data.candidates[0].content.parts.map((p) => p.text || '').join(''));
@@ -888,7 +948,7 @@ async function waterScan(request, env, origin) {
   const problems = [];
   for (const model of models) {
     try {
-      const res = await geminiCall(env, model, payload, 25000);
+      const res = await geminiCall(env, model, payload, 25000, 'water');
       if (!res.ok) { problems.push(model + ': ' + res.status); continue; }
       const data = await res.json();
       const parsed = JSON.parse(data.candidates[0].content.parts.map((p) => p.text || '').join(''));
@@ -930,13 +990,8 @@ const DREAM_SCHEMA = {
   required: ['title', 'summary', 'scene', 'species']
 };
 
-async function geminiCall(env, model, payload, ms) {
-  return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(ms)
-  });
+async function geminiCall(env, model, payload, ms, label) {
+  return geminiFetch(env, model, label || 'other', payload, ms);
 }
 
 function monthKey() { return new Date().toISOString().slice(0, 7); }
@@ -1001,7 +1056,7 @@ async function dream(request, env, origin) {
         systemInstruction: { parts: [{ text: DREAM_INSTRUCTIONS }] },
         contents: [{ role: 'user', parts: planParts }],
         generationConfig: { responseMimeType: 'application/json', responseSchema: DREAM_SCHEMA }
-      }, 25000);
+      }, 25000, 'dream-plan');
       if (!res.ok) {
         let msg = '';
         try { const ej = await res.json(); msg = (ej && ej.error && ej.error.message) || ''; } catch (err) { /* no body */ }
@@ -1054,8 +1109,8 @@ async function dream(request, env, origin) {
     if (left < 8000) break;
     const ms = Math.min(model === imageModels[0] ? 55000 : 35000, left);
     try {
-      let res = await geminiCall(env, model, { contents: [{ role: 'user', parts: imageParts }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } }, ms);
-      if (res.status === 400) res = await geminiCall(env, model, { contents: [{ role: 'user', parts: imageParts }] }, Math.max(6000, 85000 - (Date.now() - imageStart)));
+      let res = await geminiCall(env, model, { contents: [{ role: 'user', parts: imageParts }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } }, ms, 'dream-image');
+      if (res.status === 400) res = await geminiCall(env, model, { contents: [{ role: 'user', parts: imageParts }] }, Math.max(6000, 85000 - (Date.now() - imageStart)), 'dream-image');
       if (!res.ok) {
         let msg = '';
         try { const j = await res.json(); msg = (j && j.error && j.error.message) || ''; } catch (err) { /* no body */ }
@@ -1171,7 +1226,7 @@ async function askTank(request, env, origin) {
   for (const model of models) {
     if (Date.now() - now > 50000) break;
     try {
-      const res = await geminiCall(env, model, payload, photo ? 30000 : 20000);
+      const res = await geminiCall(env, model, payload, photo ? 30000 : 20000, 'ask');
       if (!res.ok) { problems.push(model + ': ' + res.status); continue; }
       const data = await res.json();
       const parsed = JSON.parse(data.candidates[0].content.parts.map((p) => p.text || '').join(''));
@@ -1233,6 +1288,10 @@ export default {
     if (request.method === 'POST' && url.pathname === '/water') {
       if (!ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'forbidden' }, 403, origin);
       return waterScan(request, env, origin);
+    }
+
+    if (request.method === 'GET' && url.pathname === '/usage') {
+      return usageReport(request, env, origin);
     }
 
     if (request.method === 'POST' && url.pathname === '/scan') {
