@@ -18,7 +18,7 @@ esbuild.buildSync({
   define: {
     __RC_IOS_KEY__: q('RC_IOS_KEY', 'appl_REPLACE_ME'),
     __RC_ANDROID_KEY__: q('RC_ANDROID_KEY', 'goog_REPLACE_ME'),
-    __PRIVACY_URL__: q('PRIVACY_URL', 'https://ericwoodliff54.github.io/schooled/privacy.html'),
+    __PRIVACY_URL__: q('PRIVACY_URL', 'https://www.twinravensdigital.com/schooled-privacy.html'),
     __TERMS_URL__: q('TERMS_URL', 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')
   }
 });

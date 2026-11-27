@@ -1502,3 +1502,9 @@ button.compat-link { display: block; width: 100%; text-align: left; background: 
 .chart-mark-dot.gear { fill: #8B5CD6; }
 .tl-row .muted { margin-left: auto; white-space: nowrap; }
 :root[data-theme="dark"] .todo-ok { color: #9CCBFF; }
+
+/* Tank cards on Home carry their own due care reminders */
+.home-tank-card { background: var(--card); border: 1px solid rgba(26, 99, 199, 0.08); border-radius: 20px; box-shadow: var(--shadow); overflow: hidden; }
+.home-tank.in-card { background: none; border: 0; box-shadow: none; border-radius: 0; }
+.home-due { padding: 0 14px 6px; }
+.home-due .due-row:first-child { border-top: 1px solid var(--line); }

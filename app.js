@@ -1940,20 +1940,33 @@ function homeStatus(t) {
   const tests = t.log.filter((e) => e.k === 'test');
   if (!tests.length) return { cls: '', text: 'No water test yet' };
   const w = worstLevel(entryChecks(t, tests[tests.length - 1]));
-  return { cls: w, text: w === 'ok' ? 'Water good' : w === 'warn' ? 'Water: watch' : 'Water needs action' };
+  return { cls: w, text: w === 'ok' ? 'Water parameters ok' : w === 'warn' ? 'Water: watch' : 'Water needs action' };
 }
 
 function homeTankCard(t) {
   const sums = kindTotals(t);
   const count = sums.fish + sums.plant + sums.other;
   const st = homeStatus(t);
-  return el('button', { type: 'button', class: 'home-tank', 'aria-label': 'Open ' + tankLabel(t), onclick: () => { state.activeId = t.id; saveState(); showTank(t.id); } },
+  const main = el('button', { type: 'button', class: 'home-tank in-card', 'aria-label': 'Open ' + tankLabel(t), onclick: () => { state.activeId = t.id; saveState(); showTank(t.id); } },
     t.photo ? el('img', { class: 'home-tank-pic', src: t.photo, alt: '' }) : el('span', { class: 'home-tank-pic empty' }, kindIcon('fish')),
     el('span', { class: 'home-tank-text' },
       el('strong', { text: tankLabel(t) }),
       el('span', { text: [tankSummary(t), count ? count + (count === 1 ? ' animal or plant' : ' animals and plants') : 'Empty so far'].filter(Boolean).join(' \u00b7 ') }),
       el('span', { class: 'pill ' + st.cls, text: st.text })),
     chevron());
+  // Care reminders that are due for this tank sit under the water status; the card grows with each one.
+  const due = t.tasks.map((k) => ({ task: k, info: taskInfo(k) })).filter((d) => d.info.diff <= 0).sort((a, b) => a.info.diff - b.info.diff);
+  const card = el('div', { class: 'home-tank-card' }, main);
+  if (due.length) {
+    const box = el('div', { class: 'home-due' });
+    due.forEach((d) => box.append(el('div', { class: 'due-row' },
+      el('button', { type: 'button', class: 'due-main', onclick: () => showTank(t.id, 'care') },
+        el('strong', { text: d.task.label }),
+        el('span', { class: 'pill ' + d.info.level, text: d.info.text })),
+      el('button', { type: 'button', class: 'btn small', text: 'Done', 'aria-label': 'Mark ' + d.task.label + ' done for ' + tankLabel(t), onclick: () => { d.task.last = Date.now(); d.task.snooze = 0; saveState(); updateBadge(); renderHome(); } }))));
+    card.append(box);
+  }
+  return card;
 }
 
 function renderHome() {
@@ -1970,28 +1983,6 @@ function renderHome() {
       chevron()));
   } else {
     putAll(body, ...state.tanks.map(homeTankCard));
-    const at = activeTank();
-    const due = dueTasks();
-    const addBtn = el('button', { type: 'button', class: 'btn small add-pill add-grad', 'aria-label': 'Add a care reminder', onclick: () => showTank(at.id, 'care') }, featureIcon('plus'), 'Add');
-    if (due.length) {
-      const card = el('div', { class: 'card' }, el('div', { class: 'card-head' }, el('h2', { text: 'Due now' }), addBtn));
-      due.slice(0, 5).forEach((d) => card.append(el('div', { class: 'due-row' },
-        el('button', { type: 'button', class: 'due-main', onclick: () => showTank(d.tank.id, 'care') },
-          el('strong', { text: d.task.label + (state.tanks.length > 1 ? ' \u00b7 ' + tankLabel(d.tank) : '') }),
-          el('span', { class: 'pill ' + d.info.level, text: d.info.text })),
-        el('button', { type: 'button', class: 'btn small', text: 'Done', 'aria-label': 'Mark ' + d.task.label + ' done', onclick: () => { d.task.last = Date.now(); d.task.snooze = 0; saveState(); updateBadge(); renderHome(); } }))));
-      if (due.length > 5) card.append(el('p', { class: 'muted small', text: 'And ' + (due.length - 5) + ' more in your tanks.' }));
-      putAll(body, card);
-    } else {
-      const next = [];
-      state.tanks.forEach((x) => x.tasks.forEach((k) => next.push({ tank: x, task: k, info: taskInfo(k) })));
-      next.sort((p, q) => p.info.diff - q.info.diff);
-      const card = el('div', { class: 'card' }, el('div', { class: 'card-head' }, el('h2', { text: 'Care reminders' }), addBtn));
-      if (next.length) card.append(el('strong', { text: 'Nothing due right now' }),
-        el('p', { class: 'muted small', text: 'Next up: ' + next[0].task.label + (state.tanks.length > 1 ? ' (' + tankLabel(next[0].tank) + ')' : '') + ', ' + next[0].info.text.toLowerCase() + '.' }));
-      else card.append(el('p', { class: 'muted', text: 'No reminders yet. Tap Add to set up water changes and other chores for your tank.' }));
-      putAll(body, card);
-    }
   }
   putAll(body, heroBtn('At Your LFS?', 'Photograph one fish and see if it fits your tank', 'lfs', true, () => { closeFishImage(); fishCheck = null; fishCheckTankId = ''; fishCheckNone = false; fishCheckFrom = 'home'; showView('fishcheck'); }));
   putAll(body, heroBtn('Gallery', 'Photos of all your tanks', 'camera', true, () => showView('photos')));
