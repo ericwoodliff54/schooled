@@ -1585,7 +1585,7 @@ function showView(name) {
   navRecord(name);
   if (name === 'setup') fillSetupForm();
   if (name === 'home') renderHome();
-  if (name === 'photos') { galleryState.loaded = false; renderPhotos(); }
+  if (name === 'photos') { galleryState.loaded = false; galleryState.more = {}; renderPhotos(); }
   if (name === 'water') renderWater();
   if (name === 'tank') renderTank();
   if (name === 'species') renderSpecies();
@@ -3120,7 +3120,8 @@ function progressTile(p) {
 }
 
 // ---------- Gallery (home screen): every tank's photos, one section per tank ----------
-const galleryState = { filter: 'all', lists: {}, loaded: false, viewing: null, error: false };
+const galleryState = { filter: 'all', lists: {}, loaded: false, viewing: null, error: false, more: {} };
+const GALLERY_PEEK = 6;
 
 async function loadGalleryLists() {
   const tanks = state.tanks.slice();
@@ -3172,6 +3173,10 @@ function renderPhotos() {
   tanks.filter((t) => galleryState.filter === 'all' || t.id === galleryState.filter).forEach((t) => {
     const list = galleryState.lists[t.id] || [];
     const inp = galleryAddInput(t.id);
+    const single = galleryState.filter !== 'all';
+    const open = single || !!galleryState.more[t.id];
+    const shown = open ? list : list.slice(0, GALLERY_PEEK);
+    const hidden = list.length - shown.length;
     parts.push(el('div', { class: 'card gallery-sec' },
       el('div', { class: 'card-head' },
         el('h2', { text: tankLabel(t) }),
@@ -3179,10 +3184,11 @@ function renderPhotos() {
         el('button', { type: 'button', class: 'btn small primary', text: '+ Add photo', onclick: () => inp.click() })),
       inp,
       list.length
-        ? el('div', { class: 'progress-grid' }, ...list.map((p) => el('button', { type: 'button', class: 'progress-tile', 'aria-label': 'Open photo from ' + p.date, onclick: () => { galleryState.viewing = { tank: t.id, id: p.id }; renderPhotos(); } },
+        ? el('div', { class: 'progress-grid' }, ...shown.map((p) => el('button', { type: 'button', class: 'progress-tile', 'aria-label': 'Open photo from ' + p.date, onclick: () => { galleryState.viewing = { tank: t.id, id: p.id }; renderPhotos(); } },
           el('img', { src: p.data, alt: 'Photo of ' + tankLabel(t) + ' on ' + p.date }),
           el('span', { class: 'progress-date', text: p.date }))))
-        : el('p', { class: 'muted small', text: 'No photos of this tank yet. Add one every week or two and watch it grow in. Photos stay on this phone.' })));
+        : el('p', { class: 'muted small', text: 'No photos of this tank yet. Add one every week or two and watch it grow in. Photos stay on this phone.' }),
+      !single && list.length > GALLERY_PEEK ? el('button', { type: 'button', class: 'btn link see-more', text: open ? 'Show fewer' : 'See ' + hidden + ' more', 'aria-expanded': String(open), onclick: () => { galleryState.more[t.id] = !open; renderPhotos(); } }) : null));
   });
   const v = galleryState.viewing;
   const view = v && galleryState.lists[v.tank] ? galleryState.lists[v.tank].find((p) => p.id === v.id) : null;
