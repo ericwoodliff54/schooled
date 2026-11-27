@@ -5,11 +5,11 @@
 
 // The web app, plus the store apps: iPhone apps run from capacitor://localhost, Android apps from https://localhost.
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io', 'capacitor://localhost', 'https://localhost', 'http://localhost'];
-const BUILD = '1127e'; // shown on the tester's Fish Check line so you can tell which Worker version answered
+const BUILD = '1127f'; // shown on the tester's Fish Check line so you can tell which Worker version answered
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL = 'gemini-4-hydrogen';
 const LAST_RESORT_MODEL = 'gemini-3.6-flash';
-const FISH_MODEL = 'gemini-3.6-flash'; // Fish Check's first look (env GEMINI_FISH_MODEL overrides). Tested: Flash-Lite 52% right, 3.6 Flash 76%, Hydrogen 80%.
+const FISH_MODEL = 'gemini-3.5-flash-lite'; // Fish Check's first look (env GEMINI_FISH_MODEL overrides). Tested: Flash-Lite 52% right, 3.6 Flash 76%, Hydrogen 80%. Flash-Lite leads now; Hydrogen is the second look.
 const VERIFY_MODEL = 'gemini-3.6-flash'; // the close-up check is tiny, so a stronger model costs little there
 const IMAGE_MODEL = 'gemini-3.1-flash-image'; // Dream Tank pictures (env GEMINI_IMAGE_MODEL overrides)
 // Each monthly cap below can be overridden with a Worker variable of the same name (Cloudflare dashboard > Settings > Variables), so it can be tuned without a deploy.
@@ -651,7 +651,7 @@ async function scan(request, env, origin) {
       }
       const part = { inline_data: { mime_type: mime, data } };
       if (withRes && mode === 'single') part.media_resolution = { level: 'MEDIA_RESOLUTION_ULTRA_HIGH' };
-      if (withRes && (mode === 'verify' || mode === 'fish')) part.media_resolution = { level: 'MEDIA_RESOLUTION_' + (testRes || 'HIGH') };
+      if (withRes && (mode === 'verify' || mode === 'fish')) part.media_resolution = { level: 'MEDIA_RESOLUTION_' + (testRes || (mode === 'fish' && /^(LOW|MEDIUM|HIGH)$/.test(String(env.GEMINI_FISH_RES || '').toUpperCase()) ? String(env.GEMINI_FISH_RES).toUpperCase() : 'HIGH')) };
       parts.push(part);
     });
     return parts;
@@ -666,8 +666,9 @@ async function scan(request, env, origin) {
   const basePrompt = mode === 'verify' ? VERIFY_PROMPT : mode === 'fish' ? FISH_PROMPT + (healthOn ? FISH_HEALTH_PROMPT : '') : (mode === 'zoom' ? PROMPT + ' ' + ZOOM_NOTE : PROMPT);
   // The app matches names against its own species list on the phone, so no list is sent here.
   // That keeps a scan the same cost however large the species list grows.
-  const promptText = basePrompt + (tankType ? ' ' + TYPE_NOTES[tankType] : '') + (known.length ? ' ' + (mode === 'fish' ? FISH_TANK_NOTE(known, tankSize) : KNOWN_NOTE(known)) : (tankSize && mode === 'fish' ? ' ' + FISH_TANK_NOTE([], tankSize) : '')) +
-    ' ' + SPECIFIC_NOTE + (mode !== 'verify' ? ' ' + SCI_NOTE : '') + (ground ? ' ' + (mode === 'fish' ? FISH_GROUND_NOTE : GROUND_NOTE) : '');
+  // Same text as before, but the parts that never change (SPECIFIC_NOTE, SCI_NOTE) come first and the per-user tank notes last, so every request shares the longest possible prefix and Google's automatic caching can bill it at the cheaper cached rate.
+  const promptText = basePrompt + ' ' + SPECIFIC_NOTE + (mode !== 'verify' ? ' ' + SCI_NOTE : '') + (tankType ? ' ' + TYPE_NOTES[tankType] : '') + (known.length ? ' ' + (mode === 'fish' ? FISH_TANK_NOTE(known, tankSize) : KNOWN_NOTE(known)) : (tankSize && mode === 'fish' ? ' ' + FISH_TANK_NOTE([], tankSize) : '')) +
+    (ground ? ' ' + (mode === 'fish' ? FISH_GROUND_NOTE : GROUND_NOTE) : '');
 
   const primary = testModel || (mode === 'fish' ? (env.GEMINI_FISH_MODEL || FISH_MODEL) : (env.GEMINI_MODEL || DEFAULT_MODEL));
   // Fish Check looks first with the middle model, then asks Hydrogen when it is unsure. Whole-tank scans stay on the cheap model, and the close-up check uses the middle one.
@@ -678,7 +679,7 @@ async function scan(request, env, origin) {
   let plainJson = false; // grounded calls fall back to plain text JSON if Google rejects search together with a schema
   let secondNote = ''; // extra text for the Fish Check second opinion: the first guess and tell-apart tips
   async function ask(model, withThinking, ms, withRes, level, slim) {
-    const lvl = level || (mode === 'fish' ? (/^(minimal|low|medium|high)$/.test(String(env.GEMINI_FISH_THINK || '')) ? env.GEMINI_FISH_THINK : 'low') : 'low');
+    const lvl = level || (mode === 'fish' ? (/^(minimal|low|medium|high)$/.test(String(env.GEMINI_FISH_THINK || '')) ? env.GEMINI_FISH_THINK : 'medium') : 'low');
     const generationConfig = plainJson ? {} : { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : mode === 'fish' ? (slim ? FISH_NAME_SCHEMA : healthOn ? FISH_SCHEMA : FISH_SCHEMA_NO_HEALTH) : SCHEMA };
     if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: testThink || lvl };
     const payload = {
