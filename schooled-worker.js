@@ -656,9 +656,10 @@ async function scan(request, env, origin) {
 
   let plainJson = false; // grounded calls fall back to plain text JSON if Google rejects search together with a schema
   let secondNote = ''; // extra text for the Fish Check second opinion: the first guess and tell-apart tips
-  async function ask(model, withThinking, ms, withRes) {
+  async function ask(model, withThinking, ms, withRes, level) {
+    const lvl = level || (mode === 'fish' ? (/^(minimal|low|medium|high)$/.test(String(env.GEMINI_FISH_THINK || '')) ? env.GEMINI_FISH_THINK : (model === FALLBACK_MODEL ? 'medium' : 'low')) : 'low');
     const generationConfig = plainJson ? {} : { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : mode === 'fish' ? FISH_SCHEMA : SCHEMA };
-    if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: testThink || 'low' };
+    if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: testThink || lvl };
     const payload = {
       systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
       contents: [{ role: 'user', parts: [{ text: promptText + secondNote + (plainJson ? (mode === 'fish' ? FISH_GROUND_JSON_NOTE : GROUND_JSON_NOTE) : '') }].concat(buildParts(withRes)) }],
@@ -723,9 +724,9 @@ async function scan(request, env, origin) {
     // Automatic second opinion: when the cheap model is unsure or gives a vague label, the stronger model looks at the same photo.
     // The person never sees a retry button, they just get the better answer.
     if (mode === 'fish' && result.fish && result.fish.is_aquarium && usedModel === primary && !(tester && body.escalate === false) && needsSecondOpinion(result.fish, env)) {
-      const strong = env.GEMINI_ESCALATE_MODEL || (primary === FALLBACK_MODEL ? primary : FALLBACK_MODEL); // Hydrogen as the first look has nobody stronger: no second opinion
+      const strong = env.GEMINI_ESCALATE_MODEL || FALLBACK_MODEL; // when Hydrogen is already the first look, the second opinion is Hydrogen thinking harder
       const left = TOTAL_BUDGET_MS - (Date.now() - started);
-      if (strong !== primary && left > 9000) {
+      if (left > 9000) {
         const f1 = result.fish;
         const guesses = [f1.common_name, f1.scientific_name].concat(f1.alternatives || []).filter(Boolean);
         const tips = tipsFor(guesses, true);
@@ -733,7 +734,7 @@ async function scan(request, env, origin) {
           ', but it is often wrong with look-alikes.' + (f1.life_stage === 'juvenile' ? ' The first look also thought this is a young fish, so ignore any adult colors it may have imagined.' : '') + ' Ignore that guess unless the photo clearly supports it, and decide from the visible features.' +
           (tips.length ? ' Group of look-alikes, with every species we know in it and how to tell them apart: ' + tips.join(' ') + ' If the fish belongs to this group, choose the best match from that list and use the exact spelling.' : '');
         try {
-          let res2 = await ask(strong, true, Math.min(20000, left), true);
+          let res2 = await ask(strong, true, Math.min(20000, left), true, /^(minimal|low|medium|high)$/.test(String(env.GEMINI_ESCALATE_THINK || '')) ? env.GEMINI_ESCALATE_THINK : (strong === primary ? 'high' : 'medium')); // the second look is the hard case, so it thinks a little more
           if (res2.status === 400) res2 = await ask(strong, false, Math.min(20000, TOTAL_BUDGET_MS - (Date.now() - started)), false);
           if (res2.ok) {
             const d2 = await res2.json();
