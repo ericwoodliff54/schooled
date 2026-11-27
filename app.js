@@ -1812,7 +1812,7 @@ $('setup-form').addEventListener('submit', (event) => {
     saveState();
     toast('This phone is out of saved space, so the photo was left off.');
   }
-  if (scanNext) { state.activeId = tank.id; saveState(); showTank(tank.id); $('gallery-input').click(); }
+  if (scanNext) { state.activeId = tank.id; saveState(); showTank(tank.id); $('camera-input').click(); } // camera first; the tank's add menu has an upload option
   else if (first) showView('home');
   else showTank(tank.id);
 });
@@ -1838,6 +1838,8 @@ function renderTankAddMenu() {
   };
   putAll(box,
     featureBtn({ icon: 'scan', color: 'blue', title: 'Scan the whole tank', text: 'Photograph the tank and name every fish, plant and coral',
+      go: () => { state.activeId = t.id; saveState(); closeAddMenu(); $('camera-input').click(); } }),
+    featureBtn({ icon: 'upload', color: 'blue', title: 'Upload a tank photo', text: 'Choose a photo of the whole tank from your device',
       go: () => { state.activeId = t.id; saveState(); closeAddMenu(); $('gallery-input').click(); } }),
     featureBtn({ icon: 'camera', color: 'aqua', title: 'Take a picture', text: 'Photograph one fish and see if it fits ' + tankLabel(t), go: startCheck('fishcheck-camera') }),
     featureBtn({ icon: 'upload', color: 'purple', title: 'Upload a photo', text: 'Choose a photo of one fish from your device', go: startCheck('fishcheck-gallery') }),
