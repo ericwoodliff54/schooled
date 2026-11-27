@@ -5,7 +5,7 @@
 
 // The web app, plus the store apps: iPhone apps run from capacitor://localhost, Android apps from https://localhost.
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io', 'capacitor://localhost', 'https://localhost', 'http://localhost'];
-const BUILD = '1127d'; // shown on the tester's Fish Check line so you can tell which Worker version answered
+const BUILD = '1127e'; // shown on the tester's Fish Check line so you can tell which Worker version answered
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL = 'gemini-4-hydrogen';
 const LAST_RESORT_MODEL = 'gemini-3.6-flash';
@@ -413,13 +413,15 @@ const FISH_PROMPT =
   'If you cannot see a single clear animal or plant, say so in note and keep confidence low. If it is not an aquarium animal or plant, set is_aquarium to false. ' +
   'Also give main_box: a tight bounding box around the animal you identified, as [ymin, xmin, ymax, xmax] in whole numbers from 0 to 1000 relative to the whole image (0,0 is the top left). ' +
   'If the photo also shows other clearly different KINDS of fish, coral or invertebrates (a different species, not just more of the same one), list up to 4 of them in others, each with look (2 to 5 plain words, such as "blue barred cichlid") and its own box in the same format. Skip tiny, blurry or mostly hidden ones, and never list a second fish of the same kind. If there is only one kind, leave others empty. ' +
+  'Strong color tints from store lighting or photo filters change how a fish looks, so do not rely on color alone to tell look-alike species apart, and lower your confidence when the colors look unnatural.';
+// Health notes are left out of Fish Check unless the Worker variable GEMINI_FISH_HEALTH is set to on.
+const FISH_HEALTH_PROMPT = ' ' +
   'HEALTH, fish only: if the animal is a FISH, add a health object and check only for OBVIOUS illness that you can plainly see. Go through health.checks one item at a time. ' +
   'For each item answer none (that area is visible and looks normal), clear (an unmistakable sign), or not_visible (hidden, blurry or too small to judge). Never guess: if you are unsure it is none or not_visible. A pale, shy or hiding fish, glare, store lighting and a head-on view are NOT signs of illness. ' +
   'Items: bloating (clearly swollen or sunken belly), scales (raised pinecone scales or missing scales), spots (white salt-like spots, gold dust, ich or velvet; many species have natural white dots or patterns on the body and fins, such as Banggai cardinalfish, so only mark clear when loose grains are scattered at random and not part of the normal pattern for that species), fins (clamped, torn, rotting or frayed fins), ' +
   'eyes (cloudy or bulging), mouth (white, grey or cottony patches around the lips), skin (fuzzy patches, sores, red streaks, wounds), color (extremely faded), posture (hanging at the surface, sitting on the bottom, tilted, or clearly breathing hard). ' +
   'Set health.visibility to good (most of the body is visible), partial, or poor (mostly hidden, extremely blurry or far too tiny). List up to four short visible signs in health.signs (plain words, only real concerns). The app does not show a score, so do not give one. ' +
-  'For corals, plants, snails, shrimp and other invertebrates, leave the health object out completely. ' +
-  'Strong color tints from store lighting or photo filters change how a fish looks, so do not rely on color alone to tell look-alike species apart, and lower your confidence when the colors look unnatural.';
+  'For corals, plants, snails, shrimp and other invertebrates, leave the health object out completely. ';
 
 const HEALTH_ITEMS = ['bloating', 'scales', 'spots', 'fins', 'eyes', 'mouth', 'skin', 'color', 'posture'];
 // The second look only has to name the fish, so it answers with these few fields (a short reply is a fast one); the first look's boxes and health notes are kept.
@@ -470,6 +472,7 @@ const FISH_SCHEMA = {
   },
   required: ['features', 'is_aquarium', 'common_name', 'kind', 'confidence']
 };
+const FISH_SCHEMA_NO_HEALTH = Object.assign({}, FISH_SCHEMA, { propertyOrdering: FISH_SCHEMA.propertyOrdering.filter((k) => k !== 'health'), properties: Object.fromEntries(Object.entries(FISH_SCHEMA.properties).filter(([k]) => k !== 'health')) });
 
 function cleanBox(b) {
   if (!Array.isArray(b) || b.length !== 4) return null;
@@ -659,7 +662,8 @@ async function scan(request, env, origin) {
   const testRes = tester && /^(LOW|MEDIUM|HIGH|ULTRA_HIGH)$/.test(String(body.res || '').toUpperCase()) ? String(body.res).toUpperCase() : '';
   const testThink = tester && /^(minimal|low|medium|high)$/.test(String(body.think || '')) ? String(body.think) : '';
   const testModel = tester && typeof body.model === 'string' && /^[a-z0-9.\-]{3,40}$/.test(body.model) ? body.model : '';
-  const basePrompt = mode === 'verify' ? VERIFY_PROMPT : mode === 'fish' ? FISH_PROMPT : (mode === 'zoom' ? PROMPT + ' ' + ZOOM_NOTE : PROMPT);
+  const healthOn = String(env.GEMINI_FISH_HEALTH || '').toLowerCase() === 'on'; // off by default: leaving health out makes Fish Check faster
+  const basePrompt = mode === 'verify' ? VERIFY_PROMPT : mode === 'fish' ? FISH_PROMPT + (healthOn ? FISH_HEALTH_PROMPT : '') : (mode === 'zoom' ? PROMPT + ' ' + ZOOM_NOTE : PROMPT);
   // The app matches names against its own species list on the phone, so no list is sent here.
   // That keeps a scan the same cost however large the species list grows.
   const promptText = basePrompt + (tankType ? ' ' + TYPE_NOTES[tankType] : '') + (known.length ? ' ' + (mode === 'fish' ? FISH_TANK_NOTE(known, tankSize) : KNOWN_NOTE(known)) : (tankSize && mode === 'fish' ? ' ' + FISH_TANK_NOTE([], tankSize) : '')) +
@@ -675,7 +679,7 @@ async function scan(request, env, origin) {
   let secondNote = ''; // extra text for the Fish Check second opinion: the first guess and tell-apart tips
   async function ask(model, withThinking, ms, withRes, level, slim) {
     const lvl = level || (mode === 'fish' ? (/^(minimal|low|medium|high)$/.test(String(env.GEMINI_FISH_THINK || '')) ? env.GEMINI_FISH_THINK : 'low') : 'low');
-    const generationConfig = plainJson ? {} : { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : mode === 'fish' ? (slim ? FISH_NAME_SCHEMA : FISH_SCHEMA) : SCHEMA };
+    const generationConfig = plainJson ? {} : { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : mode === 'fish' ? (slim ? FISH_NAME_SCHEMA : healthOn ? FISH_SCHEMA : FISH_SCHEMA_NO_HEALTH) : SCHEMA };
     if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: testThink || lvl };
     const payload = {
       systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
