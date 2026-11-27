@@ -5432,6 +5432,9 @@ function deviceId() {
 let dreamForm = null;
 let dreamPhoto = '';
 let dreamBusy = false;
+let dreamLastText = null; // the description the last picture was made from
+let dreamAgainArmed = false; // the redo button was tapped once and is waiting for a second tap
+let dreamArmTimer = 0;
 let dreamMessage = '';
 
 function shrinkDataUrl(src, side) {
@@ -5472,7 +5475,7 @@ async function runDream() {
   if (!(gal >= 5 && gal <= 2000)) { toast('Enter a tank size between 5 and 2000 gallons.'); return; }
   if (!(await ensureAi())) { dreamMessage = AI_OFF_MSG; renderDream(); return; }
   if (!dreamLeft()) { dreamMessage = DREAM_ERRORS.limit_reached; renderDream(); return; }
-  dreamBusy = true; dreamMessage = '';
+  dreamBusy = true; dreamMessage = ''; dreamAgainArmed = false;
   renderDream();
   try {
     const body = { prompt: text, tank_type: f.type, gallons: gal, device: deviceId() };
@@ -5497,6 +5500,7 @@ async function runDream() {
       if (image) s.cost = Math.round(((Number(s.cost) || 0) + cost.dollars) * 10000) / 10000;
       s.last = { title: String(j.title || ''), summary: String(j.summary || ''), species: j.species, image, gallons: gal, type: f.type, at: Date.now(), usage: j.usage || null, imageModel: String(j.image_model || '') };
       if (!dreamSave(s)) { s.last.image = ''; dreamSave(s); }
+      dreamLastText = text;
       dreamMessage = image ? '' : 'The AI made your list but could not make the picture this time, and no picture was used. Try again.' + (TESTER && j.image_error ? ' (' + String(j.image_error).slice(0, 300) + ')' : '');
     }
   } catch (err) {
@@ -5577,7 +5581,7 @@ function renderDream() {
   // Wish
   const area = el('textarea', { class: 'dream-text', rows: 4, maxlength: 400, placeholder: 'For example: a heavily planted tank with schooling fish, driftwood and a calm feel', 'aria-label': 'Describe your dream tank' });
   area.value = dreamForm.text;
-  area.addEventListener('input', () => { dreamForm.text = area.value; });
+  area.addEventListener('input', () => { dreamForm.text = area.value; dreamAgainArmed = false; if (typeof refreshGo === 'function') refreshGo(); });
   const typeSel = el('select', { class: 'select', 'aria-label': 'Water type' }, ...['Freshwater', 'Saltwater', 'Brackish'].map((x) => el('option', { value: x, text: x })));
   typeSel.value = dreamForm.type;
   typeSel.addEventListener('change', () => { dreamForm.type = typeSel.value; });
@@ -5585,10 +5589,25 @@ function renderDream() {
   size.addEventListener('input', () => { dreamForm.size = size.value; });
   const wishCard = el('div', { class: 'card' },
     el('h2', { text: 'Describe Your Dream Tank...' }), area,
+    s.last ? el('p', { class: 'muted small', text: 'Want a different idea? Change the description above, then tap the button.' }) : null,
     el('div', { class: 'dream-row' }, el('label', {}, el('span', { class: 'label', text: 'Water' }), typeSel), el('label', {}, el('span', { class: 'label', text: 'Gallons' }), size)));
   body.append(wishCard);
 
-  const go = el('button', { type: 'button', class: 'btn primary big', text: dreamBusy ? 'Dreaming…' : (s.last ? 'Dream another one' : 'Dream it'), onclick: runDream });
+  // After a picture exists, the same description would make the same kind of picture again and use one of the monthly pictures. So the button says that, and asks for a second tap when the description has not changed.
+  const sameAsLast = () => !!s.last && (dreamLastText === null || dreamForm.text.trim() === dreamLastText);
+  const goLabel = () => dreamBusy ? 'Dreaming…' : !sameAsLast() ? 'Dream it' : (dreamAgainArmed ? 'Tap again to use 1 of your ' + left + ' pictures' : 'Redo with this description');
+  function refreshGo() { if (go) go.textContent = goLabel(); }
+  const go = el('button', { type: 'button', class: 'btn primary big', text: goLabel(), onclick: () => {
+    if (dreamBusy) return;
+    if (sameAsLast() && !dreamAgainArmed) {
+      dreamAgainArmed = true; refreshGo();
+      clearTimeout(dreamArmTimer);
+      dreamArmTimer = setTimeout(() => { dreamAgainArmed = false; refreshGo(); }, 5000);
+      return;
+    }
+    clearTimeout(dreamArmTimer); dreamAgainArmed = false;
+    runDream();
+  } });
   if (dreamBusy || !left) go.disabled = true;
   body.append(go,
     el('p', { class: 'muted small center', text: dreamBusy ? 'This can take up to a minute. Please keep the app open.' : TESTKEY ? 'Test key on: no monthly limit.' : left + ' of ' + DREAM_MONTHLY + ' dream pictures left this month. A picture only counts when it is made.' }));
