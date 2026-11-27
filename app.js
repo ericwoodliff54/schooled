@@ -3920,13 +3920,6 @@ function finishScan(more, priorSpecies, priorPhotos, image) {
   renderResults();
 }
 
-function confidenceLabel(c) {
-  // The accuracy check showed the model says 85 to 90 percent even when it is wrong about half the time, so only 95 and up is Confident.
-  if (c >= 0.95) return ['Confident', 'ok'];
-  if (c >= 0.8) return ['Likely', 'warn'];
-  return ['Unsure', 'bad'];
-}
-
 const LOADING_STEPS = [
   'Reading your photo…',
   'Identifying each species…',
@@ -4018,7 +4011,6 @@ function inTankHint(sp) {
 }
 
 function resultRow(sp) {
-  const [label, tone] = confidenceLabel(sp.confidence);
   const alts = (sp.alternatives || []).filter((n) => n && n.toLowerCase() !== sp.name.toLowerCase());
   const altRow = alts.length && sp.confidence < 0.9
     ? el('div', { class: 'alts' },
@@ -4038,7 +4030,6 @@ function resultRow(sp) {
       el('span', { class: 'name', text: sp.name + (sp.count > 1 ? '\u00a0×\u00a0' + sp.count : '') }),
       inTankHint(sp),
       el('div', { class: 'meta' },
-        el('span', { class: 'pill ' + tone, text: label }),
         sp.scientific ? el('span', { class: 'sub sci', text: sp.scientific }) : (sp.kind ? el('span', { class: 'sub', text: sp.kind }) : null)
       ),
       altRow,
@@ -4942,10 +4933,9 @@ function renderFishCheck() {
   if (entry && (!lookupSpecies(r.common_name) || isDerivedName(r.common_name))) conf = Math.min(conf, 0.75);
   const young = r.life_stage === 'juvenile' && !switched;
   if (young) conf = Math.min(conf, 0.6);
-  const sure = switched ? ['Your pick', 'ok'] : young ? ['Young fish', 'warn'] : conf >= 0.95 ? ['Confident', 'ok'] : conf >= 0.8 ? ['Likely', 'warn'] : ['Not sure', 'bad'];
   const card = el('div', { class: 'card dream-result' });
   const typed = !!r.manual;
-  card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name }), typed ? null : el('span', { class: 'pill ' + sure[1], text: sure[0] })));
+  card.append(el('div', { class: 'water-line' }, el('h2', { text: fc.name })));
   if (entry && entry.s) card.append(el('p', { class: 'muted small', text: entry.s }));
   if (entry && entry.c && entry.c.n) card.append(el('p', { class: 'fc-about', text: entry.c.n }));
   const hCard = typed ? null : healthCard(r.health);
