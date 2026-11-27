@@ -1253,7 +1253,7 @@ body { min-height: 100vh; min-height: 100dvh; }
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 12px 28px -14px rgba(0, 0, 0, 0.7);
 }
 :root[data-theme="dark"] body { background: linear-gradient(180deg, #11263D 0, var(--bg) 320px) no-repeat, var(--bg); }
-:root[data-theme="dark"] .watermark { opacity: 0.1; }
+:root[data-theme="dark"] .watermark { opacity: 0.28; filter: invert(1) hue-rotate(180deg) saturate(1.3) brightness(1.15); }
 /* A faint light edge lifts every card off the page */
 :root[data-theme="dark"] .card, :root[data-theme="dark"] .list, :root[data-theme="dark"] .stat,
 :root[data-theme="dark"] .status-card, :root[data-theme="dark"] .home-tank, :root[data-theme="dark"] .feature,
