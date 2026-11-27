@@ -5,7 +5,7 @@
 
 // The web app, plus the store apps: iPhone apps run from capacitor://localhost, Android apps from https://localhost.
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io', 'capacitor://localhost', 'https://localhost', 'http://localhost'];
-const BUILD = '1127c'; // shown on the tester's Fish Check line so you can tell which Worker version answered
+const BUILD = '1127d'; // shown on the tester's Fish Check line so you can tell which Worker version answered
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL = 'gemini-4-hydrogen';
 const LAST_RESORT_MODEL = 'gemini-3.6-flash';
@@ -422,6 +422,22 @@ const FISH_PROMPT =
   'Strong color tints from store lighting or photo filters change how a fish looks, so do not rely on color alone to tell look-alike species apart, and lower your confidence when the colors look unnatural.';
 
 const HEALTH_ITEMS = ['bloating', 'scales', 'spots', 'fins', 'eyes', 'mouth', 'skin', 'color', 'posture'];
+// The second look only has to name the fish, so it answers with these few fields (a short reply is a fast one); the first look's boxes and health notes are kept.
+const FISH_NAME_SCHEMA = {
+  type: 'OBJECT',
+  propertyOrdering: ['features', 'life_stage', 'is_aquarium', 'common_name', 'scientific_name', 'kind', 'confidence', 'alternatives'],
+  properties: {
+    features: { type: 'STRING' },
+    life_stage: { type: 'STRING', enum: ['juvenile', 'adult', 'unknown'] },
+    is_aquarium: { type: 'BOOLEAN' },
+    common_name: { type: 'STRING' },
+    scientific_name: { type: 'STRING' },
+    kind: { type: 'STRING', enum: KINDS },
+    confidence: { type: 'NUMBER' },
+    alternatives: { type: 'ARRAY', items: { type: 'STRING' } }
+  },
+  required: ['features', 'is_aquarium', 'common_name', 'scientific_name', 'kind', 'confidence']
+};
 const FISH_SCHEMA = {
   type: 'OBJECT',
   propertyOrdering: ['features', 'life_stage', 'is_aquarium', 'common_name', 'scientific_name', 'kind', 'confidence', 'alternatives', 'label_text', 'note', 'main_box', 'others', 'health'],
@@ -657,9 +673,9 @@ async function scan(request, env, origin) {
 
   let plainJson = false; // grounded calls fall back to plain text JSON if Google rejects search together with a schema
   let secondNote = ''; // extra text for the Fish Check second opinion: the first guess and tell-apart tips
-  async function ask(model, withThinking, ms, withRes, level) {
+  async function ask(model, withThinking, ms, withRes, level, slim) {
     const lvl = level || (mode === 'fish' ? (/^(minimal|low|medium|high)$/.test(String(env.GEMINI_FISH_THINK || '')) ? env.GEMINI_FISH_THINK : 'low') : 'low');
-    const generationConfig = plainJson ? {} : { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : mode === 'fish' ? FISH_SCHEMA : SCHEMA };
+    const generationConfig = plainJson ? {} : { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : mode === 'fish' ? (slim ? FISH_NAME_SCHEMA : FISH_SCHEMA) : SCHEMA };
     if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: testThink || lvl };
     const payload = {
       systemInstruction: { parts: [{ text: INSTRUCTIONS }] },
@@ -741,11 +757,11 @@ async function scan(request, env, origin) {
           ', but it is often wrong with look-alikes.' + (f1.life_stage === 'juvenile' ? ' The first look also thought this is a young fish, so ignore any adult colors it may have imagined.' : '') + ' Ignore that guess unless the photo clearly supports it, and decide from the visible features.' +
           (tips.length ? ' Group of look-alikes, with every species we know in it and how to tell them apart: ' + tips.join(' ') + ' If the fish belongs to this group, choose the best match from that list and use the exact spelling.' : '');
         try {
-          let res2 = await ask(strong, true, Math.min(20000, left), true, /^(minimal|low|medium|high)$/.test(String(env.GEMINI_ESCALATE_THINK || '')) ? env.GEMINI_ESCALATE_THINK : (strong === primary ? 'low' : 'medium')); // the second look is the hard case, so it thinks a little more
-          if (res2.status === 400) res2 = await ask(strong, false, Math.min(20000, TOTAL_BUDGET_MS - (Date.now() - started)), false);
+          let res2 = await ask(strong, true, Math.min(20000, left), true, /^(minimal|low|medium|high)$/.test(String(env.GEMINI_ESCALATE_THINK || '')) ? env.GEMINI_ESCALATE_THINK : (strong === primary ? 'low' : 'medium'), true); // the second look is the hard case, so it thinks a little more
+          if (res2.status === 400) res2 = await ask(strong, false, Math.min(20000, TOTAL_BUDGET_MS - (Date.now() - started)), false, 'low', true);
           if (res2.ok) {
             const d2 = await res2.json();
-            const r2 = sanitizeFish(JSON.parse(d2.candidates[0].content.parts.map((p) => p.text || '').join('')));
+            const r2 = sanitizeFish(Object.assign({}, parsedReply, JSON.parse(d2.candidates[0].content.parts.map((p) => p.text || '').join('')))); // the new name and look over the first look's boxes and health notes
             if (r2.fish && r2.fish.is_aquarium) {
               const u2 = d2.usageMetadata || {};
               firstPass = { model: usedModel, usage };
