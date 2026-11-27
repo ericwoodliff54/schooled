@@ -5,6 +5,7 @@
 
 // The web app, plus the store apps: iPhone apps run from capacitor://localhost, Android apps from https://localhost.
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io', 'capacitor://localhost', 'https://localhost', 'http://localhost'];
+const BUILD = '1127b'; // shown on the tester's Fish Check line so you can tell which Worker version answered
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL = 'gemini-4-hydrogen';
 const LAST_RESORT_MODEL = 'gemini-3.6-flash';
@@ -657,7 +658,7 @@ async function scan(request, env, origin) {
   let plainJson = false; // grounded calls fall back to plain text JSON if Google rejects search together with a schema
   let secondNote = ''; // extra text for the Fish Check second opinion: the first guess and tell-apart tips
   async function ask(model, withThinking, ms, withRes, level) {
-    const lvl = level || (mode === 'fish' ? (/^(minimal|low|medium|high)$/.test(String(env.GEMINI_FISH_THINK || '')) ? env.GEMINI_FISH_THINK : (model === FALLBACK_MODEL ? 'medium' : 'low')) : 'low');
+    const lvl = level || (mode === 'fish' ? (/^(minimal|low|medium|high)$/.test(String(env.GEMINI_FISH_THINK || '')) ? env.GEMINI_FISH_THINK : 'low') : 'low');
     const generationConfig = plainJson ? {} : { responseMimeType: 'application/json', responseSchema: mode === 'verify' ? VERIFY_SCHEMA : mode === 'fish' ? FISH_SCHEMA : SCHEMA };
     if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: testThink || lvl };
     const payload = {
@@ -674,7 +675,9 @@ async function scan(request, env, origin) {
   let lastError = 'ai_busy';
   let lastStatus = 0;
   let usedModel = '';
+  let dropped = []; // extras Google refused and we retried without (shown on the tester line)
   for (const model of models) {
+    dropped = [];
     const left = TOTAL_BUDGET_MS - (Date.now() - started);
     if (left < 6000) break;
     const ms = Math.min(mode === 'fish' && model === (env.GEMINI_MODEL || DEFAULT_MODEL) && !testModel ? 12000 : 24000, left); // a quick fish check should fail over fast, not wait
@@ -682,8 +685,8 @@ async function scan(request, env, origin) {
     try {
       res = await ask(model, true, ms, true);
       // A model may not accept the per-image resolution or thinking settings: retry with fewer extras.
-      if (res.status === 400) res = await ask(model, true, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started)), false);
-      if (res.status === 400) res = await ask(model, false, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started)), false);
+      if (res.status === 400) { dropped = ['image detail']; res = await ask(model, true, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started)), false); }
+      if (res.status === 400) { dropped = ['image detail', 'thinking']; res = await ask(model, false, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started)), false); }
       if (ground && res.status === 400) { plainJson = true; res = await ask(model, true, Math.max(4000, TOTAL_BUDGET_MS - (Date.now() - started)), true); }
       if ((res.status === 503 || res.status === 429) && TOTAL_BUDGET_MS - (Date.now() - started) > 12000) {
         await new Promise((r) => setTimeout(r, 1200)); // one quick retry when Google says "busy"
@@ -726,7 +729,7 @@ async function scan(request, env, origin) {
     if (mode === 'fish' && result.fish && result.fish.is_aquarium && usedModel === primary && !(tester && body.escalate === false) && needsSecondOpinion(result.fish, env)) {
       const strong = env.GEMINI_ESCALATE_MODEL || FALLBACK_MODEL; // when Hydrogen is already the first look, the second opinion is Hydrogen thinking harder
       const left = TOTAL_BUDGET_MS - (Date.now() - started);
-      if (left > 9000) {
+      if (left > 9000 && (strong !== primary || env.GEMINI_ESCALATE_SAME === '1')) { // Hydrogen asking itself again only runs when switched on: it adds a full extra wait and cannot catch a confident wrong answer
         const f1 = result.fish;
         const guesses = [f1.common_name, f1.scientific_name].concat(f1.alternatives || []).filter(Boolean);
         const tips = tipsFor(guesses, true);
@@ -760,7 +763,7 @@ async function scan(request, env, origin) {
         ]);
       } catch (err) { /* counting is best effort */ }
     }
-    return json(Object.assign({ ok: true, model: finalModel, usage, mode }, firstPass ? { first_pass: firstPass } : {}, groundInfo, result), 200, origin);
+    return json(Object.assign({ ok: true, model: finalModel, usage, mode, build: BUILD, seconds: Math.round((Date.now() - started) / 100) / 10, dropped: dropped.join(', ') }, firstPass ? { first_pass: firstPass } : {}, groundInfo, result), 200, origin);
   } catch (err) {
     const why = data && ((data.promptFeedback && data.promptFeedback.blockReason) || (data.candidates && data.candidates[0] && data.candidates[0].finishReason)) || String(err && err.message || err);
     return json({ ok: false, error: 'ai_error', ai_status: 200, ai_detail: 'bad reply: ' + String(why).slice(0, 120) }, 502, origin);

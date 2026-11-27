@@ -301,6 +301,9 @@ function renderMisses() {
     el('h2', { class: 'section', text: 'Server tally (all devices)' }),
     el('p', { class: 'muted small', text: 'Every AI call the Worker makes, by day and model, from any phone. Estimated from list prices. Compare with Google AI Studio.' }),
     tallyBtn, tallyOut,
+    el('h2', { class: 'section', text: 'Fish Check test settings' }),
+    el('p', { class: 'muted small', text: TESTKEY ? 'Used for every Fish Check on this phone until set back to Worker default.' : 'Needs the test key on this phone (open the app once with ?testkey=YOUR_KEY).' }),
+    TESTKEY ? knobsBox() : null,
     el('h2', { class: 'section', text: 'Usage log' }));
   if (!usage.length) body.append(el('p', { class: 'muted', text: 'Nothing yet. Every scan, Fish Check and dream picture is logged here with its tokens and estimated cost.' }));
   else {
@@ -3574,6 +3577,7 @@ async function askWorker(images, mode, timeoutMs, ctx) {
   if (ctx.items) body.items = ctx.items;
   if (ctx.deep) body.deep = true;
   if (ctx.tank_gal) body.tank_gal = ctx.tank_gal;
+  if (TESTER && TESTKEY) { const k = testKnobs(); if (k.model) body.model = k.model; if (k.think) body.think = k.think; if (k.res) body.res = k.res; if (k.noRetry) body.escalate = false; }
   const res = await fetch(WORKER_URL + '/scan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -3589,6 +3593,21 @@ async function askWorker(images, mode, timeoutMs, ctx) {
   if (data.first_pass && data.first_pass.usage) logUsage('fish', data.first_pass.model, data.first_pass.usage, { detail: 'first look' });
   if (data.usage) logUsage(mode === 'zoom' || mode === 'verify' ? 'zoom' : mode === 'fish' ? 'fish' : 'scan', data.model, data.usage, { detail: mode + (ctx.deep ? ' deep' : '') + ', ' + (images || []).length + ' img, ' + Math.round(JSON.stringify(images || []).length / 1024) + ' KB' });
   return data;
+}
+
+// Tester only (needs the test key on this phone): pick the model and thinking level for the next Fish Checks.
+const KNOBS_KEY = 'schooled.knobs';
+function testKnobs() { try { return JSON.parse(localStorage.getItem(KNOBS_KEY) || '{}') || {}; } catch (err) { return {}; } }
+function saveKnobs(k) { try { localStorage.setItem(KNOBS_KEY, JSON.stringify(k)); } catch (err) { /* ignore */ } }
+function knobsBox() {
+  const k = testKnobs();
+  const sel = (label, key, opts) => el('label', { class: 'muted small' }, label + ' ', el('select', { onchange: (ev) => { const n = testKnobs(); n[key] = ev.target.value; saveKnobs(n); } },
+    ...opts.map((o) => el('option', Object.assign({ value: o[0], text: o[1] }, (k[key] || '') === o[0] ? { selected: 'selected' } : {})))));
+  return el('div', { class: 'gear-form' },
+    sel('Model', 'model', [['', 'Worker default'], ['gemini-4-hydrogen', 'Hydrogen'], ['gemini-3.6-flash', '3.6 Flash'], ['gemini-3.5-flash-lite', '3.5 Flash-Lite']]),
+    sel('Thinking', 'think', [['', 'Worker default'], ['minimal', 'minimal'], ['low', 'low'], ['medium', 'medium'], ['high', 'high']]),
+    sel('Image detail', 'res', [['', 'Worker default'], ['MEDIUM', 'medium'], ['HIGH', 'high'], ['ULTRA_HIGH', 'ultra high']]),
+    el('label', { class: 'muted small' }, el('input', Object.assign({ type: 'checkbox', onchange: (ev) => { const n = testKnobs(); n.noRetry = ev.target.checked; saveKnobs(n); } }, k.noRetry ? { checked: 'checked' } : {})), ' Skip the second opinion'));
 }
 
 function titleCase(text) {
@@ -4719,6 +4738,9 @@ function fishCheckCostLine(fc) {
     const p = SCAN_PRICES[run.model];
     const bits = [run.model + ', ' + n(run.usage.input) + ' tokens in, ' + n(run.usage.output) + ' out'];
     if (p) bits.push('about ' + centsText((run.usage.input * p[0] + run.usage.output * p[1]) / 1e6));
+    if (run.seconds) bits.push(run.seconds + ' s');
+    if (run.build) bits.push('worker ' + run.build);
+    if (run.dropped) bits.push('Google refused: ' + run.dropped + ' (answered without)');
     return bits.join(' · ');
   }).join(' | ');
 }
@@ -4736,7 +4758,7 @@ async function runFish(deep) {
     if (fishCheck !== mine) return;
     const r = data.fish;
     if (data.first_pass) fishCheck.runs.push({ model: data.first_pass.model, usage: data.first_pass.usage });
-    fishCheck.runs.push({ model: data.model, usage: data.usage });
+    fishCheck.runs.push({ model: data.model, usage: data.usage, seconds: data.seconds, build: data.build, dropped: data.dropped });
     if (!r || !r.is_aquarium || !r.common_name) {
       fishCheck.error = 'I could not find a fish, plant or coral in that photo. Move closer to one animal, hold still, and try again.';
     } else {
@@ -5019,7 +5041,7 @@ function renderFishCheck() {
       el('div', { class: 'lookalikes' }, ...alts.map((x) => {
         const hit = lookupSpecies(x);
         const fw = x.toLowerCase().split(/[\s-]/)[0];
-        const chunk = chunks.find((ch) => ch.label.toLowerCase().split(/[\s\/(]/)[0] === fw) || chunks.find((ch) => ch.label.toLowerCase().indexOf(fw) >= 0);
+        const chunk = chunks.find((ch) => ch.label.toLowerCase().split(/[\s\/(]/)[0] === fw && ch.label.split(/\s+/).length <= 3);
         const desc = chunk ? chunk.text : (hit && hit.s ? hit.s : '');
         return el('button', { type: 'button', class: 'lookalike', 'aria-label': 'Switch to ' + x, onclick: () => {
           noteCorrection(r.common_name, x, r.kind, r.confidence, 'Fish Check');
