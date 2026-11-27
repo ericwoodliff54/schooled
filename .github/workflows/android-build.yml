@@ -39,9 +39,13 @@ jobs:
       - name: Make the app icons from the Schooled logo
         run: |
           mkdir -p assets
-          convert icon-maskable.png -filter Lanczos -resize 1024x1024 assets/icon-only.png
+          if command -v magick >/dev/null 2>&1; then IM=magick; elif command -v convert >/dev/null 2>&1; then IM=convert; else
+            (sudo apt-get update && sudo apt-get install -y imagemagick) || brew install imagemagick
+            IM=$(command -v magick || command -v convert)
+          fi
+          $IM icon-maskable.png -filter Lanczos -resize 1024x1024 assets/icon-only.png
           cp assets/icon-only.png assets/icon-foreground.png
-          convert -size 1024x1024 xc:white assets/icon-background.png
+          $IM -size 1024x1024 xc:white assets/icon-background.png
           npx --yes @capacitor/assets generate --android --iconBackgroundColor '#ffffff'
       - name: Build the test APK
         working-directory: android
