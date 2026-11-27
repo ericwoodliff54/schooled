@@ -139,14 +139,21 @@ function normKey(s) {
 }
 
 // Tell-apart tips for the look-alike groups that the given names belong to.
-function tipsFor(names) {
+function tipsFor(names, full) {
   const ids = [];
   names.forEach((n) => {
     const id = DB.k[normKey(n)];
     if (id && !ids.includes(id)) ids.push(id);
   });
-  return ids.slice(0, 2).map((id) => DB.g[id].n + ' (' + DB.g[id].m.slice(0, 8).join(', ') + '): ' + DB.g[id].tip);
+  // full: the second look gets every species in the group, so it picks between real candidates instead of free-naming.
+  return ids.slice(0, full ? 1 : 2).map((id) => DB.g[id].n + ' (' + DB.g[id].m.slice(0, full ? 70 : 8).join(', ') + '): ' + DB.g[id].tip);
 }
+
+// Fish Check often happens in a shop, so the keeper's own tank is only a weak hint: same lake or biotope, same water, similar size.
+const FISH_TANK_NOTE = (names, size) =>
+  'Weak hint only: the person keeps' + (size ? ' a ' + size + ' gallon tank' : ' a tank') + (names.length ? ' with ' + names.slice(0, 20).join(', ') : '') + '. ' +
+  'The fish in the photo may be unrelated to that tank, so never name a fish because it is on that list. ' +
+  'Use it only to break a tie between look-alikes, for example when one candidate is from the same lake or water type as the tank.';
 
 const KNOWN_NOTE = (names) =>
   'The keeper says this tank contains these species: ' + names.join(', ') + '. ' +
@@ -589,6 +596,7 @@ async function scan(request, env, origin) {
     if (await ipOver(env, 'scan', ip, request)) return json({ ok: false, error: 'limit_reached' }, 429, origin);
   }
   const tankType = Object.prototype.hasOwnProperty.call(TYPE_NOTES, body.tank_type) ? body.tank_type : '';
+  const tankSize = Math.min(5000, Math.max(0, Math.round(Number(body.tank_gal) || 0)));
   let items = [];
   if (mode === 'verify') {
     items = (Array.isArray(body.items) ? body.items : []).slice(0, 8).map((it) => ({
@@ -600,7 +608,7 @@ async function scan(request, env, origin) {
     if (!items.length || items.length !== list.length) return json({ ok: false, error: 'bad_image' }, 400, origin);
   }
   // Names of what the person already keeps in this tank. Cleaned hard, because it goes into the prompt.
-  const known = (mode === 'fish' ? [] : (Array.isArray(body.known) ? body.known : []))
+  const known = (Array.isArray(body.known) ? body.known : [])
     .filter((s) => typeof s === 'string')
     .map((s) => s.replace(/[^\p{L}\p{N} '.()\/-]/gu, '').trim().slice(0, 60))
     .filter(Boolean)
@@ -611,7 +619,7 @@ async function scan(request, env, origin) {
       if (mode === 'zoom' && list.length > 1) parts.push({ text: i === 0 ? 'Whole tank:' : 'Zoomed piece ' + i + ' of ' + (list.length - 1) + ':' });
       if (mode === 'verify') {
         const it = items[i];
-        const tips = tipsFor([it.name].concat(it.alternatives));
+        const tips = tipsFor([it.name].concat(it.alternatives), true);
         parts.push({ text: 'Entry ' + i + ': the first look called this "' + it.name + '"' + (it.alternatives.length ? ' (other guesses: ' + it.alternatives.join(', ') + ')' : '') +
           ', ' + it.count + ' seen. ' + (tips.length ? 'Tips for telling similar species apart: ' + tips.join(' ') : '') });
       }
@@ -631,7 +639,7 @@ async function scan(request, env, origin) {
   const basePrompt = mode === 'verify' ? VERIFY_PROMPT : mode === 'fish' ? FISH_PROMPT : (mode === 'zoom' ? PROMPT + ' ' + ZOOM_NOTE : PROMPT);
   // The app matches names against its own species list on the phone, so no list is sent here.
   // That keeps a scan the same cost however large the species list grows.
-  const promptText = basePrompt + (tankType ? ' ' + TYPE_NOTES[tankType] : '') + (known.length ? ' ' + KNOWN_NOTE(known) : '') +
+  const promptText = basePrompt + (tankType ? ' ' + TYPE_NOTES[tankType] : '') + (known.length ? ' ' + (mode === 'fish' ? FISH_TANK_NOTE(known, tankSize) : KNOWN_NOTE(known)) : (tankSize && mode === 'fish' ? ' ' + FISH_TANK_NOTE([], tankSize) : '')) +
     ' ' + SPECIFIC_NOTE + (mode !== 'verify' ? ' ' + SCI_NOTE : '') + (ground ? ' ' + (mode === 'fish' ? FISH_GROUND_NOTE : GROUND_NOTE) : '');
 
   const primary = testModel || (mode === 'fish' ? (env.GEMINI_FISH_MODEL || FISH_MODEL) : (env.GEMINI_MODEL || DEFAULT_MODEL));
@@ -714,10 +722,10 @@ async function scan(request, env, origin) {
       if (strong !== primary && left > 9000) {
         const f1 = result.fish;
         const guesses = [f1.common_name, f1.scientific_name].concat(f1.alternatives || []).filter(Boolean);
-        const tips = tipsFor(guesses);
+        const tips = tipsFor(guesses, true);
         secondNote = ' A quick first look guessed "' + f1.common_name + '"' + (f1.alternatives && f1.alternatives.length ? ' (or ' + f1.alternatives.join(', ') + ')' : '') +
           ', but it is often wrong with look-alikes.' + (f1.life_stage === 'juvenile' ? ' The first look also thought this is a young fish, so ignore any adult colors it may have imagined.' : '') + ' Ignore that guess unless the photo clearly supports it, and decide from the visible features.' +
-          (tips.length ? ' Tips for telling similar species apart: ' + tips.join(' ') : '');
+          (tips.length ? ' Group of look-alikes, with every species we know in it and how to tell them apart: ' + tips.join(' ') + ' If the fish belongs to this group, choose the best match from that list and use the exact spelling.' : '');
         try {
           let res2 = await ask(strong, true, Math.min(20000, left), true);
           if (res2.status === 400) res2 = await ask(strong, false, Math.min(20000, TOTAL_BUDGET_MS - (Date.now() - started)), false);

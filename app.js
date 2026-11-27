@@ -3536,6 +3536,7 @@ async function askWorker(images, mode, timeoutMs, ctx) {
   if (ctx.tank_type) body.tank_type = ctx.tank_type;
   if (ctx.items) body.items = ctx.items;
   if (ctx.deep) body.deep = true;
+  if (ctx.tank_gal) body.tank_gal = ctx.tank_gal;
   const res = await fetch(WORKER_URL + '/scan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -4691,7 +4692,10 @@ async function runFish(deep) {
   fishCheck.loading = true; fishCheck.error = '';
   renderFishCheck();
   try {
-    const data = await askWorker(mine.images, 'fish', 45000, { tank_type: t && TYPES.includes(t.type) ? t.type : '', deep: !!deep });
+    const tankNames = [];
+    (t ? t.fish : []).forEach((f) => { if (f && f.name && tankNames.indexOf(f.name) === -1 && tankNames.length < 20) tankNames.push(f.name); });
+    const gal = t && t.size ? Math.round(Number(t.size) * (t.unit === 'liters' ? 0.264 : 1)) : 0;
+    const data = await askWorker(mine.images, 'fish', 45000, { tank_type: t && TYPES.includes(t.type) ? t.type : '', deep: !!deep, known: tankNames, tank_gal: gal });
     if (fishCheck !== mine) return;
     const r = data.fish;
     if (data.first_pass) fishCheck.runs.push({ model: data.first_pass.model, usage: data.first_pass.usage });
