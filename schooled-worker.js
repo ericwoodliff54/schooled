@@ -1296,7 +1296,7 @@ async function askTank(request, env, origin) {
 // Switched off until you set REQUIRE_SUB=1. While it is off, requests that carry no subscription id behave exactly as before.
 // With it on, every AI route needs a live RevenueCat subscription or trial. Usage is counted per subscription (RevenueCat's
 // original app user id), so reinstalling or clearing app data never gives a fresh allowance, and nobody signs in.
-const RC_ENTITLEMENT = 'pro';
+const RC_ENTITLEMENT = 'schooled_pro';
 const TRIAL_CAPS = { scan: 15, water: 5, dream: 1, ask: 15 }; // for the whole 3-day trial, not per month
 function planCaps(env, plan) {
   if (plan === 'trial') return { scan: cap(env, 'TRIAL_SCAN', TRIAL_CAPS.scan), water: cap(env, 'TRIAL_WATER', TRIAL_CAPS.water), dream: cap(env, 'TRIAL_DREAM', TRIAL_CAPS.dream), ask: cap(env, 'TRIAL_ASK', TRIAL_CAPS.ask) };

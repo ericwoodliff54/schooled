@@ -6,7 +6,7 @@ import { Purchases } from '@revenuecat/purchases-capacitor';
 const KEYS = { ios: __RC_IOS_KEY__, android: __RC_ANDROID_KEY__ };
 const PRIVACY_URL = __PRIVACY_URL__;
 const TERMS_URL = __TERMS_URL__;
-const ENTITLEMENT = 'pro';
+const ENTITLEMENT = 'schooled_pro';
 
 const platform = Capacitor.getPlatform();
 const apiKey = KEYS[platform] || '';
