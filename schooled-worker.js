@@ -26,10 +26,16 @@ const IP_PER_MONTH = { scan: 1500, ask: 300, dream: 30, water: 300, care: 900 };
 const WATER_PER_MONTH = 30; // water-strip reads per device per month
 const CARE_PER_MONTH = 200; // new care-sheet lookups per device per month
 // Counts one use against an address for the month. Returns true when that address is over its cap. If the store is down, lets the request through.
+// Network addresses are never written to the store as they are: only a salted one-way code, used for the monthly fair-use counters.
+async function ipId(env, ip) {
+  const bytes = new TextEncoder().encode(String(ip) + '|' + (env.IP_SALT || env.TEST_KEY || 'schooled'));
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  return 'h' + Array.from(new Uint8Array(hash)).slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 async function ipOver(env, kind, ip, request) {
   const kv = env.LIMITS;
   if (!kv || isTester(request, env)) return false;
-  const key = 'ip:' + kind + ':' + ip + ':' + monthKey();
+  const key = 'ip:' + kind + ':' + (await ipId(env, ip)) + ':' + monthKey();
   try {
     const n = Number(await kv.get(key)) || 0;
     if (n >= IP_PER_MONTH[kind]) return true;
@@ -41,7 +47,7 @@ async function ipOver(env, kind, ip, request) {
 async function deviceOver(env, kind, device, ip, cap, request) {
   const kv = env.LIMITS;
   if (!kv || isTester(request, env)) return false;
-  const key = kind + ':' + (device || ip) + ':' + monthKey();
+  const key = kind + ':' + (device || (await ipId(env, ip))) + ':' + monthKey();
   try {
     const n = Number(await kv.get(key)) || 0;
     if (n >= cap) return true;
@@ -583,7 +589,7 @@ async function scan(request, env, origin) {
   // Limits are real only when a KV store named LIMITS is bound. Counts are approximate, which is fine for a safety net.
   const kv = env.LIMITS;
   const scanDevice = clean(body.device, 60).replace(/[^A-Za-z0-9_-]/g, '');
-  const scanDeviceKey = 'scan:' + (scanDevice || ip) + ':' + monthKey();
+  const scanDeviceKey = 'scan:' + (scanDevice || (await ipId(env, ip))) + ':' + monthKey();
   const scanDayKey = 'scan:all:' + dayKey();
   let scanMine = 0, scanAll = 0;
   const scanCounted = !!kv && !isTester(request, env);
@@ -784,7 +790,7 @@ async function contribute(request, env, origin) {
   const kind = KINDS.includes(body.kind) ? body.kind : 'fish';
   if (kind === 'other') return json({ ok: true, want: false, stored: false, reason: 'kind' }, 200, origin);
   const corrected = body.src === 'user';
-  const device = clean(body.device, 60).replace(/[^A-Za-z0-9_-]/g, '') || ip;
+  const device = clean(body.device, 60).replace(/[^A-Za-z0-9_-]/g, '') || (await ipId(env, ip));
   const kv = env.LIMITS;
   const countKey = 'crop:n:' + key;
   const devKey = 'crop:d:' + device + ':' + dayKey();
@@ -1030,7 +1036,7 @@ async function dream(request, env, origin) {
 
   // Hard limits, real only when a KV store named LIMITS is bound to this Worker.
   const kv = env.LIMITS;
-  const deviceKey = 'dream:' + (device || ip) + ':' + monthKey();
+  const deviceKey = 'dream:' + (device || (await ipId(env, ip))) + ':' + monthKey();
   const dayKeyName = 'dream:all:' + dayKey();
   const dreamTester = isTester(request, env); // the owner's test key skips the monthly cap
   if (kv && !dreamTester) {
@@ -1201,7 +1207,7 @@ async function askTank(request, env, origin) {
   }
 
   const kv = env.LIMITS;
-  const deviceKey = 'ask:' + (device || ip) + ':' + monthKey();
+  const deviceKey = 'ask:' + (device || (await ipId(env, ip))) + ':' + monthKey();
   const dayKeyName = 'ask:all:' + dayKey();
   let mine = 0, all = 0;
   if (kv && !tester) {

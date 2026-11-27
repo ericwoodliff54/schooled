@@ -1175,6 +1175,7 @@ function saveScanned(t, inputs) {
 async function runWaterScan(file) {
   const t = getTank(scanState.tank);
   if (!t) return;
+  if (!(await ensureAi())) { scanState.msg = AI_OFF_MSG; scanState.step = 'error'; renderScanSheet(); return; }
   scanState.step = 'wait'; renderScanSheet();
   try {
     const image = await loadImage(file);
@@ -2027,6 +2028,33 @@ function setThemePref(p) {
 try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch (err) { /* older browsers */ }
 function extLink(href, text) { return el('a', { href, target: '_blank', rel: 'noopener noreferrer', text }); }
 
+// ---------- Permission to use AI (asked once, before the first AI feature) ----------
+// Fish Check, scans, the water test, Get Schooled and Dream Tank send what you give them to Google's Gemini through our server.
+const AI_KEY = 'schooled.ai';
+function aiState() { try { return localStorage.getItem(AI_KEY) || ''; } catch (err) { return ''; } }
+function setAi(v) { try { localStorage.setItem(AI_KEY, v); } catch (err) { /* asked again next time */ } }
+const AI_BLURB = "Fish Check, tank scans, the water test, Get Schooled and Dream Tank use Google's Gemini AI. When you use one, Schooled sends what you give it to our server, which passes it to Google to get your answer: your photo or question, and, depending on the feature, your tank's type, size, name, notes and the fish you added. We don't keep your photos or questions after the answer comes back.";
+function askAiConsent() {
+  return new Promise((resolve) => {
+    const done = (v) => { if (v === 'yes') setAi('yes'); wrap.remove(); resolve(v === 'yes'); };
+    const wrap = el('div', { class: 'sheet-wrap' },
+      el('div', { class: 'sheet-dim' }),
+      el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Allow AI features' },
+        el('div', { class: 'sheet-grab', 'aria-hidden': 'true' }),
+        el('div', { class: 'sheet-head' }, el('h2', { text: 'Allow AI features?' })),
+        el('p', { text: AI_BLURB }),
+        el('p', { class: 'muted small' }, 'You can change this any time under Settings. ', extLink(LEGAL.privacy + '#ai', 'What is sent and why'), '.'),
+        el('button', { type: 'button', class: 'btn primary big', text: 'Allow', onclick: () => done('yes') }),
+        el('button', { type: 'button', class: 'btn big', text: 'Not now', onclick: () => done('no') })));
+    document.body.append(wrap);
+  });
+}
+async function ensureAi() {
+  if (aiState() === 'yes') return true;
+  return askAiConsent();
+}
+const AI_OFF_MSG = 'AI features are off. Allow them to use this.';
+
 // ---------- Community fish photos (opt-in) ----------
 // With the keeper's yes, a small crop of one fish and its confirmed name go to a shared collection. No tank background, name or place.
 const CONTRIB_KEY = 'schooled.contrib';
@@ -2173,6 +2201,12 @@ function renderBackup() {
     native && np.on ? el('label', { class: 'field' }, el('span', { class: 'label', text: 'Time of day' }),
       el('select', { class: 'select', 'aria-label': 'Time of day for reminders', onchange: (ev) => { setNotifyPrefs(Object.assign(notifyPrefs(), { hour: Number(ev.target.value) })); syncNotifications(); renderBackup(); } },
         ...[6, 7, 8, 9, 10, 11, 12, 15, 17, 18, 19, 20].map((h) => el('option', { value: String(h), text: hourLabel(h), selected: h === np.hour ? '' : null })))) : null));
+  const aiOn = aiState() === 'yes';
+  body.append(el('div', { class: 'card' },
+    el('h2', { text: 'AI features' }),
+    el('p', { class: 'muted small', text: AI_BLURB }),
+    el('p', { class: 'small', text: aiOn ? 'AI features are allowed.' : 'AI features are off until you allow them.' }),
+    el('button', { type: 'button', class: 'btn' + (aiOn ? '' : ' primary'), text: aiOn ? 'Turn off AI features' : 'Allow AI features', onclick: () => { if (aiOn) { setAi('no'); renderBackup(); } else { askAiConsent().then(() => renderBackup()); } } })));
   const on = contribState() !== 'no';
   body.append(el('div', { class: 'card' },
     el('h2', { text: 'Help improve fish ID' }),
@@ -3532,6 +3566,7 @@ function friendlyError(code, status) {
 
 async function askWorker(images, mode, timeoutMs, ctx) {
   ctx = ctx || {};
+  if (!(await ensureAi())) throw new Error(AI_OFF_MSG);
   const body = { images, mime: 'image/jpeg', mode, known: ctx.known || [], device: deviceId() };
   if (ctx.tank_type) body.tank_type = ctx.tank_type;
   if (ctx.items) body.items = ctx.items;
@@ -4740,6 +4775,7 @@ function startNamedCheck(name, entry) {
 
 // A species that is not in the app's list: ask the AI for a rough care sheet, a separate tiny call that only runs when needed.
 async function fetchCare(fc, r) {
+  if (aiState() !== 'yes') return;
   fc.careLoading = true;
   renderFishCheck();
   try {
@@ -5271,6 +5307,7 @@ async function sendAsk(text) {
   const photo = askPhoto;
   if (photo && q.length < 2) q = 'What do you see in this photo? Anything I should worry about?';
   if (q.length < 2) { toast('Type a question first.'); return; }
+  if (!(await ensureAi())) { askMessage = AI_OFF_MSG; renderAsk(); return; }
   if (!askLeft()) { askMessage = ASK_ERRORS.limit_reached; renderAsk(); return; }
   const s = askLoad();
   const chat = askChat(s, t.id);
@@ -5409,6 +5446,7 @@ async function runDream() {
   const gal = Number(f.size);
   if (text.length < 3) { toast('Describe the tank you want first.'); return; }
   if (!(gal >= 5 && gal <= 2000)) { toast('Enter a tank size between 5 and 2000 gallons.'); return; }
+  if (!(await ensureAi())) { dreamMessage = AI_OFF_MSG; renderDream(); return; }
   if (!dreamLeft()) { dreamMessage = DREAM_ERRORS.limit_reached; renderDream(); return; }
   dreamBusy = true; dreamMessage = '';
   renderDream();
