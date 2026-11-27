@@ -2715,6 +2715,8 @@ const AQUEON = [[50, 20], [100, 30], [150, 55], [200, 75], [300, 100]]; // Aqueo
 const FINNEX_HMA = [[50, 20], [100, 30], [150, 60], [200, 80], [300, 100], [500, 120]]; // watts, max gal
 const FINNEX_TH = [[300, 40, 80], [500, 70, 130], [800, 140, 265]]; // heating tube only: watts, min gal, max gal
 const OCTO = [['110-INT', 75], ['150-INT', 120], ['200-INT', 160]]; // model, largest tank Bulk Reef Supply recommends
+const ESHOPPS = [['RS-75', 10, 75, '20 x 10 x 16 in'], ['RS-100', 75, 125, '24 x 12 x 16 in'], ['RS-200', 125, 225, '30 x 12 x 16 in'], ['RS-300', 225, 300, '36 x 14 x 16 in']]; // Eshopps reef sump: model, min gal, max gal, size (Bulk Reef Supply product page)
+const VARIOS = [['2', 792], ['4', 1050], ['6', 1720], ['8', 2700], ['10', 4220]]; // Reef Octopus VarioS return pump: model, maximum GPH at the highest setting
 
 function gearPicks(kind, t) {
   const gal = tankGallons(t) || 0;
@@ -2751,6 +2753,14 @@ function gearPicks(kind, t) {
       }
       if (gal >= 60 && gal <= 800) P('Pro', n6 === 1 ? 'Fluval FX6' : (n6 === 2 ? 'Two Fluval FX6' : n6 + ' Fluval FX6'),
         'Large canister filter with a 925 GPH pump, rated up to 400 gal each.' + (n6 > 1 ? ' Run ' + (n6 === 2 ? 'two' : n6) + ' side by side for about ' + (n6 * 925).toLocaleString('en-US') + ' GPH. That spreads a heavy waste load across more media and keeps the tank filtered while you clean one.' : ''));
+    }
+    if (ft === 'sump') {
+      const es = salt ? ESHOPPS.find((m) => gal >= m[1] && gal <= m[2]) : null;
+      if (es) P('Popular', 'Eshopps ' + es[0] + ' Reef Sump', 'Sump with a skimmer chamber, a return pump chamber and a filter sock holder. Bulk Reef Supply lists it for ' + es[1] + ' to ' + es[2] + ' gal. Size ' + es[3] + '.');
+      // The app aims for about 5 times the tank volume per hour after lift. A pump loses flow as it pushes water up to the tank, so the pick has 1.5 times that as its maximum rating to leave room for a few feet of lift.
+      const need = gal * 5 * 1.5;
+      const vp = VARIOS.find((m) => m[1] >= need) || VARIOS[VARIOS.length - 1];
+      P('Popular', 'Reef Octopus VarioS-' + vp[0] + ' return pump', 'Controllable DC return pump rated up to ' + vp[1].toLocaleString('en-US') + ' GPH at its highest setting. Flow drops as it lifts water to the tank, so check its flow chart against your plumbing.' + (need > VARIOS[VARIOS.length - 1][1] ? ' A tank this size may want two.' : ''));
     }
   } else if (kind === 'Heater' && gal > 0) {
     const nano = gal <= 5; // a 50 W heater is too much for a nano tank, so only the smallest model is offered
@@ -2871,7 +2881,9 @@ function gearPicks(kind, t) {
     if (rg) P('Pro', 'Reef Octopus ' + rg[0], 'In-sump skimmer with a controllable DC pump. Bulk Reef Supply sizes it for about ' + rg[1] + ' gal with a heavy fish load.');
   } else if (kind === 'Auto top-off' && salt && gal > 0) {
     if (gal <= 50) P('Budget', 'AutoAqua Smart ATO Nano G2', 'Hang-on unit with an optical sensor and a built-in pump. Has run-dry protection and an overflow timer. Made for tanks up to 50 gal.');
+    P('Budget', 'AutoAqua Smart ATO Micro', 'Top-off with a single optical sensor about the size of a penny. How much water it adds depends on evaporation, not on tank size.');
     if (gal <= 66) P('Popular', 'Tunze Osmolator 3 Nano', 'Optical sensor, run-dry protection and an adjustable safety timer. Suggested by Bulk Reef Supply for tanks up to 66 gal.');
+    else P('Popular', 'Tunze Osmolator 3', 'Optical-sensor top-off that comes with its metering pump and sets up without software. You supply the top-off reservoir.');
     if (gal <= 100) P('Pro', 'Tunze Osmolator Universal 3155', 'Tunze\'s flagship top-off, with an optical sensor and a float-switch backup. Best under about 100 gal.');
   } else if (kind === 'Air pump') {
     P('Popular', gal <= 20 ? 'Aquarium Co-Op Air Pump with Battery Backup (single outlet)' : 'Aquarium Co-Op Air Pump with Battery Backup (dual outlet)', gal <= 20 ? 'Built-in battery switches on in a power cut. One outlet, 1.1 L/min, 1.2 W, with adjustable air flow.' : 'Built-in battery switches on in a power cut. Two outlets, 1.6 L/min, 2.1 W, with adjustable air flow.');
@@ -2897,6 +2909,22 @@ function gearPicks(kind, t) {
     P('Pro', 'Fluval Bio-Stratum', 'Finer 1 to 3 mm grains infused with nitrifying bacteria, made for small tanks and fine roots. Sold in 8.8 lb bags. Shrimp keepers should use the standard Stratum.');
     P('Popular', 'Seachem Flourite', 'Porous clay gravel that does not change pH and is not replaced. A 7 kg bag makes about a 2 in bed in a 10 gal tank' + (gal > 10 ? ', so about ' + Math.ceil(gal / 10) + ' bags for yours.' : '.'));
     P('Pro', 'ADA Aqua Soil Amazonia', 'Nutrient-rich plant soil that softens water and lowers pH. About one 9 L bag per 15 gal' + (gal > 15 ? ', so about ' + Math.ceil(gal / 15) + ' bags for yours.' : '.') + ' Best for demanding plants, and not for hard-water fish.');
+  } else if (kind === 'Light timer') {
+    P('Budget', 'Top Fin Programmable Timer for Aquarium Lights', 'Programmable timer that mimics a 24-hour day and night cycle, with a 30 minute minimum setting step. For indoor use only.');
+    P('Popular', 'DEWENWILS 24 Hour Programmable Digital Timer Outlet', 'One-outlet digital timer with three daily repeat programs and a backup battery. Check that its amp rating covers your light.');
+    P('Pro', 'Coralife Digital Power Center', 'Eight-outlet digital timer: two outlets for daytime gear, two for night and four always on, with seven programmable cycles. Handy when a light, a fan and a pump need different schedules.');
+  } else if (kind === 'Lid or hood' && gal > 0 && gal <= 75) {
+    P('Budget', 'Top Fin Aquarium Hinged Glass Lid', 'Hinged glass lid made in sizes for tanks from 2.5 to 75 gal. Pick your tank size, and check that the gaps suit your filter and cords.');
+    P('Popular', 'Aqueon Versa-Top Hinged Glass Aquarium Hood', 'Hinged glass hood sold by tank length, with 20 and 24 in among the sizes. Measure your tank before you buy.');
+    P('Popular', 'H2Pro Glass Canopy', 'Tempered glass canopy with an area for a light to sit, sold in several sizes. The maker says it fits most tanks, so measure first.');
+  } else if (kind === 'Quarantine tank' && !salt) {
+    P('Budget', 'Hydro-Sponge II', 'Sponge filter that runs off an air pump. Sold for up to 20 gal, which suits a 10 to 20 gal quarantine tank.');
+    P('Popular', 'Aquarium Co-Op Easy Flow Sponge Filter (Medium)', 'Low-flow sponge filter for a bare quarantine tank, run by an air pump. Keep a spare running in your main tank so it is already seeded when you need it.');
+  } else if (kind === 'Plant tools') {
+    P('Budget', 'Top Fin Planting Tongs', 'Stainless steel angled tweezers for planting and trimming without disturbing the substrate.');
+    P('Popular', 'Aquarium Co-Op Planting Tweezers', 'Curved-tip tweezers for placing small plants, useful in a deep tank or when planting at an angle.');
+    P('Popular', 'Dennerle Plant Scissor Curved, 25 cm', 'Mirror-polished stainless steel scissors, good for trimming ground cover plants close to the substrate.');
+    P('Pro', 'UNS Stainless Steel Essential Aquascaping Tool Set', 'Stainless steel set with straight 10 in tweezers, straight scissors and a sand flattener. Dry the tools after each use.');
   }
   // Up to three per tier, with Aquarium Co-Op and Fluval listed first inside each tier.
   const fav = (x) => (/Aquarium Co-Op|Fluval/.test(x.name) ? 0 : 1);
