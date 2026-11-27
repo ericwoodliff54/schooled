@@ -3585,12 +3585,17 @@ function photoQuality(image) {
   return { tip: '', severe: false };
 }
 
+function subscriptionNeededText() {
+  return isNativeApp() ? 'Start your free trial or subscribe to keep using Schooled\u2019s AI features.' : 'The AI features now come with the Schooled app. Get it from the App Store or Google Play.';
+}
 function friendlyError(code, status) {
   switch (code) {
     case 'rate_limited': return 'Lots of scans right now. Wait a minute and try again.';
     case 'ai_busy': return 'The photo reader is busy. Try again in a moment.';
     case 'limit_reached': return 'You have used this month\u2019s photo scans. They come back on the 1st.';
     case 'busy_today': return 'Photo scans are very busy today. Please try again tomorrow.';
+    case 'subscription_required': return subscriptionNeededText();
+    case 'try_again': return 'Could not check your subscription just now. Try again in a moment.';
     case 'bad_image': return "That photo couldn't be read. Try a different one.";
     case 'forbidden': return 'This copy of Schooled is not allowed to reach the server. Please update or reopen the app.';
     case 'too_large': return 'That photo is too large. Try a smaller one.';
@@ -5183,6 +5188,8 @@ const ASK_MONTHLY = 100;
 const ASK_KEEP = 40; // messages kept per tank
 const ASK_ERRORS = {
   limit_reached: 'You have used all ' + ASK_MONTHLY + ' questions for this month. They reset on the 1st.',
+  subscription_required: 'Start your free trial or subscribe in the Schooled app to ask questions.',
+  try_again: 'Could not check your subscription just now. Try again in a moment.',
   busy_today: 'Get Schooled is very busy today. Please try again tomorrow.',
   rate_limited: 'That is a lot of questions in a short time. Wait a few minutes and try again.',
   ai_busy: 'The AI is busy right now. Try again in a minute.',
@@ -5427,6 +5434,8 @@ const DREAM_KEY = 'schooled.dream';
 const DEVICE_KEY = 'schooled.device';
 const DREAM_ERRORS = {
   limit_reached: 'You have used this month’s dream pictures. They come back next month.',
+  subscription_required: 'Start your free trial or subscribe in the Schooled app to make Dream Tank pictures.',
+  try_again: 'Could not check your subscription just now. Nothing was used. Try again in a moment.',
   busy_today: 'Dream Tank has been very busy today. Please try again tomorrow.',
   rate_limited: 'That was a few too many tries in a row. Wait a few minutes and try again.',
   not_aquarium: 'That did not sound like an aquarium. Describe the fish, plants and style you want.',

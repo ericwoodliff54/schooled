@@ -1,0 +1,7 @@
+{
+  "appId": "com.schooled.aquarium",
+  "appName": "Schooled",
+  "webDir": "www",
+  "server": { "androidScheme": "https" },
+  "ios": { "contentInset": "always" }
+}

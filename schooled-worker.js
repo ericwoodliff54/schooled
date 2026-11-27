@@ -5,7 +5,7 @@
 
 // The web app, plus the store apps: iPhone apps run from capacitor://localhost, Android apps from https://localhost.
 const ALLOWED_ORIGINS = ['https://ericwoodliff54.github.io', 'capacitor://localhost', 'https://localhost', 'http://localhost'];
-const BUILD = '1127h'; // shown on the tester's Fish Check line so you can tell which Worker version answered
+const BUILD = '1128a'; // shown on the tester's Fish Check line so you can tell which Worker version answered
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const FALLBACK_MODEL = 'gemini-4-hydrogen';
 const LAST_RESORT_MODEL = 'gemini-3.6-flash';
@@ -226,7 +226,7 @@ const SCHEMA = {
 function corsHeaders(origin) {
   const headers = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Test-Key',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Test-Key, X-RC-User',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin'
   };
@@ -1292,6 +1292,132 @@ async function askTank(request, env, origin) {
   return json({ ok: false, error: 'ai_busy', ai_detail: problems.join('; ').slice(0, 200) }, 502, origin);
 }
 
+// ---- Subscriptions (RevenueCat) and exact counters ----
+// Switched off until you set REQUIRE_SUB=1. While it is off, requests that carry no subscription id behave exactly as before.
+// With it on, every AI route needs a live RevenueCat subscription or trial. Usage is counted per subscription (RevenueCat's
+// original app user id), so reinstalling or clearing app data never gives a fresh allowance, and nobody signs in.
+const RC_ENTITLEMENT = 'pro';
+const TRIAL_CAPS = { scan: 15, water: 5, dream: 1, ask: 15 }; // for the whole 3-day trial, not per month
+function planCaps(env, plan) {
+  if (plan === 'trial') return { scan: cap(env, 'TRIAL_SCAN', TRIAL_CAPS.scan), water: cap(env, 'TRIAL_WATER', TRIAL_CAPS.water), dream: cap(env, 'TRIAL_DREAM', TRIAL_CAPS.dream), ask: cap(env, 'TRIAL_ASK', TRIAL_CAPS.ask) };
+  return { scan: cap(env, 'SCAN_PER_MONTH', SCAN_PER_MONTH), water: cap(env, 'WATER_PER_MONTH', WATER_PER_MONTH), dream: cap(env, 'DREAM_PER_MONTH', DREAM_PER_MONTH), ask: cap(env, 'ASK_PER_MONTH', ASK_PER_MONTH) };
+}
+async function rcLookup(env, appUserId) {
+  const res = await fetch('https://api.revenuecat.com/v1/subscribers/' + encodeURIComponent(appUserId), {
+    headers: { 'Authorization': 'Bearer ' + env.REVENUECAT_SECRET, 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(6000)
+  });
+  if (!res.ok) throw new Error('revenuecat ' + res.status);
+  const d = await res.json();
+  const sub = d && d.subscriber;
+  const ent = sub && sub.entitlements && sub.entitlements[RC_ENTITLEMENT];
+  if (!ent) return { active: false };
+  const exp = ent.expires_date ? Date.parse(ent.expires_date) : Infinity;
+  if (!(exp > Date.now())) return { active: false };
+  const s = sub.subscriptions && sub.subscriptions[ent.product_identifier];
+  return { active: true, plan: s && s.period_type === 'trial' ? 'trial' : 'paid', key: String(sub.original_app_user_id || appUserId), exp: Number.isFinite(exp) ? exp : 0 };
+}
+// Looks a subscription up, remembering the answer for a few minutes. If RevenueCat is unreachable, a recent "active" answer is still honoured until it expires.
+async function subscriberFor(env, id) {
+  const kv = env.LIMITS;
+  const ck = 'rc:' + id;
+  let cached = null;
+  if (kv) { try { cached = JSON.parse((await kv.get(ck)) || 'null'); } catch (err) { cached = null; } }
+  const now = Date.now();
+  if (cached && now - cached.at < (cached.active ? 300000 : 20000) && (!cached.active || !cached.exp || cached.exp > now)) return cached;
+  let fresh;
+  try { fresh = await rcLookup(env, id); } catch (err) {
+    if (cached && cached.active && (!cached.exp || cached.exp > now)) return cached;
+    throw err;
+  }
+  fresh.at = now;
+  if (kv) { try { await kv.put(ck, JSON.stringify(fresh), { expirationTtl: 86400 }); } catch (err) { /* cache is best effort */ } }
+  return fresh;
+}
+// One Durable Object per subscription. A Durable Object handles one request at a time, so these counts cannot be beaten by sending requests in parallel.
+export class Usage {
+  constructor(state) { this.state = state; this.queue = Promise.resolve(); }
+  fetch(request) {
+    // Requests are run strictly one after another, so a count can never be read twice before it is written.
+    const run = this.queue.then(() => this.handle(request));
+    this.queue = run.catch(() => {});
+    return run;
+  }
+  async handle(request) {
+    let b;
+    try { b = await request.json(); } catch (err) { return Response.json({ ok: false }, { status: 400 }); }
+    const key = String(b.key || '');
+    const used = Number(await this.state.storage.get(key)) || 0;
+    if (b.op === 'take') {
+      if (used >= Number(b.cap)) return Response.json({ ok: false, used });
+      await this.state.storage.put(key, used + 1);
+      return Response.json({ ok: true, used: used + 1 });
+    }
+    if (b.op === 'refund') {
+      const n = Math.max(0, used - 1);
+      await this.state.storage.put(key, n);
+      return Response.json({ ok: true, used: n });
+    }
+    return Response.json({ ok: true, used });
+  }
+}
+async function usageCall(env, subKey, body) {
+  const stub = env.USAGE.get(env.USAGE.idFromName(subKey));
+  const r = await stub.fetch('https://usage.internal/', { method: 'POST', body: JSON.stringify(body) });
+  return r.json();
+}
+// kind is scan, water, dream or ask (counted); null means the subscription is checked but nothing is counted (care sheets are cached and cheap).
+async function gated(request, env, origin, kind, handler) {
+  if (isTester(request, env)) return handler(request, env, origin);
+  const required = String(env.REQUIRE_SUB || '') === '1';
+  const id = (request.headers.get('X-RC-User') || '').trim();
+  if (!required && !id) return handler(request, env, origin);
+  if (!env.REVENUECAT_SECRET || !env.USAGE) {
+    if (!required) return handler(request, env, origin);
+    return json({ ok: false, error: 'server_not_configured' }, 500, origin);
+  }
+  if (!/^[A-Za-z0-9:$_.@-]{8,100}$/.test(id)) {
+    if (!required) return handler(request, env, origin);
+    return json({ ok: false, error: 'subscription_required' }, 402, origin);
+  }
+  let sub;
+  try { sub = await subscriberFor(env, id); } catch (err) {
+    if (!required) return handler(request, env, origin);
+    return json({ ok: false, error: 'try_again' }, 503, origin);
+  }
+  if (!sub.active) {
+    if (!required) return handler(request, env, origin);
+    return json({ ok: false, error: 'subscription_required' }, 402, origin);
+  }
+  if (!kind) return handler(request, env, origin);
+  const caps = planCaps(env, sub.plan);
+  const key = kind + ':' + (sub.plan === 'trial' ? 'trial' : monthKey());
+  let took = null;
+  try { took = await usageCall(env, sub.key, { op: 'take', key, cap: caps[kind] }); } catch (err) { console.warn('usage counter unavailable, letting the request through: ' + err); }
+  if (took && !took.ok) return json({ ok: false, error: 'limit_reached', plan: sub.plan }, 429, origin);
+  const res = await handler(request, env, origin);
+  if (took && res.status >= 400) { try { await usageCall(env, sub.key, { op: 'refund', key }); } catch (err) { /* a failed call may stay counted */ } }
+  return res;
+}
+// Runs on a schedule (see wrangler.toml). Sends one message when the day's estimated Gemini spend passes ALERT_DAILY_USD. Never blocks anyone.
+// Set ALERT_WEBHOOK to a URL that accepts a plain-text POST (for example https://ntfy.sh/your-secret-topic for a phone notification).
+async function spendAlert(env) {
+  const kv = env.LIMITS;
+  if (!kv || !env.ALERT_WEBHOOK) return;
+  const day = pacificDay(Date.now());
+  let data = {};
+  try { data = JSON.parse((await kv.get('tally:' + day)) || '{}') || {}; } catch (e) { return; }
+  let dollars = 0, calls = 0;
+  Object.keys(data).forEach((m) => { const p = TALLY_PRICES[m]; calls += data[m].n || 0; if (p) dollars += ((data[m].in || 0) * p[0] + (data[m].out || 0) * p[1]) / 1e6; });
+  const limit = cap(env, 'ALERT_DAILY_USD', 10);
+  const level = dollars >= limit * 2 ? 2 : dollars >= limit ? 1 : 0;
+  if (!level) return;
+  const flag = 'alert:' + day + ':' + level;
+  if (await kv.get(flag)) return;
+  await kv.put(flag, '1', { expirationTtl: 172800 });
+  await fetch(env.ALERT_WEBHOOK, { method: 'POST', body: 'Schooled: about $' + dollars.toFixed(2) + ' of Gemini use so far today (' + calls + ' calls, Pacific day ' + day + '). Alert level ' + level + ' of 2 (limit $' + limit + '). Nothing has been blocked.' });
+}
+
 export default {
   async fetch(request, env) {
     // More allowed origins (a custom domain, or an app-store wrapper such as capacitor://localhost) come from the ALLOWED_ORIGINS variable, comma separated.
@@ -1307,12 +1433,12 @@ export default {
 
     if (request.method === 'POST' && url.pathname === '/dream') {
       if (!ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'forbidden' }, 403, origin);
-      return dream(request, env, origin);
+      return gated(request, env, origin, 'dream', dream);
     }
 
     if (request.method === 'POST' && url.pathname === '/ask') {
       if (!ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'forbidden' }, 403, origin);
-      return askTank(request, env, origin);
+      return gated(request, env, origin, 'ask', askTank);
     }
 
     if (request.method === 'POST' && url.pathname === '/contribute') {
@@ -1322,12 +1448,12 @@ export default {
 
     if (request.method === 'POST' && url.pathname === '/care') {
       if (!ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'forbidden' }, 403, origin);
-      return careEstimate(request, env, origin);
+      return gated(request, env, origin, null, careEstimate);
     }
 
     if (request.method === 'POST' && url.pathname === '/water') {
       if (!ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'forbidden' }, 403, origin);
-      return waterScan(request, env, origin);
+      return gated(request, env, origin, 'water', waterScan);
     }
 
     if (request.method === 'GET' && url.pathname === '/usage') {
@@ -1338,9 +1464,12 @@ export default {
       // Blocks other websites from using this Worker. It is not real security
       // (anyone can fake a header), so usage limits come in a later stage.
       if (!ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, error: 'forbidden' }, 403, origin);
-      return scan(request, env, origin);
+      return gated(request, env, origin, 'scan', scan);
     }
 
     return json({ ok: false, error: 'not_found' }, 404, origin);
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(spendAlert(env));
   }
 };

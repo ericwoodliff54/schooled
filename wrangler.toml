@@ -19,3 +19,16 @@ id = "64581e37fa464497a2ac176e40b693bd"
 [[r2_buckets]]
 binding = "CROPS"
 bucket_name = "schooled-crops"
+
+# Exact per-subscription counters. One Durable Object per subscriber, so counts cannot be beaten by parallel requests.
+[[durable_objects.bindings]]
+name = "USAGE"
+class_name = "Usage"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Usage"]
+
+# Spend alert: checks today's estimated Gemini cost every 3 hours and sends one message to ALERT_WEBHOOK if it passes ALERT_DAILY_USD.
+[triggers]
+crons = ["0 */3 * * *"]
