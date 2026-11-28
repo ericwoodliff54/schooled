@@ -7,6 +7,7 @@ const KEYS = { ios: __RC_IOS_KEY__, android: __RC_ANDROID_KEY__ };
 const PRIVACY_URL = __PRIVACY_URL__;
 const TERMS_URL = __TERMS_URL__;
 const ENTITLEMENT = 'schooled_pro';
+const LIMITS_TEXT = '110 fish scans, 30 water-strip reads, 2 Dream Tank pictures and 100 questions a month';
 
 const platform = Capacitor.getPlatform();
 const apiKey = KEYS[platform] || '';
@@ -80,30 +81,36 @@ async function showPaywall() {
   document.body.appendChild(paywallEl);
   const err = (m) => { const e = document.getElementById('sch-err'); if (e) e.textContent = m || ''; };
   let chosen = null;
-  try {
-    const offerings = await Purchases.getOfferings();
-    const cur = offerings.current;
-    const pk = (cur && cur.availablePackages) || [];
-    if (!pk.length) throw new Error('no packages');
-    pk.sort((a, b) => (a.packageType === 'ANNUAL' ? -1 : 0) - (b.packageType === 'ANNUAL' ? -1 : 0));
-    const box = document.getElementById('sch-plans'); box.innerHTML = '';
-    pk.forEach((p, i) => {
-      const info = pkgInfo(p);
-      const annual = p.packageType === 'ANNUAL';
-      const b = document.createElement('button'); b.className = 'plan' + (i === 0 ? ' best' : '');
-      b.innerHTML = '<b>' + (annual ? 'Yearly' : p.packageType === 'MONTHLY' ? 'Monthly' : (p.product.title || 'Plan')) + ' · ' + info.price + (annual ? ' / year' : p.packageType === 'MONTHLY' ? ' / month' : '') + '</b><span>' + (info.free ? '3 days free, then ' + info.price : 'Cancel anytime') + (annual ? ' · best value' : '') + '</span>';
-      b.onclick = () => { chosen = p; box.querySelectorAll('.plan').forEach((x) => x.classList.remove('best')); b.classList.add('best'); setGo(p); };
-      box.appendChild(b);
-      if (i === 0) { chosen = p; setGo(p); }
-    });
-    function setGo(p) { const go = document.getElementById('sch-go'); go.disabled = false; go.textContent = pkgInfo(p).free ? 'Start 3-day free trial' : 'Subscribe'; }
-    const fine = document.getElementById('sch-fine');
-    const first = pkgInfo(pk[0]);
-    fine.innerHTML = (first.free ? 'Free for 3 days, then ' : '') + 'renews automatically at the price shown until you cancel. Cancel any time in your ' + (platform === 'ios' ? 'Apple ID' : 'Google Play') + ' subscription settings, at least 24 hours before the period ends. Payment is charged to your ' + (platform === 'ios' ? 'Apple ID' : 'Google Play') + ' account. <br><a href="' + TERMS_URL + '" target="_blank" rel="noopener">Terms</a> · <a href="' + PRIVACY_URL + '" target="_blank" rel="noopener">Privacy</a>';
-  } catch (e) {
-    document.getElementById('sch-plans').innerHTML = '<p class="sub">Prices could not be loaded. Check your connection and try again.</p>';
-    err('');
+  function setGo(p) { const go = document.getElementById('sch-go'); if (!go) return; go.disabled = false; go.textContent = pkgInfo(p).free ? 'Start 3-day free trial' : 'Subscribe'; }
+  async function loadPlans() {
+    const box = document.getElementById('sch-plans');
+    if (!box) return;
+    box.innerHTML = '<p class="sub">Loading prices…</p>';
+    try {
+      const offerings = await Purchases.getOfferings();
+      const cur = offerings.current;
+      const pk = ((cur && cur.availablePackages) || []).slice();
+      if (!pk.length) throw new Error('no packages');
+      pk.sort((a, b) => (a.packageType === 'ANNUAL' ? -1 : 0) - (b.packageType === 'ANNUAL' ? -1 : 0));
+      box.innerHTML = '';
+      pk.forEach((p, i) => {
+        const info = pkgInfo(p);
+        const annual = p.packageType === 'ANNUAL';
+        const b = document.createElement('button'); b.className = 'plan' + (i === 0 ? ' best' : '');
+        b.innerHTML = '<b>' + (annual ? 'Yearly' : p.packageType === 'MONTHLY' ? 'Monthly' : (p.product.title || 'Plan')) + ' · ' + info.price + (annual ? ' / year' : p.packageType === 'MONTHLY' ? ' / month' : '') + '</b><span>' + (info.free ? '3 days free, then ' + info.price : 'Cancel anytime') + (annual ? ' · best value' : '') + '</span>';
+        b.onclick = () => { chosen = p; box.querySelectorAll('.plan').forEach((x) => x.classList.remove('best')); b.classList.add('best'); setGo(p); };
+        box.appendChild(b);
+        if (i === 0) { chosen = p; setGo(p); }
+      });
+      const fine = document.getElementById('sch-fine');
+      const first = pkgInfo(pk[0]);
+      fine.innerHTML = (first.free ? 'Free for 3 days, then ' : '') + 'renews automatically at the price shown until you cancel. Cancel any time in your ' + (platform === 'ios' ? 'Apple ID' : 'Google Play') + ' subscription settings, at least 24 hours before the period ends. Payment is charged to your ' + (platform === 'ios' ? 'Apple ID' : 'Google Play') + ' account.<br>Fair-use monthly limits apply to the AI features (about ' + LIMITS_TEXT + ').<br><a href="' + TERMS_URL + '" target="_blank" rel="noopener">Terms</a> · <a href="' + PRIVACY_URL + '" target="_blank" rel="noopener">Privacy</a>';
+    } catch (e) {
+      box.innerHTML = '<p class="sub">Prices could not be loaded. Check your connection and try again.</p><button class="link" id="sch-retry">Try again</button>';
+      const r = document.getElementById('sch-retry'); if (r) r.onclick = loadPlans;
+    }
   }
+  await loadPlans();
   document.getElementById('sch-go').onclick = async () => {
     if (!chosen || busy) return; busy = true; err('');
     const go = document.getElementById('sch-go'); go.disabled = true;
@@ -140,7 +147,7 @@ async function start() {
       try { customerInfo = (await Purchases.getCustomerInfo()).customerInfo; } catch (e) {}
     }
     if (!isActive(customerInfo)) showPaywall();
-  } catch (e) { readyResolve(); }
+  } catch (e) { readyResolve(); showPaywall(); }
 }
 window.Schooled = { native: configured, showPaywall, manageSubscription: () => Purchases.showManageSubscriptions().catch(() => {}) };
 start();

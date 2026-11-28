@@ -1182,7 +1182,7 @@ async function runWaterScan(file) {
       signal: AbortSignal.timeout(60000)
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) throw new Error(friendlyError(data.error, res.status));
+    if (!res.ok || !data.ok) throw new Error(friendlyError(data.error, res.status, data.plan));
     if (data.usage) logUsage('water', data.model, data.usage, { detail: 'test scan, ' + (data.kit_type || '') });
     scanState.rows = data.readings || [];
     scanState.chart = !!data.chart_visible;
@@ -1603,8 +1603,9 @@ window.addEventListener('popstate', (ev) => {
       input.dispatchEvent(new Event('change', { bubbles: true }));
     } catch (err) {
       const msg = String((err && (err.message || err)) || '').toLowerCase();
-      if (msg.includes('cancel') || msg.includes('user')) return; // person closed the camera
-      origClick.call(input); // camera not available: fall back to the normal picker
+      if (/denied|permission/.test(msg)) { toast('Camera access is off. Turn it on in Settings, then Apps, then Schooled, then Permissions.'); return; }
+      if (msg.includes('cancel')) return; // person closed the camera
+      toast('The camera could not open. Use Upload a photo instead.');
     }
   }
   const wants = (el) => el && el.tagName === 'INPUT' && el.type === 'file' && el.hasAttribute('capture') && nativePlugin('Camera');
@@ -2038,7 +2039,8 @@ function renderHome() {
 // The legal pages live on the publisher's own site, so store listings and the app point to the same place.
 const SITE_URL = 'https://www.twinravensdigital.com';
 const LEGAL = { privacy: SITE_URL + '/schooled-privacy.html', support: SITE_URL + '/support.html#schooled', page: SITE_URL + '/schooled.html', email: 'contact@twinravensdigital.com' };
-const APP_VERSION = '1.0';
+let APP_VERSION = '1.0';
+(function readNativeVersion() { const ap = nativePlugin('App'); if (ap && ap.getInfo) ap.getInfo().then((i) => { if (i && i.version) APP_VERSION = i.version; }).catch(() => {}); })();
 
 // ---------- Appearance (Auto follows the phone) ----------
 function themePref() {
@@ -2057,6 +2059,11 @@ function setThemePref(p) {
 }
 try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch (err) { /* older browsers */ }
 function extLink(href, text) { return el('a', { href, target: '_blank', rel: 'noopener noreferrer', text }); }
+// Google Play asks for a way to report AI content that is wrong or offensive. This opens an email to us with the text filled in.
+function reportLink(kind, text) {
+  const body = 'What was wrong with this ' + kind + ' (optional):\n\n\n---\nApp version: ' + APP_VERSION + '\nWhat the AI made:\n' + String(text || '').slice(0, 600);
+  return el('a', { class: 'report-link', href: 'mailto:' + LEGAL.email + '?subject=' + encodeURIComponent('Schooled AI report: ' + kind) + '&body=' + encodeURIComponent(body), text: 'Report' });
+}
 
 // ---------- Permission to use AI (asked once, before the first AI feature) ----------
 // Fish Check, scans, the water test, Get Schooled and Dream Tank send what you give them to Google's Gemini through our server.
@@ -2103,7 +2110,7 @@ function askContribConsent() {
         el('div', { class: 'sheet-grab', 'aria-hidden': 'true' }),
         el('div', { class: 'sheet-head' }, el('h2', { text: 'Helping improve fish ID' })),
         el('p', { text: CONTRIB_BLURB }),
-        el('p', { class: 'muted small' }, 'This is on by default. You can turn it off any time under Settings. ', extLink(LEGAL.privacy + '#photos', 'How we use these photos'), '.'),
+        el('p', { class: 'muted small' }, 'You choose below, and you can change it any time under Settings. ', extLink(LEGAL.privacy + '#photos', 'How we use these photos'), '.'),
         el('button', { type: 'button', class: 'btn primary big', text: 'Sounds good', onclick: () => done('yes') }),
         el('button', { type: 'button', class: 'btn big', text: 'Turn sharing off', onclick: () => done('no') })));
     document.body.append(wrap);
@@ -2300,6 +2307,7 @@ function renderBackup() {
     el('p', { class: 'muted small', text: 'Schooled is made by Twin Ravens Digital LLC. Fish identification, care information and product ideas are estimates to help you plan, not veterinary or professional advice. Check with a trusted fish store or vet before you buy or treat livestock.' }),
     el('p', { class: 'small' }, extLink(LEGAL.privacy, 'Privacy Policy'), ' \u00b7 ', extLink(LEGAL.privacy + '#terms', 'Terms of Use'), ' \u00b7 ', extLink(LEGAL.support, 'Support'), ' \u00b7 ', extLink(LEGAL.page, 'Website')),
     el('p', { class: 'muted small', text: 'Contact: ' + LEGAL.email }),
+    window.Schooled && window.Schooled.native ? el('button', { type: 'button', class: 'btn small', text: 'Manage subscription', onclick: () => window.Schooled.manageSubscription() }) : null,
     el('p', { class: 'muted small', text: 'Version ' + APP_VERSION })));
 }
 // Erases everything Schooled keeps on this phone, then reloads as a fresh install. (Shared fish photos live on the server and are removed on request.)
@@ -3600,7 +3608,8 @@ function photoQuality(image) {
 function subscriptionNeededText() {
   return isNativeApp() ? 'Start your free trial or subscribe to keep using Schooled\u2019s AI features.' : 'The AI features now come with the Schooled app. Get it from the App Store or Google Play.';
 }
-function friendlyError(code, status) {
+function friendlyError(code, status, plan) {
+  if (code === 'limit_reached' && plan === 'trial') return TRIAL_LIMIT_MSG;
   switch (code) {
     case 'rate_limited': return 'Lots of scans right now. Wait a minute and try again.';
     case 'ai_busy': return 'The photo reader is busy. Try again in a moment.';
@@ -3635,7 +3644,7 @@ async function askWorker(images, mode, timeoutMs, ctx) {
   if (!res.ok || !data.ok) {
     throw new Error((data.error === 'ai_error' || data.error === 'ai_busy') && data.ai_detail !== undefined
       ? 'The photo reader had trouble' + (TESTER ? ' (' + (data.ai_detail || 'error ' + data.ai_status) + ')' : '') + '. Please try again in a moment.'
-      : friendlyError(data.error, res.status));
+      : friendlyError(data.error, res.status, data.plan));
   }
   if (data.first_pass && data.first_pass.usage) logUsage('fish', data.first_pass.model, data.first_pass.usage, { detail: 'first look' });
   if (data.usage) logUsage(mode === 'zoom' || mode === 'verify' ? 'zoom' : mode === 'fish' ? 'fish' : 'scan', data.model, data.usage, { detail: mode + (ctx.deep ? ' deep' : '') + ', ' + (images || []).length + ' img, ' + Math.round(JSON.stringify(images || []).length / 1024) + ' KB' });
@@ -4958,6 +4967,7 @@ function healthCard(h) {
     ? 'I would pass on this one. Fish from the same tank can carry the same problem.'
     : 'A photo cannot catch everything, and new fish should be kept apart for a few weeks.');
   box.append(el('p', { class: 'muted small', text: tip }));
+  box.append(el('p', { class: 'muted small', text: 'AI estimate from a photo. Not veterinary advice.' }));
   return box;
 }
 
@@ -5198,6 +5208,7 @@ $('misses-back').addEventListener('click', () => goBack(() => showView('home')))
 const ASK_KEY = 'schooled.ask';
 const ASK_MONTHLY = 100;
 const ASK_KEEP = 40; // messages kept per tank
+const TRIAL_LIMIT_MSG = 'You have used what the free trial includes. The full monthly amount opens up once your subscription starts.';
 const ASK_ERRORS = {
   limit_reached: 'You have used all ' + ASK_MONTHLY + ' questions for this month. They reset on the 1st.',
   subscription_required: 'Start your free trial or subscribe in the Schooled app to ask questions.',
@@ -5336,7 +5347,8 @@ function renderAsk() {
   const log = el('div', { class: 'ask-log', 'aria-live': 'polite' });
   chat.forEach((m) => log.append(el('div', { class: 'ask-msg ' + (m.role === 'user' ? 'me' : 'ai') + (m.img ? ' has-img' : '') },
     m.img ? el('img', { class: 'ask-img', src: m.img, alt: 'Your photo' }) : null,
-    m.role === 'user' ? el('p', { text: m.text }) : askText(m.text))));
+    m.role === 'user' ? el('p', { text: m.text }) : askText(m.text),
+    m.role === 'user' ? null : el('div', { class: 'report-row' }, reportLink('answer', m.text)))));
   if (askBusyHere()) log.append(el('div', { class: 'ask-msg ai busy', 'aria-label': 'Thinking' }, el('span', { class: 'ask-dots' }, el('i'), el('i'), el('i'))));
   parts.push(log);
 
@@ -5411,12 +5423,13 @@ async function sendAsk(text) {
     const c2 = askChat(s2, t.id);
     if (!j || !j.ok) {
       const code = j && j.error;
-      if (code === 'limit_reached') s2.used = ASK_MONTHLY;
+      const trialCap = code === 'limit_reached' && j && j.plan === 'trial';
+      if (code === 'limit_reached' && !trialCap) s2.used = ASK_MONTHLY;
       // take the unanswered question back out, and put it in the box so it can be sent again
       if (c2.length && c2[c2.length - 1].role === 'user') { askDraft = c2.pop().text; askPhoto = photo; }
       s2.chats[t.id] = c2;
       askSave(s2);
-      askMessage = ASK_ERRORS[code] || 'Something went wrong. Your question was not counted. Try again in a minute.';
+      askMessage = trialCap ? TRIAL_LIMIT_MSG : (ASK_ERRORS[code] || 'Something went wrong. Your question was not counted. Try again in a minute.');
     } else {
       c2.push({ role: 'model', text: String(j.answer || ''), sug: Array.isArray(j.suggestions) ? j.suggestions.slice(0, 3).map(String) : [], t: Date.now() });
       s2.chats[t.id] = c2.slice(-ASK_KEEP);
@@ -5536,8 +5549,9 @@ async function runDream() {
     try { j = await res.json(); } catch (err) { j = null; }
     if (!j || !j.ok) {
       const code = j && j.error;
-      if (code === 'limit_reached') { const s = dreamLoad(); s.used = DREAM_MONTHLY; dreamSave(s); }
-      dreamMessage = (DREAM_ERRORS[code] || 'Something went wrong. Nothing was used. Try again in a minute.') + (TESTER && j && j.ai_detail ? ' (' + String(j.ai_detail).slice(0, 300) + ')' : '');
+      const trialCap = code === 'limit_reached' && j && j.plan === 'trial';
+      if (code === 'limit_reached' && !trialCap) { const s = dreamLoad(); s.used = DREAM_MONTHLY; dreamSave(s); }
+      dreamMessage = (trialCap ? TRIAL_LIMIT_MSG : DREAM_ERRORS[code] || 'Something went wrong. Nothing was used. Try again in a minute.') + (TESTER && j && j.ai_detail ? ' (' + String(j.ai_detail).slice(0, 300) + ')' : '');
     } else {
       let image = '';
       if (j.image && j.image.data && /^image\/(png|jpeg|webp)$/.test(j.image.mime)) {
@@ -5675,6 +5689,7 @@ function dreamResultCard(r) {
       el('p', { class: 'muted small', text: 'On an iPhone, press and hold the picture to save it. This is an AI picture, so real fish and plants will look a little different.' }));
   }
   card.append(el('h2', { text: r.title }), r.summary ? el('p', { text: r.summary }) : null);
+  card.append(el('div', { class: 'report-row' }, reportLink('Dream Tank result', r.title + ' - ' + r.summary)));
   card.append(el('button', { type: 'button', class: 'btn link small-link dream-clear', text: 'Clear this result', onclick: () => { const s2 = dreamLoad(); delete s2.last; dreamSave(s2); renderDream(); } }));
 
   const check = tankCheck(tmp);

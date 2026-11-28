@@ -13,13 +13,14 @@ fs.readdirSync(root, { withFileTypes: true }).forEach((e) => {
   if (/\.(html|js|css|json|png|jpg|jpeg|woff2|svg)$/.test(e.name)) fs.copyFileSync(path.join(root, e.name), path.join(out, e.name));
 });
 const q = (v, d) => JSON.stringify(process.env[v] || d);
+if (process.env.REQUIRE_RC_KEY && !/^(appl|goog)_/.test(process.env[process.env.REQUIRE_RC_KEY] || '')) throw new Error('The RevenueCat key ' + process.env.REQUIRE_RC_KEY + ' is missing or wrong. Add it under Settings, Secrets and variables, Actions.');
 esbuild.buildSync({
   entryPoints: [path.join(root, 'purchases.src.js')], bundle: true, minify: true, format: 'iife', target: 'es2019', outfile: path.join(out, 'purchases.js'),
   define: {
     __RC_IOS_KEY__: q('RC_IOS_KEY', 'appl_REPLACE_ME'),
     __RC_ANDROID_KEY__: q('RC_ANDROID_KEY', 'goog_REPLACE_ME'),
     __PRIVACY_URL__: q('PRIVACY_URL', 'https://www.twinravensdigital.com/schooled-privacy.html'),
-    __TERMS_URL__: q('TERMS_URL', 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')
+    __TERMS_URL__: q('TERMS_URL', 'https://www.twinravensdigital.com/schooled-privacy#terms')
   }
 });
 // The store apps load purchases.js before app.js. The web version's index.html is left alone.

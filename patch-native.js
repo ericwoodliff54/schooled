@@ -8,6 +8,9 @@ if (fs.existsSync(man)) {
   ['android.permission.CAMERA', 'android.permission.INTERNET'].forEach((p) => {
     if (!x.includes(p)) x = x.replace('</manifest>', '    <uses-permission android:name="' + p + '" />\n</manifest>');
   });
+  // Reminders do not need exact alarms, and Play asks for a special declaration if the app asks for them.
+  if (!x.includes('xmlns:tools')) x = x.replace('<manifest ', '<manifest xmlns:tools="http://schemas.android.com/tools" ');
+  if (!x.includes('SCHEDULE_EXACT_ALARM')) x = x.replace('</manifest>', '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove" />\n</manifest>');
   if (!x.includes('android.hardware.camera')) x = x.replace('</manifest>', '    <uses-feature android:name="android.hardware.camera" android:required="false" />\n</manifest>');
   fs.writeFileSync(man, x);
   console.log('patched AndroidManifest.xml');
@@ -43,6 +46,7 @@ if (fs.existsSync(gradle) && (process.env.KEYSTORE_FILE || process.env.VERSION_C
     buildTypes {`);
     g = g.replace("        release {\n            minifyEnabled false", "        release {\n            signingConfig signingConfigs.release\n            minifyEnabled false");
   }
+  if (process.env.KEYSTORE_FILE && !g.includes('signingConfig signingConfigs.release')) throw new Error('Signing setup was not applied to build.gradle. The Capacitor template may have changed.');
   fs.writeFileSync(gradle, g);
   console.log('patched build.gradle for release');
 }
