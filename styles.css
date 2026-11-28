@@ -52,7 +52,7 @@ p { margin: 0; }
   margin: 0 auto;
   min-height: 100vh;
   min-height: 100dvh;
-  padding: calc(18px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom));
+  padding: calc(18px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) 20px calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
 }
 .view { display: flex; flex-direction: column; gap: 16px; animation: rise 0.35s ease both; }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
@@ -556,7 +556,7 @@ input::placeholder { color: #8AA0BC; }
   position: fixed;
   left: 16px;
   right: 16px;
-  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(24px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   z-index: 50;
   padding: 12px 16px;
   border-radius: 16px;
@@ -967,7 +967,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 .chip-strip { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .chip-strip::-webkit-scrollbar { display: none; }
 .chip-pill { flex: none; min-height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--edge2); background: var(--card); color: var(--teal-dark); font: inherit; font-size: 14px; font-weight: 700; white-space: nowrap; cursor: pointer; }
-.seg-sticky { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; margin: 6px -20px 10px; padding: 8px 20px; background: rgba(238, 245, 252, 0.82); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.seg-sticky { position: sticky; top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); z-index: 20; margin: 6px -20px 10px; padding: 8px 20px; background: rgba(238, 245, 252, 0.82); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .sum-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
 .sum-card { background: var(--card); border-radius: 18px; padding: 14px; box-shadow: var(--shadow); text-align: left; font: inherit; color: inherit; border: 0; min-width: 0; }
 .sum-btn { cursor: pointer; }
@@ -1000,7 +1000,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 .sheet-wrap { position: fixed; inset: 0; z-index: 55; display: flex; align-items: flex-end; justify-content: center; }
 .sheet-wrap[hidden] { display: none; }
 .sheet-dim { position: absolute; inset: 0; background: rgba(10, 46, 92, 0.5); }
-.sheet { position: relative; width: 100%; max-width: 520px; max-height: 92vh; max-height: 92dvh; overflow-y: auto; box-sizing: border-box; background: var(--card); border-radius: 26px 26px 0 0; padding: 10px 18px calc(22px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 14px; animation: sheet-up 0.22s ease-out; }
+.sheet { position: relative; width: 100%; max-width: 520px; max-height: 92vh; max-height: 92dvh; overflow-y: auto; box-sizing: border-box; background: var(--card); border-radius: 26px 26px 0 0; padding: 10px 18px calc(22px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))); display: flex; flex-direction: column; gap: 14px; animation: sheet-up 0.22s ease-out; }
 .sheet.tall { min-height: 60vh; }
 @keyframes sheet-up { from { transform: translateY(40px); opacity: 0.4; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
@@ -1198,7 +1198,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 .ask-dots i:nth-child(2) { animation-delay: 0.15s; }
 .ask-dots i:nth-child(3) { animation-delay: 0.3s; }
 @keyframes ask-dot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
-.ask-bar { position: sticky; bottom: 0; z-index: 5; margin: 4px -20px 0; padding: 10px 20px calc(10px + env(safe-area-inset-bottom)); background: transparent; display: flex; flex-direction: column; gap: 6px; }
+.ask-bar { position: sticky; bottom: 0; z-index: 5; margin: 4px -20px 0; padding: 10px 20px calc(10px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))); background: transparent; display: flex; flex-direction: column; gap: 6px; }
 .ask-row { display: flex; align-items: flex-end; gap: 8px; }
 .ask-input { flex: 1; min-height: 48px; max-height: 140px; padding: 12px 14px; border: 1.5px solid var(--edge); border-radius: 24px; font: inherit; font-size: 16px; color: var(--ink); background: var(--card); resize: none; line-height: 1.35; }
 .ask-input:focus { outline: none; border-color: var(--teal); }
@@ -1407,7 +1407,7 @@ body { min-height: 100vh; min-height: 100dvh; }
 :root[data-theme="dark"] .seg-dot.warn { background: #FFB347; }
 :root[data-theme="dark"] .seg-dot.bad { background: #FF7A45; }
 
-#save-banner { position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 60; display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 12px; background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad); font-size: 14px; font-weight: 600; }
+#save-banner { position: fixed; left: 8px; right: 8px; bottom: calc(8px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))); z-index: 60; display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 12px; background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad); font-size: 14px; font-weight: 600; }
 #save-banner[hidden] { display: none; }
 #save-banner button { flex: none; border: 0; border-radius: 10px; padding: 8px 12px; background: var(--bad); color: var(--bg); font-weight: 700; font-size: 14px; }
 
@@ -1512,3 +1512,8 @@ button.compat-link { display: block; width: 100%; text-align: left; background: 
 /* Report link under AI answers and results */
 .report-row { margin-top: 4px; text-align: right; }
 .report-link { font-size: 12px; color: var(--muted, #6b7a90); text-decoration: underline; }
+
+/* Android draws the app edge to edge, so scrolled content would slide under the clock and battery icons.
+   This fixed strip covers the status bar area with the page's top colour. It sits below sheets, viewers and the paywall. */
+body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); background: #D7E6F9; z-index: 50; pointer-events: none; }
+:root[data-theme="dark"] body::before { background: #11263D; }

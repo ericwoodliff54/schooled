@@ -44,7 +44,7 @@ window.fetch = async (input, init) => {
 };
 
 const css = `
-#sch-paywall{position:fixed;inset:0;z-index:99999;background:linear-gradient(180deg,#0A1523,#123B73);color:#fff;font-family:'Plus Jakarta Sans',system-ui,sans-serif;overflow:auto;padding:max(24px,env(safe-area-inset-top)) 20px max(24px,env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center}
+#sch-paywall{position:fixed;inset:0;z-index:99999;background:linear-gradient(180deg,#0A1523,#123B73);color:#fff;font-family:'Plus Jakarta Sans',system-ui,sans-serif;overflow:auto;padding:max(24px,var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) 20px max(24px,var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));display:flex;flex-direction:column;align-items:center}
 #sch-paywall .in{width:100%;max-width:420px;margin:auto 0}
 #sch-paywall h1{font-size:26px;line-height:1.2;margin:0 0 8px;text-align:center}
 #sch-paywall p.sub{margin:0 0 20px;text-align:center;opacity:.85;font-size:15px}
