@@ -149,5 +149,12 @@ async function start() {
     if (!isActive(customerInfo)) showPaywall();
   } catch (e) { readyResolve(); showPaywall(); }
 }
-window.Schooled = { native: configured, showPaywall, manageSubscription: () => Purchases.showManageSubscriptions().catch(() => {}) };
+// Opens the store's own subscription page. The RevenueCat Capacitor plugin has no built-in call for this, so use its management link, or the store's standard address.
+async function manageSubscription() {
+  let url = '';
+  try { const r = await Purchases.getCustomerInfo(); url = (r && r.customerInfo && r.customerInfo.managementURL) || ''; } catch (e) { url = ''; }
+  if (!url) url = platform === 'ios' ? 'https://apps.apple.com/account/subscriptions' : 'https://play.google.com/store/account/subscriptions?package=com.schooled.aquarium';
+  window.open(url, '_blank');
+}
+window.Schooled = { native: configured, showPaywall, manageSubscription };
 start();
