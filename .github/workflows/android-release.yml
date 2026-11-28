@@ -26,9 +26,10 @@ jobs:
       - name: Accept Android licenses (the Android tools are already installed on GitHub's machines)
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
       - name: Install packages
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Build the web files for the app
         env:
+          REQUIRE_RC_KEY: RC_ANDROID_KEY
           RC_ANDROID_KEY: ${{ secrets.RC_ANDROID_KEY }}
           RC_IOS_KEY: ${{ secrets.RC_IOS_KEY }}
           PRIVACY_URL: ${{ vars.PRIVACY_URL }}
