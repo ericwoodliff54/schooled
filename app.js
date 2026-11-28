@@ -1441,7 +1441,7 @@ async function syncNotifications() {
     const perm = await ln.checkPermissions();
     if (!perm || perm.display !== 'granted') return;
     const plan = notifyPlan(prefs);
-    if (plan.length) await ln.schedule({ notifications: plan.map((p, i) => ({ id: i + 1, title: p.title, body: p.body, schedule: { at: new Date(p.at), allowWhileIdle: true }, extra: { tank: p.tank } })) });
+    if (plan.length) await ln.schedule({ notifications: plan.map((p, i) => ({ id: i + 1, title: p.title, body: p.body, schedule: { at: new Date(p.at), allowWhileIdle: true }, isExactNotification: false, extra: { tank: p.tank } })) });
   } catch (err) { /* notifications are a bonus, never block the app */ }
 }
 function scheduleNotifySync() {
