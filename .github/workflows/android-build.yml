@@ -23,7 +23,7 @@ jobs:
       - name: Accept Android licenses (the Android tools are already installed on GitHub's machines)
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
       - name: Install packages
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Build the web files for the app
         env:
           RC_ANDROID_KEY: ${{ secrets.RC_ANDROID_KEY }}
@@ -49,7 +49,14 @@ jobs:
           npx --yes @capacitor/assets generate --android --iconBackgroundColor '#ffffff'
       - name: Build the test APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          export GRADLE_OPTS="-Dorg.gradle.internal.repository.max.retries=8 -Dorg.gradle.internal.repository.initial.backoff=3000"
+          for i in 1 2 3; do
+            ./gradlew assembleDebug --no-daemon && exit 0
+            echo "Attempt $i failed (Maven Central sometimes rate-limits GitHub). Waiting 60 seconds."
+            sleep 60
+          done
+          exit 1
       - uses: actions/upload-artifact@v4
         with:
           name: schooled-debug-apk
