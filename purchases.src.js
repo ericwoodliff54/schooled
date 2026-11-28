@@ -1,6 +1,7 @@
 // Schooled store-app subscriptions (RevenueCat). Bundled by build-www.js into the store apps only; the web version never loads this.
 // Nobody signs in: RevenueCat gives each install an anonymous id tied to the store purchase, and the worker checks that id.
 import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
 import { Purchases } from '@revenuecat/purchases-capacitor';
 
 const KEYS = { ios: __RC_IOS_KEY__, android: __RC_ANDROID_KEY__ };
@@ -147,7 +148,15 @@ async function start() {
       try { customerInfo = (await Purchases.getCustomerInfo()).customerInfo; } catch (e) {}
     }
     if (!isActive(customerInfo)) showPaywall();
-  } catch (e) { readyResolve(); showPaywall(); }
+    // Re-check when the app comes back to the foreground, and close the paywall if they are subscribed.
+    App.addListener('appStateChange', async ({ isActive: foreground }) => {
+      if (!foreground) return;
+      try {
+        const { customerInfo: ci } = await Purchases.getCustomerInfo();
+        if (isActive(ci)) closePaywall();
+      } catch (e) { /* keep whatever is showing */ }
+    });
+  } catch (e) { readyResolve(); /* no paywall on an error; the worker's 402 shows it if they really are not subscribed */ }
 }
 // Opens the store's own subscription page. The RevenueCat Capacitor plugin has no built-in call for this, so use its management link, or the store's standard address.
 async function manageSubscription() {
